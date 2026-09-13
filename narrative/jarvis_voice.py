@@ -241,7 +241,7 @@ class JarvisVoice:
         raw_groq = config.get("groq_api_key") or os.environ.get("GROQ_API_KEY")
         self.groq_key = self._clean_key(raw_groq)
         self.groq_available = bool(self.groq_key)
-        self.groq_model = config.get("groq_model", "llama-3.3-70b-versatile")
+        self.groq_model = config.get("groq_model") or "openai/gpt-oss-120b"
         self.groq_rate_limited = False
 
         # Detect available SLM
@@ -758,65 +758,68 @@ class JarvisVoice:
             "Authorization": f"Bearer {self.groq_key}",
             "Content-Type": "application/json",
         }
-        payload = {
-            "model": self.groq_model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": min(max_tokens, 4096),
-            "temperature": 0.5,
-            "stream": True,
-        }
+        models_to_try = [self.groq_model, "openai/gpt-oss-120b", "groq/compound-mini"]
+        for model in models_to_try:
+            if not model:
+                continue
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": min(max_tokens, 4096),
+                "temperature": 0.6,
+                "stream": True,
+            }
 
-        try:
-            full_response = []
-            with self.client.stream("POST", "https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=14.0) as r:
-                if r.status_code == 429:
-                    self.groq_rate_limited = True
-                    print(f"[jarvis_voice] Groq API rate-limited (429). Switching to fallback.")
-                    return "", True
-                if r.status_code != 200:
-                    print(f"[jarvis_voice] Groq error ({r.status_code}): {r.text[:200]}")
-                    return "", False
-
-                for line in r.iter_lines():
-                    if not line:
+            try:
+                full_response = []
+                with self.client.stream("POST", "https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=14.0) as r:
+                    if r.status_code == 429:
+                        self.groq_rate_limited = True
+                        print(f"[jarvis_voice] Groq API rate-limited (429). Switching to fallback.")
+                        return "", True
+                    if r.status_code != 200:
+                        err_body = r.read().decode('utf-8', errors='ignore')[:300]
+                        print(f"[jarvis_voice] Groq API notice ({r.status_code}) with {model}: {err_body}")
                         continue
-                    if line.startswith("data: "):
-                        line_str = line[6:].strip()
-                        if line_str == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(line_str)
-                            delta = chunk.get("choices", [{}])[0].get("delta", {})
-                            token = delta.get("content", "")
-                            if token:
-                                full_response.append(token)
-                                if on_token:
-                                    on_token(token)
-                        except Exception:
+
+                    for line in r.iter_lines():
+                        if not line:
                             continue
-            text = "".join(full_response).strip()
-            return text, False
-        except Exception as e:
-            print(f"[jarvis_voice] Groq error: {e}")
-            return "", False
+                        if line.startswith("data: "):
+                            line_str = line[6:].strip()
+                            if line_str == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(line_str)
+                                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                token = delta.get("content", "")
+                                if token:
+                                    full_response.append(token)
+                                    if on_token:
+                                        on_token(token)
+                            except Exception:
+                                continue
+                text = "".join(full_response).strip()
+                if text:
+                    self.groq_model = model
+                    return text, False
+            except Exception as e:
+                print(f"[jarvis_voice] Groq streaming error with {model}: {e}")
+                continue
+
+        return "", False
 
     def _ask_cloud(self, prompt: str, system: str, max_tokens: int = 4096, on_token: callable = None, image_path: str = None) -> dict:
         """
-        Try cloud LLMs in priority order: NVIDIA NIM → Groq LPU → Gemini → empty.
+        Try cloud LLMs in priority order:
+        For text-only conversations, Groq LPU runs first (<200ms TTFT) for natural voice speed.
+        If Groq is exhausted or vision is required, NVIDIA NIM and Gemini serve as powerhouse engines.
         Returns {text, rate_limited, engine}.
         """
-        # Try NVIDIA NIM first
-        if self.nvidia_available and not self.nvidia_rate_limited:
-            text, r_limited = self._ask_nvidia(prompt, system, max_tokens=max_tokens, on_token=on_token, image_path=image_path)
-            if r_limited:
-                self.nvidia_rate_limited = True
-            elif text:
-                return {"text": text, "rate_limited": False, "engine": "nvidia"}
-
-        # Try Groq LPU second (fastest token latency, text-only)
+        # 1. Try Groq LPU first for ultra-low conversational voice latency (<200ms)
         if self.groq_available and not self.groq_rate_limited and not image_path:
             text, r_limited = self._ask_groq(prompt, system, max_tokens=max_tokens, on_token=on_token)
             if r_limited:
@@ -824,7 +827,15 @@ class JarvisVoice:
             elif text:
                 return {"text": text, "rate_limited": False, "engine": "groq"}
 
-        # Try Gemini third
+        # 2. Try NVIDIA NIM
+        if self.nvidia_available and not self.nvidia_rate_limited:
+            text, r_limited = self._ask_nvidia(prompt, system, max_tokens=max_tokens, on_token=on_token, image_path=image_path)
+            if r_limited:
+                self.nvidia_rate_limited = True
+            elif text:
+                return {"text": text, "rate_limited": False, "engine": "nvidia"}
+
+        # 3. Try Gemini third
         if self.gemini_available and not self.gemini_rate_limited:
             text, r_limited = self._ask_gemini(prompt, system, max_tokens=max_tokens, on_token=on_token, image_path=image_path)
             if r_limited:

@@ -545,6 +545,8 @@ class JarvisAPI:
         self._current_tts_proc = None
         self._telemetry_last_net = None
         self._telemetry_last_time = None
+        self._last_nav_target = ""
+        self._last_nav_time = 0.0
         self._shared_audio_queue = queue.Queue(maxsize=150)
         self._cfg = self._load_config()
 
@@ -661,9 +663,17 @@ class JarvisAPI:
         """Execute geospatial navigation to a city, region, landmark, or globe."""
         if not target:
             return
-        print(f"[desktop] Tactical NAV directive received: '{target}'")
+        target_clean = target.strip()
+        now = time.time()
+        # Suppress accidental re-triggering of the same NAV directive within 8 seconds
+        if target_clean.lower() == getattr(self, "_last_nav_target", "").lower() and (now - getattr(self, "_last_nav_time", 0.0)) < 8.0:
+            return
+        self._last_nav_target = target_clean
+        self._last_nav_time = now
+
+        print(f"[desktop] Tactical NAV directive received: '{target_clean}'")
         self._emit("jarvis_play_sfx", {"effect": "target_lock"})
-        self._resolve_and_glide_location(f"go to {target}", glide_only=True)
+        self._resolve_and_glide_location(f"go to {target_clean}", glide_only=True)
 
     def _execute_tactical_layer(self, layer_spec: str):
         """Execute God's Eye tactical layer toggle."""
@@ -2085,23 +2095,10 @@ class JarvisAPI:
                         queue_spoken_text(clean_sentence)
                     return
 
-                # 2. Natural Clause Boundary:
-                # Require at least 38 characters before splitting at a clause break (comma, colon, semicolon, dash).
-                # Introductory phrases ("Hey, Sir,") stay together with the sentence without awkward network pauses.
-                if len(sentence_buffer) >= 38:
-                    clause_m = re.search(r'([,;:\u2014\-]+)\s', sentence_buffer)
-                    if clause_m and clause_m.end() >= 35:
-                        sentence = sentence_buffer[:clause_m.end()].strip()
-                        sentence_buffer = sentence_buffer[clause_m.end():].lstrip()
-                        if len(sentence) > 3:
-                            clean_sentence = re.sub(r'(\w+)_(\w+)', r'\1 \2', sentence).replace('_', ' ')
-                            queue_spoken_text(clean_sentence)
-                        return
-
-                # 3. Word boundary safety flush for long unpunctuated output (110+ chars)
-                if len(sentence_buffer) > 110:
+                # 2. Word boundary safety flush for unusually long unpunctuated run-on output (160+ chars)
+                if len(sentence_buffer) > 160:
                     last_space = sentence_buffer.rfind(' ', 0, len(sentence_buffer) - 1)
-                    if last_space > 40:
+                    if last_space > 80:
                         sentence = sentence_buffer[:last_space].strip()
                         sentence_buffer = sentence_buffer[last_space:].lstrip()
                         if len(sentence) > 3:
@@ -2225,16 +2222,6 @@ class JarvisAPI:
                     print(f"[desktop] Grounding audit warning for active case {self._target.primary}: {warnings}")
             except Exception as e:
                 print(f"[desktop] Post-hoc grounding check audit notice: {e}")
-
-        # Dispatch any tactical God's Eye directives returned from LLM
-        if result.get("nav_location"):
-            self._execute_tactical_nav(result["nav_location"])
-        if result.get("layer_action"):
-            self._execute_tactical_layer(result["layer_action"])
-        if result.get("zoom_action"):
-            self._execute_tactical_zoom(result["zoom_action"])
-        if result.get("radio_action"):
-            self._execute_tactical_radio(result["radio_action"])
 
         self._emit("jarvis_answer", {
             "text": result.get("text", "Done."),

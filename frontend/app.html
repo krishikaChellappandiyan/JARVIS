@@ -5236,9 +5236,11 @@ const HudGalaxy = {
         this.canvas.style.cursor = 'grabbing';
       } else {
         this.draggedNodeId = null;
-        this.dragMode = (e.shiftKey || e.button === 2) ? 'orbit' : 'pan';
+        // Default left-drag is direct 3D ORBIT/rotation. Shift-drag or middle/right click is PAN.
+        this.dragMode = (e.shiftKey || e.button === 1 || e.button === 2) ? 'pan' : 'orbit';
         this.canvas.style.cursor = 'grabbing';
       }
+      if (e.stopPropagation) e.stopPropagation();
       if (e.preventDefault && e.type !== 'touchstart') e.preventDefault();
     };
 
@@ -5247,6 +5249,7 @@ const HudGalaxy = {
       const clientY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
 
       if (this.isDragging) {
+        if (e.stopPropagation) e.stopPropagation();
         const deltaX = clientX - this.dragStartX;
         const deltaY = clientY - this.dragStartY;
         if (this.dragMode === 'node' && this.draggedNodeId) {
@@ -5261,14 +5264,11 @@ const HudGalaxy = {
             node.vy = (deltaY * 0.1);
           }
         } else if (this.dragMode === 'orbit') {
-          this.targetRotY = this.baseRotY - (deltaX * 0.015);
-          this.targetRotX = this.baseRotX + (deltaY * 0.015);
+          this.targetRotY = this.baseRotY - (deltaX * 0.007);
+          this.targetRotX = Math.max(-1.35, Math.min(1.35, this.baseRotX + (deltaY * 0.007)));
         } else {
           this.targetPanX = this.basePanX + deltaX;
           this.targetPanY = this.basePanY + deltaY;
-          // Dynamic subtle 3D tilt during translation
-          this.targetRotY = this.baseRotY - Math.max(-0.4, Math.min(0.4, deltaX * 0.0008));
-          this.targetRotX = this.baseRotX + Math.max(-0.4, Math.min(0.4, deltaY * 0.0008));
         }
         this.updateRecenterButtonVisibility();
       } else {
@@ -5529,10 +5529,10 @@ const HudGalaxy = {
     const cx = (width / 2) + this.panX;
     const cy = (height / 2) + this.panY;
 
-    // Manual orbit + wheel zoom only. Speech never rotates the constellation.
-    this.rotX += (this.targetRotX - this.rotX) * 0.08;
-    this.rotY += (this.targetRotY - this.rotY) * 0.08;
-    this.zoom += (this.targetZoom - this.zoom) * 0.12;
+    // Manual orbit + wheel zoom only. Smooth and responsive lerp.
+    this.rotX += (this.targetRotX - this.rotX) * 0.16;
+    this.rotY += (this.targetRotY - this.rotY) * 0.16;
+    this.zoom += (this.targetZoom - this.zoom) * 0.15;
     const viewScale = Math.max(0.90, Math.min(width, height) / 760) * this.zoom;
     const cosX = Math.cos(this.rotX), sinX = Math.sin(this.rotX);
     const cosY = Math.cos(this.rotY), sinY = Math.sin(this.rotY);
