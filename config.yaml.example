@@ -62,3 +62,20 @@ tools:
 ui:
   mode: desktop
   theme: warm_cream
+
+# ── Voice Activation & Continued-Conversation Pipeline ───────────
+audio_pipeline:
+  wake_word_sensitivity: 0.78
+  speech_hangover_ms: 800
+  silence_timeout_sec: 0.8
+  vad_mode: dynamic_low_latency
+  # Multi-phrase activation list (all trigger local matching)
+  wake_phrases:
+    - "jarvis"
+    - "hey jarvis"
+    - "jarvis you there"
+    - "wake up jarvis"
+    - "alright jarvis"
+    - "yo jarvis"
+  # Continued-conversation open-mic duration (seconds) after JARVIS replies
+  follow_up_window_sec: 10.0

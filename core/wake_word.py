@@ -80,20 +80,77 @@ def _patch_openwakeword_providers():
     except Exception:
         pass
 
+
+def _levenshtein_ratio(s1: str, s2: str) -> float:
+    """Compute string similarity ratio (0.0 to 1.0) using Levenshtein distance in pure Python (0ms overhead)."""
+    if s1 == s2:
+        return 1.0
+    len1, len2 = len(s1), len(s2)
+    if len1 == 0 or len2 == 0:
+        return 0.0
+    dp = [[0] * (len2 + 1) for _ in range(len1 + 1)]
+    for i in range(len1 + 1):
+        dp[i][0] = i
+    for j in range(len2 + 1):
+        dp[0][j] = j
+    for i in range(1, len1 + 1):
+        c1 = s1[i - 1]
+        for j in range(1, len2 + 1):
+            cost = 0 if c1 == s2[j - 1] else 1
+            dp[i][j] = min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost)
+    dist = dp[len1][len2]
+    max_len = max(len1, len2)
+    return 1.0 - (dist / max_len)
+
+
+def _phonetic_code(word: str) -> str:
+    """Fast local Soundex-like phonetic encoding in pure Python (100% on-device, zero network)."""
+    w = re.sub(r'[^a-zA-Z]', '', word.upper())
+    if not w:
+        return ""
+    first_letter = w[0]
+    codes = {
+        'B': '1', 'F': '1', 'P': '1', 'V': '1',
+        'C': '2', 'G': '2', 'J': '2', 'K': '2', 'Q': '2', 'S': '2', 'X': '2', 'Z': '2',
+        'D': '3', 'T': '3',
+        'L': '4',
+        'M': '5', 'N': '5',
+        'R': '6'
+    }
+    encoded = [first_letter]
+    prev = codes.get(first_letter, '0')
+    for char in w[1:]:
+        curr = codes.get(char, '0')
+        if curr != '0' and curr != prev:
+            encoded.append(curr)
+        prev = curr
+    return "".join(encoded[:4]).ljust(4, '0')
+
+
 class WakeWordEngine:
     def __init__(
         self,
         on_wake_detected: Optional[Callable[[str], None]] = None,
         on_speech_ended: Optional[Callable[[], None]] = None,
+        on_follow_up_expired: Optional[Callable[[], None]] = None,
         audio_chunk_callback: Optional[Callable[[bytes], None]] = None,
         model_path: Optional[str] = None,
+        wake_phrases: Optional[list] = None,
         threshold: float = 0.28,
         silence_timeout_sec: float = 0.8,
         max_window_sec: float = 12.0
     ):
         self.on_wake_detected = on_wake_detected
         self.on_speech_ended = on_speech_ended
+        self.on_follow_up_expired = on_follow_up_expired
         self.audio_chunk_callback = audio_chunk_callback
+
+        # Configurable multi-wake phrase list (sorted longest-first so multi-word phrases take precedence)
+        default_phrases = [
+            "jarvis", "hey jarvis", "jarvis you there", "wake up jarvis", "alright jarvis", "yo jarvis", "ok jarvis"
+        ]
+        raw_list = [p.strip().lower() for p in (wake_phrases or default_phrases) if p.strip()]
+        self.wake_phrases = sorted(raw_list, key=lambda p: (len(p.split()), len(p)), reverse=True)
 
         # Load dynamic VAD settings
         vad_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "vad_settings.json")
@@ -126,11 +183,41 @@ class WakeWordEngine:
         self.has_detected_speech_in_window = False
         self._wake_cooldown_until = 0.0
 
+        # Continued-Conversation (Open-Mic Follow-up Window) State
+        self.is_follow_up_mode = False
+        self.follow_up_expires = 0.0
+
         self._init_engine(model_path)
+
+    def start_follow_up_window(self, duration_sec: float = 10.0):
+        """
+        Activate Continued-Conversation mode (open mic without requiring wake phrase).
+        VAD actively listens and buffers speech until speech finishes or duration elapses in silence.
+        """
+        now = time.time()
+        self.is_follow_up_mode = True
+        self.follow_up_expires = now + max(4.0, duration_sec)
+        self.is_window_active = True
+        self.window_start_time = now
+        self.last_speech_time = now
+        self.has_detected_speech_in_window = False
+        self._wake_cooldown_until = 0.0
+        print(f"[wake_word] Continued-conversation window ACTIVE for {duration_sec:.1f}s (open mic, no wake word needed).")
+
+    def cancel_follow_up_window(self):
+        """Immediately cancel follow-up listening mode."""
+        self.is_follow_up_mode = False
+        self.follow_up_expires = 0.0
+        self.is_window_active = False
+
+    def is_in_follow_up(self) -> bool:
+        """Returns True if open-mic follow-up window is active and unexpired."""
+        return self.is_follow_up_mode and time.time() < self.follow_up_expires
 
     def reset_cooldown(self, seconds: float = 2.0):
         """End active capture and suppress wake detection for the cooldown period."""
         self.is_window_active = False
+        self.is_follow_up_mode = False
         self._wake_cooldown_until = time.time() + seconds
         if self._model:
             try:
@@ -233,19 +320,49 @@ class WakeWordEngine:
 
     def check_stt_text_for_wake_or_aliases(self, text: str) -> tuple[bool, str]:
         """
-        Check incoming raw STT transcription against registered JARVIS wake aliases.
+        Check incoming raw STT transcription against registered JARVIS wake phrases.
+        Uses 100% on-device exact prefix, phonetic Soundex, and Levenshtein fuzzy matching.
         Returns (matched: bool, phrase: str)
         """
         if not text:
             return False, ""
         clean = text.strip().lower()
-        aliases = [
-            "jarvis", "hey jarvis", "yo jarvis", "ok jarvis", "okay jarvis", "jarv", "hi jarvis"
-        ]
+        clean_no_punct = re.sub(r'[^\w\s]', '', clean)
+        words = clean_no_punct.split()
+        if not words:
+            return False, ""
 
-        for alias in aliases:
-            if clean.startswith(alias):
-                return True, alias.title()
+        # 1. Exact or prefix match against registered wake phrases
+        for phrase in self.wake_phrases:
+            phrase_clean = re.sub(r'[^\w\s]', '', phrase).lower()
+            if clean_no_punct.startswith(phrase_clean):
+                return True, phrase.title()
+            if phrase_clean in clean_no_punct:
+                leading_text = " ".join(words[:4])
+                if phrase_clean in leading_text:
+                    return True, phrase.title()
+
+        # 2. Local Phonetic & Levenshtein Fuzzy Matcher (0ms, 100% on-device, zero network)
+        for phrase in self.wake_phrases:
+            target_words = re.sub(r'[^\w\s]', '', phrase).lower().split()
+            if not target_words:
+                continue
+            n_target = len(target_words)
+            if len(words) >= n_target:
+                candidate_slice = " ".join(words[:n_target])
+                target_phrase = " ".join(target_words)
+
+                # Levenshtein similarity ratio
+                ratio = _levenshtein_ratio(candidate_slice, target_phrase)
+                if ratio >= 0.82:
+                    return True, phrase.title()
+
+                # Phonetic check for "Jarvis" variations
+                if n_target == 1 and target_words[0] == "jarvis":
+                    cand_word = words[0]
+                    if _phonetic_code(cand_word) == _phonetic_code("jarvis") and ratio >= 0.65:
+                        return True, phrase.title()
+
         return False, ""
 
     def trigger_wake_event(self, trigger_phrase: str = "Hey JARVIS"):
@@ -316,19 +433,38 @@ class WakeWordEngine:
                         elif score >= 0.20:
                             print(f"[wake_word] Candidate voice detected: {score:.3f} (threshold: {self.threshold:.3f})")
 
-                # 2. Run Voice Activity Detection (VAD) for active command window
+                # 2. Run Voice Activity Detection (VAD) for active command or follow-up window
                 if self.is_window_active:
                     elapsed = now - self.window_start_time
                     rms = self._compute_rms(data)
 
+                    # Voice Activity Detected
                     if rms > 180.0:
                         self.last_speech_time = now
                         self.has_detected_speech_in_window = True
+                        if self.is_follow_up_mode:
+                            # Keep extending open-mic follow-up window while operator is speaking
+                            self.follow_up_expires = max(self.follow_up_expires, now + 4.0)
 
                     silence_duration = now - self.last_speech_time
 
-                    if (self.has_detected_speech_in_window and silence_duration >= self.silence_timeout_sec) or (elapsed >= self.max_window_sec):
+                    # Case A: User finished speaking (silence after speech)
+                    if self.has_detected_speech_in_window and silence_duration >= self.silence_timeout_sec:
                         self.is_window_active = False
+                        self.is_follow_up_mode = False
+                        self._wake_cooldown_until = time.time() + 1.5
+                        if self._model:
+                            try:
+                                self._model.reset()
+                            except Exception:
+                                pass
+                        if self.on_speech_ended:
+                            self.on_speech_ended()
+
+                    # Case B: Maximum capture window safety cap reached
+                    elif elapsed >= self.max_window_sec:
+                        self.is_window_active = False
+                        self.is_follow_up_mode = False
                         self._wake_cooldown_until = time.time() + 2.0
                         if self._model:
                             try:
@@ -337,6 +473,14 @@ class WakeWordEngine:
                                 pass
                         if self.on_speech_ended:
                             self.on_speech_ended()
+
+                    # Case C: Open-mic follow-up window expired without any speech detected
+                    elif self.is_follow_up_mode and not self.has_detected_speech_in_window and now >= self.follow_up_expires:
+                        print("[wake_word] Continued-conversation window closed after silence timeout.")
+                        self.is_window_active = False
+                        self.is_follow_up_mode = False
+                        if self.on_follow_up_expired:
+                            self.on_follow_up_expired()
 
             except Exception as e:
                 time.sleep(0.1)

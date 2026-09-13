@@ -566,6 +566,18 @@
     display: none !important;
     opacity: 0 !important;
   }
+  #jarvis-hud-floating-status.followup_listening {
+    display: block !important;
+    opacity: 1 !important;
+    color: #10B981;
+    border-color: rgba(16, 185, 129, 0.55);
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.35);
+    animation: openMicPulse 1.8s infinite ease-in-out;
+  }
+  @keyframes openMicPulse {
+    0%, 100% { box-shadow: 0 0 14px rgba(16, 185, 129, 0.25); border-color: rgba(16, 185, 129, 0.45); }
+    50% { box-shadow: 0 0 26px rgba(16, 185, 129, 0.65); border-color: rgba(16, 185, 129, 0.85); }
+  }
   #jarvis-hud-floating-status.listening {
     display: block !important;
     opacity: 1 !important;
@@ -4945,6 +4957,10 @@ const HudGalaxy = {
     this.resize();
   },
 
+  setState(state) {
+    this.currentState = state;
+  },
+
   initStars() {
     this.stars = [];
     let seed = 0x51A7B00B;
@@ -5894,7 +5910,8 @@ function setHudState(state) {
   const floatingStatus = document.getElementById('jarvis-hud-floating-status') || document.getElementById('joe-hud-floating-status');
   if (floatingStatus) {
     floatingStatus.className = state;
-    if (state === 'listening') floatingStatus.textContent = 'LISTENING...';
+    if (state === 'followup_listening') floatingStatus.textContent = 'OPEN MIC ACTIVE...';
+    else if (state === 'listening') floatingStatus.textContent = 'LISTENING...';
     else if (state === 'speaking') floatingStatus.textContent = 'SPEAKING...';
     else if (state === 'thinking') floatingStatus.textContent = 'THINKING...';
     else if (state === 'interrupted') floatingStatus.textContent = 'INTERRUPTED';
@@ -5905,7 +5922,12 @@ function setHudState(state) {
   const topStatusVal = document.getElementById('top-bar-status-val');
   const topStatusDot = document.getElementById('top-bar-status-dot');
   if (topStatusVal && topStatusDot) {
-    if (state === 'listening') {
+    if (state === 'followup_listening') {
+      topStatusVal.textContent = 'OPEN MIC (NO WAKE WORD)';
+      topStatusVal.style.color = '#10B981';
+      topStatusDot.style.background = '#10B981';
+      topStatusDot.style.boxShadow = '0 0 14px #10B981';
+    } else if (state === 'listening') {
       topStatusVal.textContent = 'LISTENING...';
       topStatusVal.style.color = '#38BDF8';
       topStatusDot.style.background = '#38BDF8';
@@ -8311,6 +8333,20 @@ window.jarvis = window.joe = {
         resetJarvisAudioQueue();
         setHudState('idle');
         showSubtitles('STOP COMMAND DETECTED — Voice playback cancelled.', 'VOICE CONTROL');
+        break;
+      case 'jarvis_followup_listening_active':
+      case 'joe_followup_listening_active':
+        resetJarvisAudioQueue();
+        setHudState('followup_listening');
+        const dur = (data && data.duration) ? data.duration : 10;
+        showSubtitles(`🎙️ [OPEN MIC ACTIVE] Listening for follow-up (${dur}s) — no wake word needed...`, 'CONVERSATION');
+        break;
+      case 'jarvis_followup_listening_ended':
+      case 'joe_followup_listening_ended':
+        if (jarvisHudState === 'followup_listening') {
+          setHudState('idle');
+          showSubtitles('Standby (Wake word active).', 'TELEMETRY');
+        }
         break;
       case 'jarvis_wake_word_detected':
       case 'joe_wake_word_detected':

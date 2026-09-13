@@ -550,6 +550,23 @@ class JarvisAPI:
         self._shared_audio_queue = queue.Queue(maxsize=150)
         self._cfg = self._load_config()
 
+        # Rolling Short-Term Conversational Context Manager
+        try:
+            from core.conversation_context import ConversationContextManager
+            self._context_manager = ConversationContextManager()
+        except Exception as e:
+            print(f"[desktop] Notice initializing context manager: {e}")
+            self._context_manager = None
+
+        # Continued-Conversation (Open-Mic Follow-up Window) State
+        audio_cfg = self._cfg.get("audio_pipeline", {})
+        self._wake_phrases = audio_cfg.get("wake_phrases") or [
+            "jarvis", "hey jarvis", "jarvis you there", "wake up jarvis", "alright jarvis", "yo jarvis", "ok jarvis"
+        ]
+        self._follow_up_window_sec = float(audio_cfg.get("follow_up_window_sec", 10.0))
+        self._follow_up_active = False
+        self._follow_up_expires = 0.0
+
         # Async Background Initialization for Instant App Launch (<0.2s)
         self._wake_engine = None
         threading.Thread(target=self._async_init_wake_engine, daemon=True).start()
@@ -588,7 +605,9 @@ class JarvisAPI:
             self._wake_engine = WakeWordEngine(
                 on_wake_detected=self._on_wake_word_detected,
                 on_speech_ended=self._on_vad_speech_ended,
+                on_follow_up_expired=self._on_follow_up_window_expired,
                 audio_chunk_callback=self._on_shared_audio_chunk,
+                wake_phrases=getattr(self, '_wake_phrases', None),
                 threshold=0.35,
                 silence_timeout_sec=3.2,
                 max_window_sec=30.0
@@ -597,6 +616,29 @@ class JarvisAPI:
             print("[desktop] Background wake engine ready.")
         except Exception as e:
             print(f"[desktop] Background wake engine init notice: {e}")
+
+    def _start_follow_up_window(self):
+        """Keep mic open in continued-conversation mode after J.A.R.V.I.S. finishes speaking."""
+        dur = getattr(self, '_follow_up_window_sec', 10.0)
+        self._follow_up_active = True
+        self._follow_up_expires = time.time() + dur
+        if self._wake_engine:
+            try:
+                self._wake_engine.start_follow_up_window(dur)
+            except Exception as e:
+                print(f"[desktop] Notice starting follow-up window: {e}")
+        print(f"[desktop] Continued-conversation window ACTIVE ({dur:.1f}s) — open mic, no wake word needed.")
+        self._emit("jarvis_followup_listening_active", {
+            "duration": dur,
+            "mode": "open_mic"
+        })
+
+    def _on_follow_up_window_expired(self):
+        """Called when continued-conversation follow-up window times out with silence."""
+        self._follow_up_active = False
+        self._follow_up_expires = 0.0
+        print("[desktop] Continued-conversation window ended (silence timeout). Standby for wake phrase.")
+        self._emit("jarvis_followup_listening_ended", {})
 
     def _on_wake_word_detected(self, phrase: str):
         if time.time() < getattr(self, '_tts_playback_until', 0.0):
@@ -644,6 +686,22 @@ class JarvisAPI:
             print(f"[desktop] Debouncing duplicate input '{text}' received within {now - last_time:.2f}s")
             return
         self._last_input_seen = (norm, now)
+
+        # Barge-in handling: If operator speaks while TTS is actively playing, cut off previous audio immediately
+        if now < getattr(self, '_tts_playback_until', 0.0) or getattr(self, '_current_tts_proc', None) is not None:
+            print(f"[desktop] Barge-in detected during audio playback! Cutting off prior TTS for '{text}'")
+            self._tts_playback_until = 0.0
+            self._emit("jarvis_stop_pcm", {})
+            if getattr(self, '_current_tts_proc', None) is not None:
+                try:
+                    self._current_tts_proc.terminate()
+                except Exception:
+                    pass
+                self._current_tts_proc = None
+
+        # Reset active follow-up timer during speech processing
+        if getattr(self, '_follow_up_active', False):
+            self._follow_up_active = False
 
         print(f"\n[desktop] Unified AI input received: {text}")
         if self._wake_engine:
@@ -988,20 +1046,47 @@ class JarvisAPI:
                         context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., address Sir directly with crisp wit, understated elegance, and analytical precision. Give a concise, articulate summary of the actual execution result. Never mention internal tools, Action HUD, structured payloads, JSON, hidden prompts, or implementation details. Do not output JSON or code unless explicitly requested. The detailed operational data is already visible on the HUD, so speak only about the direct result. Stay grounded in the execution result."
                     else:
                         context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., deliver an articulate, concise verbal debrief of the actual findings to Sir. Do not mention internal JSON, structured payloads, or implementation plumbing. Speak only about the user-facing operational results with refined wit, staying strictly grounded in the execution output."
-                    self._run_ask(context_prompt)
+            # Intercept with Short-Term Conversational Context Manager
+            eff_text = text
+            if getattr(self, '_context_manager', None):
+                curr_target = getattr(self._target, 'primary', None) if self._target else None
+                cls_type, intent_name, entities, resolved_q = self._context_manager.classify_and_resolve(
+                    text, current_target_name=curr_target
+                )
+                print(f"[desktop] Context classification: {cls_type} | Intent: {intent_name} | Entities: {entities} | Resolved: '{resolved_q}'")
+
+                # Missing required slot clarification handling
+                pending = self._context_manager.get_active_pending_slot()
+                if pending and not entities.get(pending["slot"]):
+                    prompt_q = pending.get("prompt_asked", "Which target username, email, or domain shall we investigate, Sir?")
+                    self._emit("jarvis_stream_chunk", {"chunk": prompt_q})
+                    self._emit("jarvis_answer", {"text": prompt_q, "mode": "advisor"})
+                    if self._voice:
+                        self._voice.speak(prompt_q)
+                    self._start_follow_up_window()
                     return
 
-            intent = self._voice.classify_intent(text, self._target)
+                # Clarification answer or resolved follow-up directly launching an investigation
+                if (cls_type in ("clarification_answer", "follow_up")) and intent_name == "investigate" and entities.get("target"):
+                    target_str = entities["target"]
+                    self._emit("scan_status", {"message": f"AI identified investigation task from context — Target: {target_str}"})
+                    self._run_stalk(target_str, None)
+                    return
+
+                if resolved_q and resolved_q != text:
+                    eff_text = resolved_q
+
+            intent = self._voice.classify_intent(eff_text, self._target)
             print(f"[desktop] AI Intent decision: {intent}")
             if intent["type"] == "investigate" and intent.get("target"):
                 target_str = intent["target"]
                 self._emit("scan_status", {"message": f"AI identified investigation task — Target: {target_str}"})
                 brief = None
-                if _CONTEXT_SIGNALS.search(text):
-                    brief = parse_brief_with_slm(text)
+                if _CONTEXT_SIGNALS.search(eff_text):
+                    brief = parse_brief_with_slm(eff_text)
                 self._run_stalk(target_str, brief)
             else:
-                self._run_ask(text)
+                self._run_ask(eff_text)
         except Exception as e:
             print(f"[desktop] Error processing input: {e}")
             self._emit("error", {"message": f"Partner system error: {str(e)}"})
@@ -2252,6 +2337,23 @@ class JarvisAPI:
             self.export_report()
         self._wake_window_expires = time.time() + 15.0
 
+        # Record turn in short-term conversational context manager
+        if getattr(self, '_context_manager', None) and result.get("text"):
+            try:
+                self._context_manager.record_turn(
+                    user_raw=question,
+                    classification="conversational",
+                    intent="query",
+                    entities={},
+                    resolved_query=question,
+                    agent_response=result.get("text", "")
+                )
+            except Exception:
+                pass
+
+        # Trigger Continued-Conversation (open-mic follow-up window)
+        self._start_follow_up_window()
+
     def export_report(self) -> str:
         """Export current investigation target findings to a standalone HTML report."""
         if not self._target:
@@ -2871,46 +2973,52 @@ class JarvisAPI:
                 # Wake word patterns: J.A.R.V.I.S. + J.A.R.V.I.S. + natural addressing
                 # Explicit/natural assistant addressing. These are intentionally
                 # PREFIX-only so ordinary speech such as "my buddy called me"
-                # cannot wake the assistant.
-                # Wake word patterns: J.A.R.V.I.S.
-                jarvis_pattern = r'^(?:(?:hey|hi|hai|yo|yoo|hello|ok|okay)\\s+)?(?:jarvis|jarv|javis)\\b\\s*,?\\s*'
-                jarvis_anywhere = r'\\b(?:jarvis|jarv)\\b'
-                jarvis_match = re.search(jarvis_pattern, text, re.IGNORECASE)
-                anywhere_match = re.search(jarvis_anywhere, text, re.IGNORECASE) 
                 now = time.time()
+                in_followup = (
+                    now < getattr(self, '_follow_up_expires', 0.0)
+                    or now < getattr(self, '_wake_window_expires', 0.0)
+                    or (self._wake_engine and self._wake_engine.is_in_follow_up())
+                )
 
-                # Direct identity / interaction questions bypass wake word check
-                implicit_match = re.search(r'\\b(?:who\\s+are\\s+you|who\\s+are\\s+u|who\\s+u\\s+are|what\\s+can\\s+you\\s+do|who\\s+the\\s+fuck\\s+are\\s+you)\\b', text, re.IGNORECASE)
-
-                if jarvis_match:
-                    active_match = jarvis_match
-                    address_name = "Hey JARVIS"
-                    clean = text[active_match.end():].strip()
-                    print(f"[voice listener] {address_name} match! Raw: '{text}', Clean command: '{clean}'")
-                    self._emit("jarvis_wake_word_detected", {"raw": text, "clean": clean if clean else text})
-                    if clean:
-                        print(f"[voice listener] Sending voice command to assistant: '{clean}'")
-                        self._emit("jarvis_voice_detected", {"text": clean, "raw": text})
-                        self._wake_window_expires = now + 20.0
-                    else:
-                        print(f"[voice listener] Address only spoken ('{text}'). Opening 20s conversation window...")
-                        self._wake_window_expires = now + 20.0
-                elif anywhere_match:
-                    print(f"[voice listener] Anywhere wake phrase match ('{text}')! Triggering assistant command...")
-                    self._emit("jarvis_wake_word_detected", {"raw": text, "clean": text})
+                # 1. Continued-Conversation Mode: Open mic, no wake word needed
+                if in_followup:
+                    print(f"[voice listener] Continued-conversation window active! Sending follow-up command: '{text}'")
                     self._emit("jarvis_voice_detected", {"text": text, "raw": text})
-                    self._wake_window_expires = now + 20.0
-                elif implicit_match:
+                    self._wake_window_expires = now + getattr(self, '_follow_up_window_sec', 10.0)
+                    return
+
+                # 2. Direct identity / interaction questions bypass wake word check
+                implicit_match = re.search(r'\\b(?:who\\s+are\\s+you|who\\s+are\\s+u|who\\s+u\\s+are|what\\s+can\\s+you\\s+do|who\\s+the\\s+fuck\\s+are\\s+you)\\b', text, re.IGNORECASE)
+                if implicit_match:
                     print(f"[voice listener] Direct query match ('{text}')! Triggering assistant command...")
                     self._emit("jarvis_wake_word_detected", {"raw": text, "clean": text})
                     self._emit("jarvis_voice_detected", {"text": text, "raw": text})
-                    self._wake_window_expires = now + 20.0
-                elif now < getattr(self, '_wake_window_expires', 0.0):
-                    print(f"[voice listener] Active conversation window! Sending follow-up command to assistant: '{text}'")
-                    self._emit("jarvis_voice_detected", {"text": text, "raw": text})
-                    self._wake_window_expires = now + 20.0
+                    self._wake_window_expires = now + 15.0
+                    return
+
+                # 3. Multi Wake-Phrase Matching (Local Phonetic & Exact)
+                is_wake = False
+                matched_phrase = ""
+                if self._wake_engine:
+                    is_wake, matched_phrase = self._wake_engine.check_stt_text_for_wake_or_aliases(text)
                 else:
-                    print(f"[voice listener] No wake word detected in ambient audio: '{text}'")
+                    m_fb = re.search(r'^(?:(?:hey|hi|yo|hello|ok|okay)\\s+)?(?:jarvis|jarv)\\b', text, re.IGNORECASE)
+                    if m_fb:
+                        is_wake = True
+                        matched_phrase = m_fb.group(0)
+
+                if is_wake:
+                    clean = re.sub(re.escape(matched_phrase), '', text, flags=re.IGNORECASE).strip(" ,:.-")
+                    print(f"[voice listener] Wake phrase matched ('{matched_phrase}')! Command: '{clean}'")
+                    self._emit("jarvis_wake_word_detected", {"raw": text, "clean": clean if clean else text, "phrase": matched_phrase})
+                    if clean:
+                        self._emit("jarvis_voice_detected", {"text": clean, "raw": text})
+                        self._wake_window_expires = now + 15.0
+                    else:
+                        print(f"[voice listener] Wake phrase only spoken ('{matched_phrase}'). Opening continued-conversation window...")
+                        self._start_follow_up_window()
+                else:
+                    print(f"[voice listener] Ambient audio ignored (no wake phrase matched): '{text}'")
                     self._emit("jarvis_speech_ended", {})
             else:
                 print("[voice listener] Audio transcribed to empty text.")
