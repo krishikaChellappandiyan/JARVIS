@@ -1,4 +1,5 @@
 # modules/maps_nav.py
+# MOCK — not wired to a real API
 """
 Maps & Live Navigation Engine for J.A.R.V.I.S..
 Provides location lookup, nearby POI search (e.g. 24-hour taco spot),

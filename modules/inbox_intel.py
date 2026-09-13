@@ -1,4 +1,5 @@
 # modules/inbox_intel.py
+# MOCK — not wired to a real API
 """
 Read-Only Inbox & Messaging Scanner Module for J.A.R.V.I.S..
 Scans inbox for urgent messages (flight delays, boss panic texts, "WE NEED TO TALK", critical alerts)

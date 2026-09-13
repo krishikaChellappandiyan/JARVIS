@@ -1,4 +1,5 @@
 # modules/cloud_docs.py
+# MOCK — not wired to a real API
 """
 Cloud & File Document Access Module for J.A.R.V.I.S..
 Searches local workspace & cloud drives (Google Drive, Dropbox) for hidden/forgotten files

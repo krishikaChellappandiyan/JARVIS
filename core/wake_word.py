@@ -87,7 +87,7 @@ class WakeWordEngine:
         on_speech_ended: Optional[Callable[[], None]] = None,
         audio_chunk_callback: Optional[Callable[[bytes], None]] = None,
         model_path: Optional[str] = None,
-        threshold: float = 0.35,
+        threshold: float = 0.28,
         silence_timeout_sec: float = 0.8,
         max_window_sec: float = 12.0
     ):

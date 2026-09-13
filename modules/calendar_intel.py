@@ -1,4 +1,5 @@
 # modules/calendar_intel.py
+# MOCK — not wired to a real API
 """
 Calendar & Scheduling Intel Module for J.A.R.V.I.S..
 Provides event management, double-booking conflict detection, auto-rescheduling,

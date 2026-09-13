@@ -7734,6 +7734,26 @@ export default defineConfig(({ mode }) => {
   for (const [key, val] of Object.entries(loaded)) {
     if (process.env[key] === undefined) process.env[key] = val;
   }
+  // Check parent directory (JARVIS root) for .env and config.yaml
+  const rootDir = path.resolve(__dirname, '..');
+  const rootEnv = loadEnv(mode, rootDir, '');
+  for (const [key, val] of Object.entries(rootEnv)) {
+    if (process.env[key] === undefined) process.env[key] = val;
+  }
+  try {
+    const configYamlPath = path.join(rootDir, 'config.yaml');
+    if (fs.existsSync(configYamlPath)) {
+      const content = fs.readFileSync(configYamlPath, 'utf8');
+      const cesiumMatch = content.match(/cesium_ion_token:\s*['"]?([^'"\r\n]+)['"]?/);
+      if (cesiumMatch && cesiumMatch[1] && !process.env.CESIUM_ION_TOKEN) {
+        process.env.CESIUM_ION_TOKEN = cesiumMatch[1].trim();
+      }
+      const firmsMatch = content.match(/nasa_firms_key:\s*['"]?([^'"\r\n]+)['"]?/);
+      if (firmsMatch && firmsMatch[1] && !process.env.FIRMS_MAP_KEY) {
+        process.env.FIRMS_MAP_KEY = firmsMatch[1].trim();
+      }
+    }
+  } catch (_) {}
   const env = { ...process.env };
   const localAllowedHosts = ['localhost', '127.0.0.1', '.local'];
   return {

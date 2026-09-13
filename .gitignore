@@ -76,6 +76,7 @@ config.yaml
 .env
 .env.*
 *.env
+gods_eye/.env
 config.yaml
 *_secret*
 *_key*
