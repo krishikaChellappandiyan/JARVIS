@@ -8556,6 +8556,25 @@ window.jarvis = window.joe = {
         }
         break;
 
+      case 'control_target_lock':
+        if (data) {
+          if (data.action === 'release' || data.action === 'unlock' || data.action === 'off') {
+            window.unlockTarget();
+          } else if (data.target) {
+            let ent = null;
+            if (typeof _flightsDataSource !== 'undefined' && _flightsDataSource) {
+              ent = _flightsDataSource.entities.values.find(e => e._tacticalData && (
+                (e._tacticalData.callsign || '').toLowerCase() === String(data.target).toLowerCase() ||
+                (e._tacticalData.hex || '').toLowerCase() === String(data.target).toLowerCase()
+              ));
+            }
+            if (ent) {
+              window.lockTarget(ent, ent._tacticalData);
+            }
+          }
+        }
+        break;
+
       case 'predict_satellite_pass':
         if (data && typeof window.predictNextSatellitePass === 'function') {
           window.predictNextSatellitePass(Number(data.lat), Number(data.lon), data.label || 'SECTOR');
@@ -9858,10 +9877,93 @@ const JarvisAnnotations = {
 };
 window.JarvisAnnotations = JarvisAnnotations;
 
-// ── Phase 4: Tactical 3D Cockpit & Entity Chase Cam ──
+// ── Tactical Target Locking Engine ──
+window.lockedTargetEntity = null;
+
+window.lockTarget = function(entity, data) {
+  const viewer = window.cesiumViewer;
+  if (!viewer || viewer.isDestroyed() || !entity) return;
+
+  if (window.lockedTargetEntity === entity) {
+    window.unlockTarget();
+    return;
+  }
+
+  if (window.JarvisCockpit && window.JarvisCockpit.active) {
+    window.JarvisCockpit.exit();
+  }
+
+  window.lockedTargetEntity = entity;
+  viewer.trackedEntity = entity;
+  viewer.scene.requestRenderMode = false;
+
+  if (window.JarvisSFX) window.JarvisSFX.targetLock();
+
+  const heading = data?.heading || 0;
+  const headingRad = Cesium.Math.toRadians(heading + 180);
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  viewer.zoomTo(entity, new Cesium.HeadingPitchRange(headingRad, Cesium.Math.toRadians(-25), 3800));
+
+  window._updateLockUi(true, data?.callsign || data?.name || 'TARGET');
+  if (typeof showSubtitles === 'function') {
+    showSubtitles(`🔒 Tactical target lock established: ${data?.callsign || data?.name || 'CONTACT'}`, 'SYSTEM');
+  }
+};
+
+window.unlockTarget = function() {
+  const viewer = window.cesiumViewer;
+  if (viewer && !viewer.isDestroyed()) {
+    viewer.trackedEntity = undefined;
+    if (!window.JarvisCockpit || !window.JarvisCockpit.active) {
+      viewer.scene.requestRenderMode = true;
+    }
+  }
+  window.lockedTargetEntity = null;
+  window._updateLockUi(false);
+  if (window.JarvisSFX) window.JarvisSFX.flightSwoosh();
+  if (typeof showSubtitles === 'function') {
+    showSubtitles('Target lock released.', 'SYSTEM');
+  }
+};
+
+window._updateLockUi = function(isLocked, label = '') {
+  const actBtn = document.getElementById('inspect-action-btn');
+  if (actBtn) {
+    if (isLocked) {
+      actBtn.textContent = '🔒 RELEASE TARGET LOCK';
+      actBtn.style.background = 'rgba(34, 197, 94, 0.25)';
+      actBtn.style.borderColor = '#22C55E';
+      actBtn.style.color = '#4ADE80';
+      actBtn.onclick = () => window.unlockTarget();
+    } else {
+      actBtn.textContent = 'LOCK TARGET';
+      actBtn.style.background = 'rgba(0, 240, 255, 0.15)';
+      actBtn.style.borderColor = '#00F0FF';
+      actBtn.style.color = '#00F0FF';
+      actBtn.onclick = () => window.lockInspectTarget();
+    }
+  }
+  const coordsLbl = document.getElementById('globe-coords-label');
+  if (coordsLbl && isLocked) {
+    coordsLbl.innerHTML = `<span style="color:#22C55E; font-weight:800;">[TRACKING LOCKED]</span> ${label}`;
+  }
+};
+
+// ── Phase 4: Tactical 3D Cockpit & Tail Chase Cam Engine (60FPS PreUpdate) ──
 const JarvisCockpit = {
+  active: false,
   activeEntity: null,
   activeIdx: 0,
+  viewMode: 'chase',
+  _preUpdateRemover: null,
+  _scratchPos: new Cesium.Cartesian3(),
+  _scratchCamPos: new Cesium.Cartesian3(),
+  _scratchCamOffset: new Cesium.Cartesian3(),
+  _scratchLocalFwd: new Cesium.Cartesian3(),
+  _scratchWorldFwd: new Cesium.Cartesian3(),
+  _scratchLocalUp: new Cesium.Cartesian3(),
+  _scratchWorldUp: new Cesium.Cartesian3(),
+  _scratchEnu: new Cesium.Matrix4(),
 
   seedContingencyFlight() {
     const viewer = window.cesiumViewer;
@@ -9873,6 +9975,13 @@ const JarvisCockpit = {
     const jetIconUri = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(jetSvg);
     const entity = _flightsDataSource.entities.add({
       position: pos,
+      model: {
+        uri: '/models/jet.glb',
+        minimumPixelSize: 36,
+        maximumScale: 150,
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 50000)
+      },
+      orientation: Cesium.Transforms.headingPitchRollQuaternion(pos, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(45), 0, 0)),
       billboard: {
         image: jetIconUri,
         width: 26,
@@ -9880,7 +9989,8 @@ const JarvisCockpit = {
         rotation: Cesium.Math.toRadians(360 - 45),
         color: Cesium.Color.fromCssColorString('#FF9D2E'),
         verticalOrigin: Cesium.VerticalOrigin.CENTER,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(35000, Number.POSITIVE_INFINITY)
       },
       label: {
         text: '✈ VIPER-11 FL280',
@@ -9916,17 +10026,20 @@ const JarvisCockpit = {
     const viewer = window.cesiumViewer;
     if (!viewer || viewer.isDestroyed()) return;
 
-    // Ensure flight layer is active so planes exist
+    if (window.lockedTargetEntity) {
+      window.unlockTarget();
+    }
+
     if (!_tacticalLayers.flights) {
       window.toggleTacticalLayer('flights');
     }
 
     let target = null;
     if (typeof _flightsDataSource !== 'undefined' && _flightsDataSource && _flightsDataSource.entities.values.length > 0) {
-      const entities = _flightsDataSource.entities.values.filter(e => e._tacticalData && e.billboard);
+      const entities = _flightsDataSource.entities.values.filter(e => e._tacticalData && (e.billboard || e.model));
       if (entities.length > 0) {
         if (targetCallsignOrId) {
-          target = entities.find(e => (e._tacticalData.callsign || '').toLowerCase() === targetCallsignOrId.toLowerCase()) || entities[0];
+          target = entities.find(e => (e._tacticalData.callsign || '').toLowerCase() === String(targetCallsignOrId).toLowerCase()) || entities[0];
         } else if (typeof _inspectTargetData !== 'undefined' && _inspectTargetData && _inspectTargetData._entity) {
           target = _inspectTargetData._entity;
         } else {
@@ -9943,33 +10056,119 @@ const JarvisCockpit = {
       }
     }
 
+    this.active = true;
     this.activeEntity = target;
-    viewer.trackedEntity = target;
 
-    const heading = target._tacticalData ? target._tacticalData.heading : 0;
-    const headingRad = Cesium.Math.toRadians((heading || 0) + 180);
-    const pitchRad = Cesium.Math.toRadians(-12);
-    const rangeMeters = 1800;
+    viewer.trackedEntity = undefined;
+    viewer.scene.screenSpaceCameraController.enableInputs = false;
+    viewer.scene.requestRenderMode = false;
 
-    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
-    viewer.zoomTo(target, new Cesium.HeadingPitchRange(headingRad, pitchRad, rangeMeters));
+    if (this._preUpdateRemover) {
+      this._preUpdateRemover();
+      this._preUpdateRemover = null;
+    }
+    const updateCb = () => this.updateFrame();
+    viewer.scene.preUpdate.addEventListener(updateCb);
+    this._preUpdateRemover = () => viewer.scene.preUpdate.removeEventListener(updateCb);
 
     this.showCockpitHud(target._tacticalData);
     if (window.JarvisSFX) window.JarvisSFX.targetLock();
+    if (typeof showSubtitles === 'function') {
+      showSubtitles(`🎮 Cockpit chase camera engaged: ${target._tacticalData?.callsign || 'CONTACT'} [${this.viewMode.toUpperCase()}]`, 'COCKPIT');
+    }
+  },
+
+  updateFrame() {
+    if (!this.active || !this.activeEntity) return;
+    const viewer = window.cesiumViewer;
+    if (!viewer || viewer.isDestroyed()) {
+      this.exit();
+      return;
+    }
+
+    const currentTime = viewer.clock.currentTime;
+    let targetPos = null;
+    if (this.activeEntity.position) {
+      if (typeof this.activeEntity.position.getValue === 'function') {
+        targetPos = this.activeEntity.position.getValue(currentTime, this._scratchPos);
+      } else {
+        targetPos = this.activeEntity.position;
+      }
+    }
+    if (!targetPos) return;
+
+    const data = this.activeEntity._tacticalData || {};
+    const headingDeg = Number(data.heading || 0);
+    const headingRad = Cesium.Math.toRadians(headingDeg);
+    const pitchRad = Cesium.Math.toRadians(Number(data.pitch || 0));
+
+    Cesium.Transforms.eastNorthUpToFixedFrame(targetPos, Cesium.Ellipsoid.WGS84, this._scratchEnu);
+
+    this._scratchLocalFwd.x = Math.sin(headingRad) * Math.cos(pitchRad);
+    this._scratchLocalFwd.y = Math.cos(headingRad) * Math.cos(pitchRad);
+    this._scratchLocalFwd.z = Math.sin(pitchRad);
+    Cesium.Matrix4.multiplyByPointAsVector(this._scratchEnu, this._scratchLocalFwd, this._scratchWorldFwd);
+    Cesium.Cartesian3.normalize(this._scratchWorldFwd, this._scratchWorldFwd);
+
+    this._scratchLocalUp.x = -Math.sin(headingRad) * Math.sin(pitchRad);
+    this._scratchLocalUp.y = -Math.cos(headingRad) * Math.sin(pitchRad);
+    this._scratchLocalUp.z = Math.cos(pitchRad);
+    Cesium.Matrix4.multiplyByPointAsVector(this._scratchEnu, this._scratchLocalUp, this._scratchWorldUp);
+    Cesium.Cartesian3.normalize(this._scratchWorldUp, this._scratchWorldUp);
+
+    const isCockpit = this.viewMode === 'cockpit';
+    const forwardDist = isCockpit ? 4.0 : -180.0;
+    const upDist = isCockpit ? 2.0 : 36.0;
+
+    Cesium.Cartesian3.multiplyByScalar(this._scratchWorldFwd, forwardDist, this._scratchCamPos);
+    Cesium.Cartesian3.add(targetPos, this._scratchCamPos, this._scratchCamPos);
+    Cesium.Cartesian3.multiplyByScalar(this._scratchWorldUp, upDist, this._scratchCamOffset);
+    Cesium.Cartesian3.add(this._scratchCamPos, this._scratchCamOffset, this._scratchCamPos);
+
+    viewer.camera.setView({
+      destination: this._scratchCamPos,
+      orientation: {
+        direction: this._scratchWorldFwd,
+        up: this._scratchWorldUp
+      }
+    });
+
+    this.updateHudTelemetry(data);
+  },
+
+  toggleViewMode() {
+    this.viewMode = this.viewMode === 'chase' ? 'cockpit' : 'chase';
+    const btn = document.getElementById('cockpit-viewmode-btn');
+    if (btn) {
+      btn.textContent = this.viewMode === 'chase' ? 'MODE: CHASE' : 'MODE: COCKPIT';
+    }
+    if (window.JarvisSFX) window.JarvisSFX.uiClick();
   },
 
   exit() {
+    if (!this.active) return;
+    this.active = false;
     const viewer = window.cesiumViewer;
-    if (!viewer || viewer.isDestroyed()) return;
-    viewer.trackedEntity = undefined;
+    if (viewer && !viewer.isDestroyed()) {
+      if (this._preUpdateRemover) {
+        this._preUpdateRemover();
+        this._preUpdateRemover = null;
+      }
+      viewer.scene.screenSpaceCameraController.enableInputs = true;
+      viewer.scene.requestRenderMode = true;
+      viewer.trackedEntity = undefined;
+    }
     this.activeEntity = null;
     this.hideCockpitHud();
     if (window.JarvisSFX) window.JarvisSFX.flightSwoosh();
+    if (typeof showSubtitles === 'function') {
+      showSubtitles('Cockpit camera disengaged.', 'COCKPIT');
+    }
   },
 
   next() {
     if (typeof _flightsDataSource === 'undefined' || !_flightsDataSource) return;
-    const entities = _flightsDataSource.entities.values.filter(e => e._tacticalData && e.billboard);
+    const entities = _flightsDataSource.entities.values.filter(e => e._tacticalData && (e.billboard || e.model));
     if (entities.length === 0) return;
     this.activeIdx = (this.activeIdx + 1) % entities.length;
     this.enter(entities[this.activeIdx]._tacticalData.callsign);
@@ -9977,21 +10176,19 @@ const JarvisCockpit = {
 
   prev() {
     if (typeof _flightsDataSource === 'undefined' || !_flightsDataSource) return;
-    const entities = _flightsDataSource.entities.values.filter(e => e._tacticalData && e.billboard);
+    const entities = _flightsDataSource.entities.values.filter(e => e._tacticalData && (e.billboard || e.model));
     if (entities.length === 0) return;
     this.activeIdx = (this.activeIdx - 1 + entities.length) % entities.length;
     this.enter(entities[this.activeIdx]._tacticalData.callsign);
   },
 
-  updateTelemetry(ac) {
-    const hud = document.getElementById('jarvis-cockpit-hud');
-    if (!hud || hud.style.display === 'none') return;
+  updateHudTelemetry(data) {
     const spdEl = document.getElementById('cockpit-telemetry-spd');
     const altEl = document.getElementById('cockpit-telemetry-alt');
     const hdgEl = document.getElementById('cockpit-telemetry-hdg');
-    if (spdEl && ac.speedKnots) spdEl.textContent = `${Math.round(ac.speedKnots)} KTS`;
-    if (altEl && ac.altMeters) altEl.textContent = `${Math.round(ac.altMeters * 3.28084)} FT`;
-    if (hdgEl && ac.headingDeg !== undefined) hdgEl.textContent = `${Math.round(ac.headingDeg)}°`;
+    if (spdEl && data?.speed) spdEl.textContent = `${Math.round(data.speed)} KTS`;
+    if (altEl && data?.alt) altEl.textContent = `${Math.round(data.alt)} FT`;
+    if (hdgEl && data?.heading !== undefined) hdgEl.textContent = `${Math.round(data.heading)}°`;
   },
 
   showCockpitHud(data) {
@@ -9999,7 +10196,7 @@ const JarvisCockpit = {
     if (!hud) {
       hud = document.createElement('div');
       hud.id = 'jarvis-cockpit-hud';
-      hud.style.cssText = 'position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:10001; pointer-events:auto; display:flex; align-items:center; gap:16px; background:rgba(6,10,18,0.92); border:1px solid #FF9D2E; border-radius:8px; padding:10px 18px; box-shadow:0 0 24px rgba(255,157,46,0.35); font-family:"JetBrains Mono",monospace; backdrop-filter:blur(10px);';
+      hud.style.cssText = 'position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:10001; pointer-events:auto; display:flex; align-items:center; gap:12px; background:rgba(6,10,18,0.92); border:1px solid #FF9D2E; border-radius:8px; padding:8px 16px; box-shadow:0 0 24px rgba(255,157,46,0.35); font-family:"JetBrains Mono",monospace; backdrop-filter:blur(10px); user-select:none;';
       document.body.appendChild(hud);
     }
     const callsign = data?.callsign || 'CONTACT';
@@ -10009,14 +10206,15 @@ const JarvisCockpit = {
     hud.innerHTML = `
       <div style="color:#FFB84D; font-weight:700; font-size:12px; display:flex; align-items:center; gap:6px;">
         <span class="pulse-dot" style="width:8px; height:8px; background:#FF9D2E; border-radius:50%; display:inline-block;"></span>
-        COCKPIT CHASE: ${callsign}
+        <span id="cockpit-target-callsign">${callsign}</span>
       </div>
       <div style="font-size:11px; color:#A0AEC0;">SPD: <span id="cockpit-telemetry-spd" style="color:#FFFFFF; font-weight:700;">${spd} KTS</span></div>
       <div style="font-size:11px; color:#A0AEC0;">ALT: <span id="cockpit-telemetry-alt" style="color:#FFFFFF; font-weight:700;">${alt} FT</span></div>
       <div style="font-size:11px; color:#A0AEC0;">HDG: <span id="cockpit-telemetry-hdg" style="color:#FFFFFF; font-weight:700;">${hdg}°</span></div>
-      <button onclick="window.JarvisCockpit.prev()" style="background:rgba(255,157,46,0.15); border:1px solid rgba(255,157,46,0.5); color:#FFB84D; font-size:10px; font-weight:700; padding:4px 8px; border-radius:4px; cursor:pointer;" title="Previous Aircraft">PREV</button>
-      <button onclick="window.JarvisCockpit.next()" style="background:rgba(255,157,46,0.15); border:1px solid rgba(255,157,46,0.5); color:#FFB84D; font-size:10px; font-weight:700; padding:4px 8px; border-radius:4px; cursor:pointer;" title="Next Aircraft">NEXT</button>
-      <button onclick="window.JarvisCockpit.exit()" style="background:rgba(239,68,68,0.25); border:1px solid #EF4444; color:#FCA5A5; font-size:10px; font-weight:700; padding:4px 10px; border-radius:4px; cursor:pointer;" title="Exit Cockpit Camera">EXIT</button>
+      <button id="cockpit-viewmode-btn" onclick="window.JarvisCockpit.toggleViewMode()" style="background:rgba(0,240,255,0.15); border:1px solid #00F0FF; color:#00F0FF; font-size:9.5px; font-weight:700; padding:4px 8px; border-radius:4px; cursor:pointer;" title="Toggle between Tail Chase and Cockpit POV (Press V)">${this.viewMode === 'chase' ? 'MODE: CHASE' : 'MODE: COCKPIT'}</button>
+      <button onclick="window.JarvisCockpit.prev()" style="background:rgba(255,157,46,0.15); border:1px solid rgba(255,157,46,0.5); color:#FFB84D; font-size:9.5px; font-weight:700; padding:4px 8px; border-radius:4px; cursor:pointer;" title="Previous Aircraft">PREV</button>
+      <button onclick="window.JarvisCockpit.next()" style="background:rgba(255,157,46,0.15); border:1px solid rgba(255,157,46,0.5); color:#FFB84D; font-size:9.5px; font-weight:700; padding:4px 8px; border-radius:4px; cursor:pointer;" title="Next Aircraft">NEXT</button>
+      <button onclick="window.JarvisCockpit.exit()" style="background:rgba(239,68,68,0.25); border:1px solid #EF4444; color:#FCA5A5; font-size:9.5px; font-weight:700; padding:4px 10px; border-radius:4px; cursor:pointer;" title="Exit Cockpit Camera (Escape)">EXIT</button>
     `;
     hud.style.display = 'flex';
   },
@@ -10035,13 +10233,38 @@ const JarvisCockpit = {
       this.next();
     } else if (act === 'prev' || act === 'previous') {
       this.prev();
+    } else if (act === 'toggle' || act === 'viewmode') {
+      this.toggleViewMode();
     } else {
       this.enter(data.target || null);
     }
   }
 };
 window.JarvisCockpit = JarvisCockpit;
-window.startCockpitChase = () => JarvisCockpit.enter();
+window.startCockpitChase = (callsign) => JarvisCockpit.enter(callsign);
+
+// Keyboard controls for tactical cockpit & chase view
+window.addEventListener('keydown', (e) => {
+  if (e.target && ['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+  if (e.key === 'Escape') {
+    if (window.JarvisCockpit && window.JarvisCockpit.active) {
+      e.preventDefault();
+      window.JarvisCockpit.exit();
+    } else if (window.lockedTargetEntity) {
+      e.preventDefault();
+      window.unlockTarget();
+    }
+  } else if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (window.JarvisCockpit) {
+      if (window.JarvisCockpit.active) window.JarvisCockpit.exit();
+      else window.JarvisCockpit.enter();
+    }
+  } else if ((e.key === 'v' || e.key === 'V') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (window.JarvisCockpit && window.JarvisCockpit.active) {
+      window.JarvisCockpit.toggleViewMode();
+    }
+  }
+});
 
 // Double-click on Earth globe raycasts to exact sector and drops beacon
 window.addEventListener('dblclick', (e) => {
@@ -10592,10 +10815,20 @@ window.unpinTarget = function(targetId) {
 window.focusPinnedTarget = function(targetId) {
   const target = _pinnedTargets.find(t => t.id === targetId);
   if (!target || !window.cesiumViewer || window.cesiumViewer.isDestroyed()) return;
-  window.cesiumViewer.camera.flyTo({
-    destination: Cesium.Cartesian3.fromDegrees(target.lon, target.lat, Math.max(1200, (target.alt || 0) + 3500)),
-    duration: 1.5
-  });
+
+  let ent = null;
+  if (typeof _flightsDataSource !== 'undefined' && _flightsDataSource) {
+    ent = _flightsDataSource.entities.values.find(e => e._tacticalData && (e._tacticalData.hex === targetId || (e._tacticalData.callsign || '').toLowerCase() === targetId.toLowerCase()));
+  }
+
+  if (ent) {
+    window.lockTarget(ent, ent._tacticalData);
+  } else {
+    window.cesiumViewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(target.lon, target.lat, Math.max(1200, (target.alt || 0) + 3500)),
+      duration: 1.5
+    });
+  }
 };
 
 function _renderPinnedTargets() {
@@ -10613,8 +10846,9 @@ function _renderPinnedTargets() {
         <div style="color:#FFB84D; font-size:11px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${t.label}</div>
         <div style="color:#8A8D91; font-size:9px; font-family:var(--mono);">${t.lat.toFixed(3)}°, ${t.lon.toFixed(3)}°</div>
       </div>
-      <div style="display:flex; gap:4px; margin-left:6px; flex-shrink:0;">
-        <button onclick="window.focusPinnedTarget('${t.id}')" style="background:rgba(56,189,248,0.2); border:1px solid #38BDF8; color:#38BDF8; font-size:9px; font-weight:700; border-radius:3px; padding:2px 6px; cursor:pointer;">FOCUS</button>
+      <div style="display:flex; gap:3px; margin-left:6px; flex-shrink:0;">
+        <button onclick="window.JarvisCockpit.enter('${t.label}')" style="background:rgba(255,157,46,0.2); border:1px solid #FF9D2E; color:#FFB84D; font-size:9px; font-weight:700; border-radius:3px; padding:2px 5px; cursor:pointer;" title="Chase this contact">CHASE</button>
+        <button onclick="window.focusPinnedTarget('${t.id}')" style="background:rgba(56,189,248,0.2); border:1px solid #38BDF8; color:#38BDF8; font-size:9px; font-weight:700; border-radius:3px; padding:2px 5px; cursor:pointer;" title="Lock & Track Target">LOCK</button>
         <button onclick="window.unpinTarget('${t.id}')" style="background:rgba(239,68,68,0.2); border:1px solid #EF4444; color:#EF4444; font-size:9px; font-weight:700; border-radius:3px; padding:2px 5px; cursor:pointer;">✕</button>
       </div>
     </div>
@@ -10660,17 +10894,30 @@ window.handleMeasurementClick = function(cartesian) {
   });
   _measureEntities.push(pointEnt);
 
+  function _computeRangeCircle(cLon, cLat, radiusM, segments = 72) {
+    const coords = [];
+    const R = 6378137.0;
+    const dLat = (radiusM / R) * (180 / Math.PI);
+    const dLon = dLat / Math.cos(cLat * Math.PI / 180);
+    for (let i = 0; i <= segments; i++) {
+      const theta = (i / segments) * 2 * Math.PI;
+      coords.push(cLon + dLon * Math.sin(theta));
+      coords.push(cLat + dLat * Math.cos(theta));
+    }
+    return Cesium.Cartesian3.fromDegreesArray(coords);
+  }
+
   if (_measurePoints.length === 1) {
     [25000, 50000, 100000].forEach((radiusM, idx) => {
       const ring = window.cesiumViewer.entities.add({
-        position: Cesium.Cartesian3.fromDegrees(lon, lat),
-        ellipse: {
-          semiMinorAxis: radiusM,
-          semiMajorAxis: radiusM,
-          material: Cesium.Color.fromCssColorString(idx === 0 ? 'rgba(0, 240, 255, 0.10)' : 'rgba(0, 240, 255, 0.03)'),
-          outline: true,
-          outlineColor: Cesium.Color.fromCssColorString('rgba(0, 240, 255, 0.55)'),
-          outlineWidth: 1.5
+        polyline: {
+          positions: _computeRangeCircle(lon, lat, radiusM),
+          width: 1.8,
+          clampToGround: true,
+          material: new Cesium.PolylineDashMaterialProperty({
+            color: Cesium.Color.fromCssColorString(idx === 0 ? 'rgba(0, 240, 255, 0.85)' : 'rgba(0, 240, 255, 0.55)'),
+            dashLength: 16.0
+          })
         }
       });
       _measureEntities.push(ring);
@@ -11209,7 +11456,9 @@ window.closeGlobeInspectCard = function() {
 };
 
 window.lockInspectTarget = function() {
-  if (_inspectTargetData) {
+  if (_inspectTargetData && _inspectTargetData._entity) {
+    window.lockTarget(_inspectTargetData._entity, _inspectTargetData);
+  } else if (_inspectTargetData) {
     window.focusGlobeCoordinates(_inspectTargetData.lat, _inspectTargetData.lon, _inspectTargetData.callsign || _inspectTargetData.label || _inspectTargetData.name);
   }
 };
@@ -11233,18 +11482,10 @@ window.flyToCameraPOV = function(cam) {
 
 // Cockpit Flight Chase Camera Mode (God's Eye Feature)
 window.startCockpitChase = function() {
-  if (!_inspectTargetData || !_inspectTargetData._entity) return;
-  const viewer = window.cesiumViewer;
-  if (!viewer || viewer.isDestroyed()) return;
-
-  const entity = _inspectTargetData._entity;
-  viewer.trackedEntity = entity;
-
-  const headingRad = Cesium.Math.toRadians((_inspectTargetData.heading || 0) + 180);
-  const pitchRad = Cesium.Math.toRadians(-12);
-  const rangeMeters = 3500;
-  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
-  viewer.zoomTo(entity, new Cesium.HeadingPitchRange(headingRad, pitchRad, rangeMeters));
+  if (window.JarvisCockpit) {
+    const callsign = _inspectTargetData?.callsign || null;
+    window.JarvisCockpit.enter(callsign);
+  }
 };
 
 // Tactical RF Radio Tuning Static Synthesizer (God's Eye Audio Architecture)
@@ -12021,6 +12262,15 @@ function initGlobeIntelligence(viewer) {
             if (existing.entity.billboard) {
               existing.entity.billboard.rotation = Cesium.Math.toRadians(360 - trackAngle);
             }
+            if (existing.entity.orientation) {
+              const curPos = existing.entity.position && existing.entity.position.getValue ? existing.entity.position.getValue(window.cesiumViewer.clock.currentTime) : null;
+              if (curPos) {
+                existing.entity.orientation = Cesium.Transforms.headingPitchRollQuaternion(
+                  curPos,
+                  new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(trackAngle), 0, 0)
+                );
+              }
+            }
             if (existing.entity.label) {
               existing.entity.label.text = `✈ ${callsign} ${fl}`;
             }
@@ -12034,6 +12284,13 @@ function initGlobeIntelligence(viewer) {
             const initPos = Cesium.Cartesian3.fromDegrees(Number(ac.lon), Number(ac.lat), altMeters);
             const entity = _flightsDataSource.entities.add({
               position: initPos,
+              model: {
+                uri: '/models/jet.glb',
+                minimumPixelSize: 32,
+                maximumScale: 140,
+                distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 40000)
+              },
+              orientation: Cesium.Transforms.headingPitchRollQuaternion(initPos, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(trackAngle), 0, 0)),
               billboard: {
                 image: JET_ICON,
                 width: 22,
@@ -12042,7 +12299,7 @@ function initGlobeIntelligence(viewer) {
                 color: Cesium.Color.fromCssColorString(classification.color),
                 verticalOrigin: Cesium.VerticalOrigin.CENTER,
                 disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 10000000)
+                distanceDisplayCondition: new Cesium.DistanceDisplayCondition(25000, 10000000)
               },
               label: {
                 text: `✈ ${callsign} ${fl}`,

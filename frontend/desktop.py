@@ -19,6 +19,9 @@ import subprocess
 import time
 import os
 import urllib.request
+import mimetypes
+mimetypes.add_type('model/gltf-binary', '.glb')
+mimetypes.add_type('model/gltf+json', '.gltf')
 
 # Unrestrict audio autoplay in QtWebEngine so neural voice responses play without requiring a user click
 current_flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
@@ -118,14 +121,12 @@ _CONTEXT_SIGNALS = re.compile(
 )
 
 class GEVServer:
-    """Manages the God's Eye View Vite dev server as a background subprocess."""
+    """God's Eye View is natively embedded within the JARVIS desktop interface."""
     _instance = None
 
     def __init__(self, gev_dir=None, port=None):
-        self.gev_dir = str(gev_dir or GEV_DIR)
-        self.port = port or GEV_PORT
-        self.process = None
-        self._started = False
+        self.port = port or 46068
+        self._started = True
 
     @classmethod
     def get_instance(cls):
@@ -134,60 +135,16 @@ class GEVServer:
         return cls._instance
 
     def start(self):
-        """Start the GEV Vite dev server if not already running."""
-        if self._started and self.process and self.process.poll() is None:
-            return True
-
-        gev_path = Path(self.gev_dir)
-        if not (gev_path / "package.json").exists():
-            print(f"[GEV] God's Eye View directory not found: {self.gev_dir}")
-            return False
-
-        try:
-            env = dict(os.environ)
-            # Pass through tokens explicitly from root environment
-            for key in ["CESIUM_ION_TOKEN", "FIRMS_MAP_KEY", "NASA_FIRMS_MAP_KEY", "GROQ_API_KEY", "NVIDIA_API_KEY", "FISH_AUDIO_API_KEY"]:
-                if key in os.environ:
-                    env[key] = os.environ[key]
-
-            self.process = subprocess.Popen(
-                ["npx", "vite", "--port", str(self.port), "--host", "127.0.0.1", "--strictPort"],
-                cwd=self.gev_dir,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                env=env,
-                preexec_fn=os.setsid if hasattr(os, "setsid") else None,
-            )
-            self._started = True
-            atexit.register(self.stop)
-            print(f"[GEV] God's Eye View OSINT server started on http://127.0.0.1:{self.port}")
-            return True
-        except FileNotFoundError:
-            print("[GEV] npx/node not found. Ensure Node.js 24+ is installed.")
-            return False
-        except Exception as e:
-            print(f"[GEV] Failed to start server: {e}")
-            return False
+        return True
 
     def stop(self):
-        """Terminate the GEV server process and its process group."""
-        if self.process:
-            try:
-                if hasattr(os, "killpg"):
-                    os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
-                else:
-                    self.process.terminate()
-            except (ProcessLookupError, OSError):
-                pass
-            self.process = None
-            self._started = False
-            print("[GEV] God's Eye View server stopped.")
+        pass
 
     def is_running(self):
-        return self._started and self.process and self.process.poll() is None
+        return True
 
     def get_url(self):
-        return f"http://127.0.0.1:{self.port}" if self.is_running() else ""
+        return "/"
 
 
 class _StreamingPrefixFilter:
@@ -1071,6 +1028,42 @@ class JarvisAPI:
                     target_str = entities["target"]
                     self._emit("scan_status", {"message": f"AI identified investigation task from context — Target: {target_str}"})
                     self._run_stalk(target_str, None)
+                    return
+
+                # Tactical Cockpit Chase dispatch
+                if intent_name == "cockpit_chase":
+                    target_call = entities.get("target", "")
+                    self._emit("control_cockpit", {"action": "enter", "target": target_call})
+                    resp_txt = f"Entering tactical cockpit chase camera on {target_call if target_call else 'airborne contact'}, Sir."
+                    self._emit("jarvis_stream_chunk", {"chunk": resp_txt})
+                    self._emit("jarvis_answer", {"text": resp_txt, "mode": "tactical"})
+                    if self._voice:
+                        self._voice.speak(resp_txt)
+                    self._start_follow_up_window()
+                    return
+
+                # Tactical Target Lock dispatch
+                if intent_name == "target_lock":
+                    target_call = entities.get("target", "")
+                    self._emit("control_target_lock", {"action": "lock", "target": target_call})
+                    resp_txt = f"Target lock established on {target_call if target_call else 'active contact'}, Sir."
+                    self._emit("jarvis_stream_chunk", {"chunk": resp_txt})
+                    self._emit("jarvis_answer", {"text": resp_txt, "mode": "tactical"})
+                    if self._voice:
+                        self._voice.speak(resp_txt)
+                    self._start_follow_up_window()
+                    return
+
+                # Target Unlock dispatch
+                if intent_name == "target_unlock":
+                    self._emit("control_target_lock", {"action": "release"})
+                    self._emit("control_cockpit", {"action": "exit"})
+                    resp_txt = "Releasing target lock and restoring tactical orbital overview, Sir."
+                    self._emit("jarvis_stream_chunk", {"chunk": resp_txt})
+                    self._emit("jarvis_answer", {"text": resp_txt, "mode": "tactical"})
+                    if self._voice:
+                        self._voice.speak(resp_txt)
+                    self._start_follow_up_window()
                     return
 
                 if resolved_q and resolved_q != text:
@@ -2901,6 +2894,7 @@ class JarvisAPI:
             print(f"[desktop] Background voice loop error: {e}")
             traceback.print_exc()
         finally:
+            proc = locals().get('proc', None)
             if proc:
                 try:
                     proc.terminate(); proc.wait(timeout=1.0)
