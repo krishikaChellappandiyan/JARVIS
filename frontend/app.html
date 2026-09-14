@@ -6578,6 +6578,26 @@ const JarvisSFX = {
     } catch(e) {}
   },
 
+  uiClick() {
+    if (!this.enabled) return;
+    const ctx = ensureJarvisPcmContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1200, now);
+      osc.frequency.exponentialRampToValueAtTime(800, now + 0.04);
+      gain.gain.setValueAtTime(0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.055);
+    } catch(e) {}
+  },
+
   layerToggle(state = true) {
     if (!this.enabled) return;
     const ctx = ensureJarvisPcmContext();
@@ -9682,16 +9702,25 @@ const JarvisAnnotations = {
     const radiusM = radiusKm * 1000;
     const cesiumColor = Cesium.Color.fromCssColorString(color || '#FF9D2E');
 
-    // Outer range ring with subtle glowing fill
+    function computeRangeCircle(centerLon, centerLat, radiusMeters, segments = 64) {
+      const coords = [];
+      const R = 6378137.0;
+      const dLat = (radiusMeters / R) * (180 / Math.PI);
+      const dLon = dLat / Math.max(0.1, Math.cos(centerLat * Math.PI / 180));
+      for (let i = 0; i <= segments; i++) {
+        const theta = (i / segments) * 2 * Math.PI;
+        coords.push(centerLon + dLon * Math.cos(theta), centerLat + dLat * Math.sin(theta), 25);
+      }
+      return Cesium.Cartesian3.fromDegreesArrayHeights(coords);
+    }
+
+    // Outer range ring with subtle glowing fill (outline false to avoid WebGL uniform3fv errors on Linux)
     ds.entities.add({
       position: Cesium.Cartesian3.fromDegrees(lon, lat, 20),
       ellipse: {
         semiMajorAxis: radiusM,
         semiMinorAxis: radiusM,
-        material: cesiumColor.withAlpha(0.12),
-        outline: true,
-        outlineColor: cesiumColor.withAlpha(0.85),
-        outlineWidth: 2.5,
+        material: cesiumColor.withAlpha(0.10),
         height: 20
       },
       label: {
@@ -9706,17 +9735,27 @@ const JarvisAnnotations = {
       }
     });
 
-    // Inner concentric ring (50% radius) for tactical range grid
+    // Outer perimeter line (clean polyline)
     ds.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(lon, lat, 25),
-      ellipse: {
-        semiMajorAxis: radiusM * 0.5,
-        semiMinorAxis: radiusM * 0.5,
-        material: Cesium.Color.TRANSPARENT,
-        outline: true,
-        outlineColor: cesiumColor.withAlpha(0.45),
-        outlineWidth: 1.5,
-        height: 25
+      polyline: {
+        positions: computeRangeCircle(lon, lat, radiusM),
+        width: 2,
+        material: new Cesium.PolylineDashMaterialProperty({
+          color: cesiumColor.withAlpha(0.85),
+          dashLength: 14.0
+        })
+      }
+    });
+
+    // Inner concentric ring (50% radius)
+    ds.entities.add({
+      polyline: {
+        positions: computeRangeCircle(lon, lat, radiusM * 0.5),
+        width: 1.5,
+        material: new Cesium.PolylineDashMaterialProperty({
+          color: cesiumColor.withAlpha(0.45),
+          dashLength: 8.0
+        })
       }
     });
 
@@ -10019,6 +10058,35 @@ const JarvisCockpit = {
         isMil: true
       }
     });
+    entity._tacticalData._entity = entity;
+
+    const dropLine = _flightsDataSource.entities.add({
+      polyline: {
+        positions: Cesium.Cartesian3.fromDegreesArrayHeights([
+          centerLon, centerLat, 0,
+          centerLon, centerLat, altMeters
+        ]),
+        width: 1.2,
+        material: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#FF9D2E').withAlpha(0.35))
+      },
+      _tacticalData: entity._tacticalData
+    });
+
+    window._aircraftFlightMap = window._aircraftFlightMap || new Map();
+    window._aircraftFlightMap.set('VIPER-11', {
+      callsign: 'VIPER-11',
+      entity: entity,
+      dropLine: dropLine,
+      lat: centerLat,
+      lon: centerLon,
+      targetLat: centerLat,
+      targetLon: centerLon,
+      altMeters: altMeters,
+      speedKnots: 480,
+      headingDeg: 45,
+      lastSeen: performance.now()
+    });
+
     return entity;
   },
 
@@ -10058,6 +10126,7 @@ const JarvisCockpit = {
 
     this.active = true;
     this.activeEntity = target;
+    this.activeEntity.show = (this.viewMode === 'chase');
 
     viewer.trackedEntity = undefined;
     viewer.scene.screenSpaceCameraController.enableInputs = false;
@@ -10117,8 +10186,8 @@ const JarvisCockpit = {
     Cesium.Cartesian3.normalize(this._scratchWorldUp, this._scratchWorldUp);
 
     const isCockpit = this.viewMode === 'cockpit';
-    const forwardDist = isCockpit ? 4.0 : -180.0;
-    const upDist = isCockpit ? 2.0 : 36.0;
+    const forwardDist = isCockpit ? 2.5 : -160.0;
+    const upDist = isCockpit ? 1.6 : 32.0;
 
     Cesium.Cartesian3.multiplyByScalar(this._scratchWorldFwd, forwardDist, this._scratchCamPos);
     Cesium.Cartesian3.add(targetPos, this._scratchCamPos, this._scratchCamPos);
@@ -10133,11 +10202,18 @@ const JarvisCockpit = {
       }
     });
 
+    if (this.activeEntity) {
+      this.activeEntity.show = !isCockpit;
+    }
+
     this.updateHudTelemetry(data);
   },
 
   toggleViewMode() {
     this.viewMode = this.viewMode === 'chase' ? 'cockpit' : 'chase';
+    if (this.activeEntity) {
+      this.activeEntity.show = (this.viewMode === 'chase');
+    }
     const btn = document.getElementById('cockpit-viewmode-btn');
     if (btn) {
       btn.textContent = this.viewMode === 'chase' ? 'MODE: CHASE' : 'MODE: COCKPIT';
@@ -10158,6 +10234,9 @@ const JarvisCockpit = {
       viewer.scene.requestRenderMode = true;
       viewer.trackedEntity = undefined;
     }
+    if (this.activeEntity) {
+      this.activeEntity.show = true;
+    }
     this.activeEntity = null;
     this.hideCockpitHud();
     if (window.JarvisSFX) window.JarvisSFX.flightSwoosh();
@@ -10170,6 +10249,7 @@ const JarvisCockpit = {
     if (typeof _flightsDataSource === 'undefined' || !_flightsDataSource) return;
     const entities = _flightsDataSource.entities.values.filter(e => e._tacticalData && (e.billboard || e.model));
     if (entities.length === 0) return;
+    if (this.activeEntity) this.activeEntity.show = true;
     this.activeIdx = (this.activeIdx + 1) % entities.length;
     this.enter(entities[this.activeIdx]._tacticalData.callsign);
   },
@@ -10178,6 +10258,7 @@ const JarvisCockpit = {
     if (typeof _flightsDataSource === 'undefined' || !_flightsDataSource) return;
     const entities = _flightsDataSource.entities.values.filter(e => e._tacticalData && (e.billboard || e.model));
     if (entities.length === 0) return;
+    if (this.activeEntity) this.activeEntity.show = true;
     this.activeIdx = (this.activeIdx - 1 + entities.length) % entities.length;
     this.enter(entities[this.activeIdx]._tacticalData.callsign);
   },
@@ -10189,6 +10270,14 @@ const JarvisCockpit = {
     if (spdEl && data?.speed) spdEl.textContent = `${Math.round(data.speed)} KTS`;
     if (altEl && data?.alt) altEl.textContent = `${Math.round(data.alt)} FT`;
     if (hdgEl && data?.heading !== undefined) hdgEl.textContent = `${Math.round(data.heading)}°`;
+  },
+
+  updateTelemetry(ac) {
+    if (!ac) return;
+    const knots = Math.round(ac.speedKnots || 440);
+    const altFt = Math.round((ac.altMeters || 8500) * 3.28084);
+    const hdg = Math.round(ac.headingDeg || 0);
+    this.updateHudTelemetry({ speed: knots, alt: altFt, heading: hdg });
   },
 
   showCockpitHud(data) {
@@ -12095,12 +12184,14 @@ function initGlobeIntelligence(viewer) {
   _flightsDataSource.show = _tacticalLayers.flights;
   viewer.dataSources.add(_flightsDataSource);
 
-  const _aircraftFlightMap = new Map();
+  const _aircraftFlightMap = window._aircraftFlightMap || new Map();
+  window._aircraftFlightMap = _aircraftFlightMap;
   let _lastFlightFrameTime = performance.now();
 
   // Continuous Kinematic Dead-Reckoning Loop: advances aircraft smoothly across globe every frame
   viewer.scene.preUpdate.addEventListener(() => {
-    if (!_tacticalLayers.flights || SpatialNav.currentX < 200) return;
+    const cockpitActive = window.JarvisCockpit && window.JarvisCockpit.active;
+    if (!_tacticalLayers.flights && !cockpitActive) return;
     const now = performance.now();
     const dt = Math.min(0.2, (now - _lastFlightFrameTime) / 1000.0);
     _lastFlightFrameTime = now;
@@ -12130,6 +12221,16 @@ function initGlobeIntelligence(viewer) {
       // Update Cesium entity position in Cartesian3
       const newPos = Cesium.Cartesian3.fromDegrees(ac.lon, ac.lat, ac.altMeters);
       ac.entity.position = newPos;
+
+      if (ac.entity.orientation) {
+        ac.entity.orientation = Cesium.Transforms.headingPitchRollQuaternion(
+          newPos,
+          new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(ac.headingDeg || 0), 0, 0)
+        );
+      }
+      if (ac.entity.billboard) {
+        ac.entity.billboard.rotation = Cesium.Math.toRadians(360 - (ac.headingDeg || 0));
+      }
 
       if (ac.entity._tacticalData) {
         ac.entity._tacticalData.lat = ac.lat;
