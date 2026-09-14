@@ -2655,12 +2655,33 @@ body {
           <span>🔥 THERMAL ANOMALIES (NASA FIRMS)</span>
           <div class="toggle-pill"></div>
         </div>
+        <div class="globe-layer-toggle" id="layer-toggle-weather" onclick="window.toggleTacticalLayer('weather')">
+          <span>🌧️ PRECIPITATION RADAR (RAINVIEWER)</span>
+          <div class="toggle-pill"></div>
+        </div>
       </div>
       <div style="font-size:9px; color:#8A8D91; font-family:var(--mono); margin-top:8px; display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;">
         <span>RADAR: <span id="radar-contact-count" style="color:#00F0FF;">0</span></span>
         <span>VESSELS: <span id="vessel-contact-count" style="color:#38BDF8;">0</span></span>
         <span>CCTV: <span id="cctv-contact-count" style="color:#FFB84D;">0</span></span>
         <span>FIRMS: <span id="thermal-contact-count" style="color:#EF4444;">0</span></span>
+      </div>
+
+      <!-- Tactical Tooling & Multi-Target Tracking Bar -->
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <button id="measure-tool-toggle-btn" onclick="window.toggleMeasurementTool()" style="flex:1; background:rgba(0,240,255,0.12); border:1px solid rgba(0,240,255,0.45); color:#00F0FF; font-size:9.5px; font-weight:700; padding:5px 8px; border-radius:4px; cursor:pointer;" title="Toggle Geodesic Distance & Range Rings Tool">📐 MEASURE & RANGE</button>
+        <button onclick="const el=document.getElementById('globe-pinned-dock-card'); if(el) el.style.display=el.style.display==='none'?'block':'none';" style="flex:1; background:rgba(255,157,46,0.15); border:1px solid rgba(255,157,46,0.5); color:#FFB84D; font-size:9.5px; font-weight:700; padding:5px 8px; border-radius:4px; cursor:pointer;" title="Toggle Multi-Target Tracking Side Dock">📌 PINNED (<span id="pinned-target-count">0</span>)</button>
+      </div>
+
+      <!-- Multi-Target Tracking Dock -->
+      <div id="globe-pinned-dock-card" style="display:none; margin-top:8px; background:rgba(10,11,13,0.85); border:1px solid rgba(255,157,46,0.3); border-radius:6px; padding:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <span style="font-size:10px; font-weight:700; color:#FFB84D; font-family:var(--mono);">TACTICAL TRACKING DOCK</span>
+          <button onclick="window._pinnedTargets=[]; window._renderPinnedTargets();" style="background:none; border:none; color:#EF4444; font-size:9px; cursor:pointer;">CLEAR</button>
+        </div>
+        <div id="globe-pinned-targets-dock" style="max-height:140px; overflow-y:auto;">
+          <div style="color:#6B7280; font-size:10px; padding:6px; text-align:center; font-family:var(--mono);">NO TARGETS PINNED</div>
+        </div>
       </div>
     </div>
 
@@ -10492,6 +10513,14 @@ function initCesiumGlobe() {
 
     // Single-click on Cesium entities (aircraft, CCTV cameras, radio pins) opens target inspection
     handler.setInputAction((click) => {
+      if (typeof _measureActive !== 'undefined' && _measureActive) {
+        const ray = scene.camera.getPickRay(click.position);
+        const position = scene.globe.pick(ray, scene);
+        if (position && typeof window.handleMeasurementClick === 'function') {
+          window.handleMeasurementClick(position);
+          return;
+        }
+      }
       const picked = scene.pick(click.position);
       if (Cesium.defined(picked) && picked.id && picked.id._tacticalData) {
         window.inspectTarget(picked.id._tacticalData);
@@ -10519,7 +10548,8 @@ let _tacticalLayers = {
   radio: false,
   space: false,
   seismic: false,
-  thermal: false
+  thermal: false,
+  weather: false
 };
 let _flightsDataSource = null;
 let _vesselsDataSource = null;
@@ -10528,8 +10558,181 @@ let _radioDataSource = null;
 let _spaceDataSource = null;
 let _seismicDataSource = null;
 let _thermalDataSource = null;
+let _weatherImageryLayer = null;
 let _inspectTargetData = null;
 let _cctvAnimInterval = null;
+
+// Multi-Target Tracking List State
+let _pinnedTargets = [];
+
+window.pinTarget = function(targetData) {
+  if (!targetData) return;
+  const tId = targetData.id || targetData.callsign || targetData.mmsi || `target_${Date.now()}`;
+  const existing = _pinnedTargets.find(t => t.id === tId);
+  if (!existing) {
+    _pinnedTargets.push({
+      id: tId,
+      label: targetData.label || targetData.callsign || targetData.name || targetData.title || 'TARGET',
+      type: targetData.type || 'CONTACT',
+      lat: Number(targetData.lat) || 0,
+      lon: Number(targetData.lon) || 0,
+      alt: Number(targetData.alt) || 0,
+      timestamp: Date.now()
+    });
+  }
+  _renderPinnedTargets();
+  if (typeof showSubtitles === 'function') showSubtitles(`📌 Target pinned to Tactical Tracking List: ${targetData.label || tId}`, 'TARGET TRACK');
+};
+
+window.unpinTarget = function(targetId) {
+  _pinnedTargets = _pinnedTargets.filter(t => t.id !== targetId);
+  _renderPinnedTargets();
+};
+
+window.focusPinnedTarget = function(targetId) {
+  const target = _pinnedTargets.find(t => t.id === targetId);
+  if (!target || !window.cesiumViewer || window.cesiumViewer.isDestroyed()) return;
+  window.cesiumViewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(target.lon, target.lat, Math.max(1200, (target.alt || 0) + 3500)),
+    duration: 1.5
+  });
+};
+
+function _renderPinnedTargets() {
+  const container = document.getElementById('globe-pinned-targets-dock');
+  const countEl = document.getElementById('pinned-target-count');
+  if (countEl) countEl.textContent = _pinnedTargets.length;
+  if (!container) return;
+  if (_pinnedTargets.length === 0) {
+    container.innerHTML = '<div style="color:#6B7280; font-size:10px; padding:6px; text-align:center; font-family:var(--mono);">NO TARGETS PINNED</div>';
+    return;
+  }
+  container.innerHTML = _pinnedTargets.map(t => `
+    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,157,46,0.35); border-radius:4px; padding:5px 8px; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
+      <div style="min-width:0; flex:1;">
+        <div style="color:#FFB84D; font-size:11px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${t.label}</div>
+        <div style="color:#8A8D91; font-size:9px; font-family:var(--mono);">${t.lat.toFixed(3)}°, ${t.lon.toFixed(3)}°</div>
+      </div>
+      <div style="display:flex; gap:4px; margin-left:6px; flex-shrink:0;">
+        <button onclick="window.focusPinnedTarget('${t.id}')" style="background:rgba(56,189,248,0.2); border:1px solid #38BDF8; color:#38BDF8; font-size:9px; font-weight:700; border-radius:3px; padding:2px 6px; cursor:pointer;">FOCUS</button>
+        <button onclick="window.unpinTarget('${t.id}')" style="background:rgba(239,68,68,0.2); border:1px solid #EF4444; color:#EF4444; font-size:9px; font-weight:700; border-radius:3px; padding:2px 5px; cursor:pointer;">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// Geospatial Range Ring & Geodesic Distance Measurement Tools
+let _measureActive = false;
+let _measurePoints = [];
+let _measureEntities = [];
+
+window.toggleMeasurementTool = function() {
+  _measureActive = !_measureActive;
+  const btn = document.getElementById('measure-tool-toggle-btn');
+  if (btn) btn.classList.toggle('active', _measureActive);
+  if (!_measureActive) {
+    _clearMeasurementEntities();
+    if (typeof showSubtitles === 'function') showSubtitles('Measurement tool deactivated.', 'TOOLS');
+  } else {
+    if (typeof showSubtitles === 'function') showSubtitles('📐 Measurement Tool Active: Click two points on 3D globe to measure distance & range rings.', 'TOOLS');
+  }
+};
+
+function _clearMeasurementEntities() {
+  if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
+    _measureEntities.forEach(ent => window.cesiumViewer.entities.remove(ent));
+  }
+  _measureEntities = [];
+  _measurePoints = [];
+}
+
+window.handleMeasurementClick = function(cartesian) {
+  if (!_measureActive || !window.cesiumViewer || window.cesiumViewer.isDestroyed()) return;
+  const carto = Cesium.Cartographic.fromCartesian(cartesian);
+  const lat = Cesium.Math.toDegrees(carto.latitude);
+  const lon = Cesium.Math.toDegrees(carto.longitude);
+
+  _measurePoints.push({ lat, lon, cartesian });
+
+  const pointEnt = window.cesiumViewer.entities.add({
+    position: cartesian,
+    point: { pixelSize: 8, color: Cesium.Color.fromCssColorString('#00F0FF'), outlineColor: Cesium.Color.WHITE, outlineWidth: 1.5 }
+  });
+  _measureEntities.push(pointEnt);
+
+  if (_measurePoints.length === 1) {
+    [25000, 50000, 100000].forEach((radiusM, idx) => {
+      const ring = window.cesiumViewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(lon, lat),
+        ellipse: {
+          semiMinorAxis: radiusM,
+          semiMajorAxis: radiusM,
+          material: Cesium.Color.fromCssColorString(idx === 0 ? 'rgba(0, 240, 255, 0.10)' : 'rgba(0, 240, 255, 0.03)'),
+          outline: true,
+          outlineColor: Cesium.Color.fromCssColorString('rgba(0, 240, 255, 0.55)'),
+          outlineWidth: 1.5
+        }
+      });
+      _measureEntities.push(ring);
+    });
+    if (typeof showSubtitles === 'function') showSubtitles(`Point 1 locked at [${lat.toFixed(3)}°, ${lon.toFixed(3)}°]. Range rings [25km, 50km, 100km] generated. Click Point 2 to calculate distance.`, 'MEASURE');
+  } else if (_measurePoints.length === 2) {
+    const p1 = _measurePoints[0];
+    const p2 = _measurePoints[1];
+
+    const R = 6371; // km
+    const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+    const dLon = (p2.lon - p1.lon) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distKm = R * c;
+    const distNm = distKm * 0.539957;
+
+    const lineEnt = window.cesiumViewer.entities.add({
+      polyline: {
+        positions: [p1.cartesian, p2.cartesian],
+        width: 2.5,
+        material: Cesium.Color.fromCssColorString('#FF9D2E')
+      }
+    });
+    _measureEntities.push(lineEnt);
+
+    if (typeof showSubtitles === 'function') {
+      showSubtitles(`📏 Distance: ${distKm.toFixed(2)} km (${distNm.toFixed(2)} NM) from [${p1.lat.toFixed(2)}°, ${p1.lon.toFixed(2)}°] to [${p2.lat.toFixed(2)}°, ${p2.lon.toFixed(2)}°]`, 'MEASURE RESULT');
+    }
+  }
+};
+
+async function _loadWeatherRadarLayer() {
+  if (!window.cesiumViewer || window.cesiumViewer.isDestroyed()) return;
+  try {
+    const resp = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data.radar || !data.radar.past || !data.radar.past.length) return;
+    const latest = data.radar.past[data.radar.past.length - 1];
+    const path = latest.path;
+    const radarUrl = `https://tilecache.rainviewer.com${path}/256/{z}/{x}/{y}/2/1_1.png`;
+
+    const provider = new Cesium.UrlTemplateImageryProvider({
+      url: radarUrl,
+      maximumLevel: 12,
+      credit: 'RainViewer Precipitation Radar'
+    });
+
+    if (_weatherImageryLayer) {
+      window.cesiumViewer.imageryLayers.remove(_weatherImageryLayer);
+    }
+    _weatherImageryLayer = window.cesiumViewer.imageryLayers.addImageryProvider(provider);
+    _weatherImageryLayer.alpha = 0.65;
+    window.cesiumViewer.scene.requestRender();
+    if (typeof showSubtitles === 'function') showSubtitles('🌧️ Live RainViewer precipitation weather radar overlay active.', 'WEATHER');
+  } catch (err) {
+    console.warn('[GodsEye] Weather radar notice:', err);
+  }
+}
 
 // Tactical OSINT Intelligence & Scanner Feeds (100% 200 OK Direct Audio Streams)
 const RADIO_STATIONS = {
@@ -10789,6 +10992,13 @@ window.toggleTacticalLayer = function(layerName, forceState) {
     else if (!_tacticalLayers.thermal) {
       const el = document.getElementById('thermal-contact-count'); if (el) el.textContent = '0';
     }
+  } else if (layerName === 'weather') {
+    if (_tacticalLayers.weather) {
+      _loadWeatherRadarLayer();
+    } else if (_weatherImageryLayer && window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
+      window.cesiumViewer.imageryLayers.remove(_weatherImageryLayer);
+      _weatherImageryLayer = null;
+    }
   }
 
   if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
@@ -10809,6 +11019,10 @@ window.clearAllTacticalLayers = function() {
   if (_spaceDataSource) _spaceDataSource.show = false;
   if (_seismicDataSource) _seismicDataSource.show = false;
   if (_thermalDataSource) _thermalDataSource.show = false;
+  if (_weatherImageryLayer && window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
+    window.cesiumViewer.imageryLayers.remove(_weatherImageryLayer);
+    _weatherImageryLayer = null;
+  }
   const thEl = document.getElementById('thermal-contact-count'); if (thEl) thEl.textContent = '0';
   if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
     window.cesiumViewer.scene.requestRender();
