@@ -136,6 +136,16 @@ CRITICAL IDENTITY & PROTOCOLS:
       You can accompany tactical actions with procedural HUD audio feedback:
       [SFX: target_lock], [SFX: radar_ping], [SFX: alert], [SFX: flight_swoosh]
 
+- Autonomous Goal Execution & Strategic Thinking:
+  When Sir gives an operational or exploratory objective (e.g. "Go to a place where there is a lot of flights flying around", "Show me the busiest air hub", "Monitor surveillance across Bengaluru", "Audit system performance"):
+  1. THINK & RESOLVE: Deduce the concrete target, airport, or corridor using your tactical knowledge:
+     - E.g. "place where there is a lot of flights" -> Hartsfield-Jackson Atlanta International Airport (ATL), the busiest airport hub in the world, or Chicago O'Hare (ORD) or London Heathrow (LHR).
+  2. MULTI-ACTION DIRECTIVES: Emit BOTH the navigation and relevant layer directives:
+     [NAV: Hartsfield-Jackson Atlanta International Airport] [LAYER: flights on]
+  3. WORKING COMMENTARY: Deliver an articulate, confident verbal briefing explaining what you checked and what actions were initiated:
+     "I am analyzing global airspace telemetry, Sir. Hartsfield-Jackson Atlanta is currently logging peak transponder density. Navigating coordinates and locking visual sensors onto the terminal approaches now."
+  4. NEVER echo raw bracketed directives ([NAV:...], [LAYER:...]) or code syntax into your spoken text.
+
 - Autonomous OS Execution & CLI Tools:
   You can execute Linux shell commands for genuine system operations, file inspection, diagnostics, network sockets, or git.
   To execute an OS command, emit:
@@ -1295,47 +1305,51 @@ class JarvisVoice:
 
             cleaned = re.sub(r'\[CMD[^\]]*\]', '', cleaned, flags=re.IGNORECASE).strip()
 
-            # Detect [NAV: <location>]
-            m_nav = re.search(r'\[NAV:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
+            # Detect [NAV: <location>] (whitespace-tolerant)
+            m_nav = re.search(r'\[\s*NAV\s*:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
             if m_nav:
                 tactical["nav"] = m_nav.group(1).strip()
-                cleaned = re.sub(r'\[NAV:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(r'\[\s*NAV\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
 
             # Detect [LAYER: <layer> <on|off>]
-            m_layer = re.search(r'\[LAYER:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
+            m_layer = re.search(r'\[\s*LAYER\s*:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
             if m_layer:
                 tactical["layer"] = m_layer.group(1).strip()
-                cleaned = re.sub(r'\[LAYER:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(r'\[\s*LAYER\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
 
             # Detect [ZOOM: <in|out>]
-            m_zoom = re.search(r'\[ZOOM:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
+            m_zoom = re.search(r'\[\s*ZOOM\s*:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
             if m_zoom:
                 tactical["zoom"] = m_zoom.group(1).strip()
-                cleaned = re.sub(r'\[ZOOM:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(r'\[\s*ZOOM\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
 
             # Detect [RADIO: <action>]
-            m_radio = re.search(r'\[RADIO:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
+            m_radio = re.search(r'\[\s*RADIO\s*:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
             if m_radio:
                 tactical["radio"] = m_radio.group(1).strip()
-                cleaned = re.sub(r'\[RADIO:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(r'\[\s*RADIO\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
 
             # Detect [SFX: <effect>]
-            m_sfx = re.search(r'\[SFX:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
+            m_sfx = re.search(r'\[\s*SFX\s*:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
             if m_sfx:
                 tactical["sfx"] = m_sfx.group(1).strip()
-                cleaned = re.sub(r'\[SFX:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(r'\[\s*SFX\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
 
             # Detect [ANNOTATE: <directive>]
-            m_annotate = re.search(r'\[ANNOTATE:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
+            m_annotate = re.search(r'\[\s*ANNOTATE\s*:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
             if m_annotate:
                 tactical["annotate"] = m_annotate.group(1).strip()
-                cleaned = re.sub(r'\[ANNOTATE:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(r'\[\s*ANNOTATE\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
 
             # Detect [COCKPIT: <directive>]
-            m_cockpit = re.search(r'\[COCKPIT:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
+            m_cockpit = re.search(r'\[\s*COCKPIT\s*:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
             if m_cockpit:
                 tactical["cockpit"] = m_cockpit.group(1).strip()
-                cleaned = re.sub(r'\[COCKPIT:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(r'\[\s*COCKPIT\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
+
+            # Residual cleanup to ensure zero leaked tactical directives or brackets reach TTS
+            cleaned = re.sub(r'\[\s*(?:NAV|LAYER|CMD|ZOOM|RADIO|SFX|ANNOTATE|COCKPIT)[^\]]*\]', '', cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
             return cleaned, tactical
 

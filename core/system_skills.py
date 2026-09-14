@@ -392,37 +392,12 @@ class SystemSkillEngine:
                     return True, debrief_msg, False, "", payload
 
                 elif task.type == TaskType.BROWSER_SURF.value and task.data.get("cctv"):
-                    city = task.data.get("city", "shinjuku")
-                    task_mgr.update_progress(task.task_id, 30, f"Loading public CCTV feeds for {city.title()}...")
-                    import json
-                    cctv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "cctv", f"cctv_sources.{city}.json")
-                    cams = []
-                    if os.path.exists(cctv_path):
-                        try:
-                            with open(cctv_path, "r", encoding="utf-8") as f:
-                                cams = json.load(f)
-                        except Exception:
-                            pass
-                    if not cams:
-                        cams = [{"id": "cam-1", "name": f"{city.title()} Live Intersection", "url": "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", "lat": 35.69, "lon": 139.7}]
-                    
-                    raw_results = []
-                    for cam in cams:
-                        snip = f"{cam.get('name')} | Coordinates: {cam.get('lat')}, {cam.get('lon')} | Heading: {cam.get('headingDeg', 0)}°"
-                        task_mgr.add_finding(task.task_id, TaskFinding(
-                            title=cam.get('name', 'CCTV Stream'),
-                            url=cam.get('url', ''),
-                            snippet=snip,
-                            source="cctv",
-                            extra=cam
-                        ))
-                        raw_results.append({"title": cam.get('name'), "snippet": snip, "url": cam.get('url')})
-                    
-                    task.data["url"] = cams[0]["url"]
-                    debrief_msg = f"Surveillance link established. Tracking {len(cams)} public camera feeds across {city.title()}."
-                    task_mgr.complete_task(task.task_id, summary=f"{len(cams)} CCTV feeds online ({city.title()})")
-                    payload = self.hud_engine.build_structured_payload(f"CCTV: {city.title()}", "CCTV", raw_results, debrief_msg)
-                    return True, debrief_msg, False, "", payload
+                    # Tactical CCTV requests are routed directly to God's Eye 3D Earth console
+                    # instead of popping up legacy Action HUD JSON panels.
+                    city = task.data.get("city", "")
+                    debrief_msg = f"Deploying God's Eye tactical surveillance feeds for {city.title() if city else 'global sectors'}, Sir."
+                    task_mgr.complete_task(task.task_id, summary=f"CCTV optical layers online")
+                    return False, debrief_msg, False, "", {}
 
         # Fallback to existing skill branches
         query = None

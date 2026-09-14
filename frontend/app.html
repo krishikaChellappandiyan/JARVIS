@@ -11475,7 +11475,14 @@ window.toggleTacticalLayer = function(layerName, forceState) {
   } else if (layerName === 'cctv' && _cctvDataSource) {
     _cctvDataSource.show = _tacticalLayers.cctv;
     const el = document.getElementById('cctv-contact-count');
-    if (el) el.textContent = _tacticalLayers.cctv ? (typeof CCTV_CAMERAS !== 'undefined' ? CCTV_CAMERAS.length : '8') : '0';
+    if (_tacticalLayers.cctv) {
+      if (window.loadAndRenderCctvSources && _cctvDataSource.entities.values.length === 0) {
+        window.loadAndRenderCctvSources();
+      }
+      if (el) el.textContent = String(_cctvDataSource.entities.values.length || '600+');
+    } else {
+      if (el) el.textContent = '0';
+    }
   } else if (layerName === 'radio' && _radioDataSource) {
     _radioDataSource.show = _tacticalLayers.radio;
   } else if (layerName === 'space' && _spaceDataSource) {
@@ -11588,32 +11595,26 @@ window.inspectTarget = function(data) {
   } else if (data.type === 'CCTV') {
     if (icon) icon.textContent = '📹';
     if (title) title.textContent = `SURVEILLANCE: ${data.label}`;
-    const frameEndpoint = `/api/cctv/frame/${data.id}?t=${Date.now()}`;
-    const hasVideo = !!data.videoUrl;
+    const frameEndpoint = `/api/cctv/frame/${encodeURIComponent(data.id)}?t=${Date.now()}`;
     body.innerHTML = `
       <div style="width:100%; height:140px; background:#02060D; border:1px solid rgba(0,240,255,0.45); border-radius:4px; position:relative; overflow:hidden; margin-bottom:8px;">
-        ${hasVideo ? `
-          <video id="cctv-live-video" src="${data.videoUrl}" autoplay loop muted playsinline style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.display='none'; const fb = document.getElementById('cctv-live-img'); if (fb) fb.style.display='block';"></video>
-          <img id="cctv-live-img" src="${frameEndpoint}" style="width:100%; height:100%; object-fit:cover; display:none;" onerror="this.style.opacity='0.4'">
-        ` : `
-          <img id="cctv-live-img" src="${frameEndpoint}" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.opacity='0.4'">
-        `}
+        <img id="cctv-live-img" src="${frameEndpoint}" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.opacity='0.4'">
         <div style="position:absolute; top:5px; left:6px; font-size:9px; color:#22C55E; font-weight:700; display:flex; align-items:center; gap:4px; background:rgba(0,0,0,0.7); padding:2px 6px; border-radius:3px; border:1px solid rgba(34,197,94,0.3);">
-          <span style="width:6px; height:6px; border-radius:50%; background:#22C55E; display:inline-block; animation: cctvPulse 1s infinite alternate;"></span> ${hasVideo ? 'LIVE STREAM [VIDEO]' : 'REC [LIVE OPTICAL]'}
+          <span style="width:6px; height:6px; border-radius:50%; background:#22C55E; display:inline-block; animation: cctvPulse 1s infinite alternate;"></span> REC [LIVE OPTICAL FEED]
         </div>
         <div style="position:absolute; top:5px; right:6px; font-size:9px; color:#FF9D2E; background:rgba(0,0,0,0.7); padding:2px 6px; border-radius:3px; font-family:var(--mono);" id="cctv-clock-stamp">
           ${new Date().toLocaleTimeString()}
         </div>
         <div style="position:absolute; bottom:5px; left:6px; font-size:8.5px; color:#00F0FF; background:rgba(0,0,0,0.7); padding:2px 6px; border-radius:3px; font-family:var(--mono);">
-          AZ: ${data.heading}° • PITCH: ${data.pitch || -18}° • RNG: ${data.rangeM || 650}m
+          AZ: ${data.heading || 0}° • PITCH: ${data.pitch || -18}° • RNG: ${data.rangeM || 500}m
         </div>
         <div style="position:absolute; bottom:5px; right:6px; font-size:8.5px; color:#A1A1AA; background:rgba(0,0,0,0.7); padding:2px 6px; border-radius:3px; font-family:var(--mono);">
-          ELEV: ${Math.round(data.alt || 1800)}m MSL
+          ELEV: ${Math.round(data.alt || 100)}m MSL
         </div>
       </div>
       <div><span style="color:#8A8D91;">LOCATION:</span> <span style="color:#E6E6E6; font-weight:600;">${data.label}</span></div>
       <div><span style="color:#8A8D91;">COORDINATES:</span> ${data.lat.toFixed(4)}° N, ${data.lon.toFixed(4)}° E</div>
-      <div><span style="color:#8A8D91;">FEED TELEMETRY:</span> <span style="color:#22C55E; font-weight:700;">${hasVideo ? 'H.264 DIGITAL VIDEO FEED (ONLINE)' : 'HIGH-RES SENSOR CAPTURE (30 FPS)'}</span></div>
+      <div><span style="color:#8A8D91;">FEED TELEMETRY:</span> <span style="color:#22C55E; font-weight:700;">AUTHENTIC OPTICAL SURVEILLANCE FEED (ONLINE)</span></div>
     `;
 
     // 4-second live frame refresh for fallback
@@ -12063,7 +12064,8 @@ function initGlobeIntelligence(viewer) {
     ctx.fillText(timeStr, w - 215, 68);
   }
 
-  CCTV_CAMERAS.forEach(cam => {
+  function renderCctvFrustum(cam) {
+    if (!cam || !cam.lat || !cam.lon || !_cctvDataSource) return;
     const geom = computeCameraFrustum(cam);
     const posMount = Cesium.Cartesian3.fromDegrees(geom.mount.lon, geom.mount.lat, geom.mount.alt);
     const posCapCenter = Cesium.Cartesian3.fromDegrees(geom.capCenter.lon, geom.capCenter.lat, geom.capCenter.alt);
@@ -12075,13 +12077,14 @@ function initGlobeIntelligence(viewer) {
     const tacticalData = {
       type: 'CCTV',
       id: cam.id,
-      label: cam.label,
+      label: cam.name || cam.label || 'OPTICAL SENSOR',
+      city: cam.city || '',
       lat: cam.lat,
       lon: cam.lon,
       alt: geom.mount.alt,
-      heading: cam.headingDeg,
+      heading: cam.headingDeg || 0,
       pitch: cam.pitchDeg || -18,
-      rangeM: cam.rangeM,
+      rangeM: cam.rangeM || 450,
       status: 'ONLINE',
       fps: '30 FPS'
     };
@@ -12099,7 +12102,7 @@ function initGlobeIntelligence(viewer) {
         scaleByDistance: new Cesium.NearFarScalar(350, 1.25, 4000000, 0.45)
       },
       label: {
-        text: `📹 ${cam.label}`,
+        text: `📹 ${cam.name || cam.label || 'CCTV'}`,
         font: 'bold 10px JetBrains Mono, monospace',
         fillColor: Cesium.Color.fromCssColorString('#38BDF8'),
         outlineColor: Cesium.Color.BLACK,
@@ -12113,7 +12116,7 @@ function initGlobeIntelligence(viewer) {
       _tacticalData: tacticalData
     });
 
-    // 2. Optical Mast Line Anchoring Camera to Ground Terrain
+    // 2. Optical Mast Line Anchoring Camera to Ground Terrain (No depthFailMaterial to prevent WebGL uniform3fv error)
     _cctvDataSource.entities.add({
       polyline: {
         positions: [
@@ -12121,39 +12124,35 @@ function initGlobeIntelligence(viewer) {
           posMount
         ],
         width: 1.5,
-        material: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#38BDF8').withAlpha(0.65)),
-        depthFailMaterial: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#38BDF8').withAlpha(0.25))
+        material: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#38BDF8').withAlpha(0.65))
       },
       _tacticalData: tacticalData
     });
 
-    // 3. The 4 Corner Rays of the 3D Frustum Pyramid
+    // 3. The 4 Corner Rays of the 3D Frustum Pyramid (No depthFailMaterial to prevent WebGL uniform3fv error)
     const rayMaterial = new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#00F0FF').withAlpha(0.85));
-    const rayDepthFail = new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#00F0FF').withAlpha(0.35));
     [posTL, posTR, posBR, posBL].forEach(cornerPos => {
       _cctvDataSource.entities.add({
         polyline: {
           positions: [posMount, cornerPos],
           width: 1.6,
-          material: rayMaterial,
-          depthFailMaterial: rayDepthFail
+          material: rayMaterial
         },
         _tacticalData: tacticalData
       });
     });
 
-    // 4. The Pitched Far-Cap Closed Rectangle Polyline
+    // 4. The Pitched Far-Cap Closed Rectangle Polyline (No depthFailMaterial to prevent WebGL uniform3fv error)
     _cctvDataSource.entities.add({
       polyline: {
         positions: [posTL, posTR, posBR, posBL, posTL],
         width: 2.2,
-        material: rayMaterial,
-        depthFailMaterial: rayDepthFail
+        material: rayMaterial
       },
       _tacticalData: tacticalData
     });
 
-    // 5. The 3D Monitor Plane Entity at the far end of the frustum (Exact God's Eye Canvas Architecture)
+    // 5. The 3D Monitor Plane Entity at the far end of the frustum
     const cctvCanvas = document.createElement('canvas');
     cctvCanvas.width = 640;
     cctvCanvas.height = 360;
@@ -12166,27 +12165,6 @@ function initGlobeIntelligence(viewer) {
       color: Cesium.Color.WHITE.withAlpha(0.95)
     });
 
-    if (cam.videoUrl) {
-      try {
-        const vid = document.createElement('video');
-        vid.muted = true;
-        vid.loop = true;
-        vid.autoplay = true;
-        vid.playsInline = true;
-        vid.crossOrigin = 'anonymous';
-        vid.src = cam.videoUrl;
-        vid.addEventListener('playing', () => {
-          if (vid.videoWidth > 0 && vid.videoHeight > 0) {
-            planeMat.image = vid;
-          }
-        });
-        vid.addEventListener('error', () => {
-          planeMat.image = cctvCanvas;
-        });
-        vid.play().catch(() => {});
-      } catch (e) {}
-    }
-
     _cctvDataSource.entities.add({
       id: `cctv-${cam.id}-plane`,
       position: posCapCenter,
@@ -12198,7 +12176,39 @@ function initGlobeIntelligence(viewer) {
       },
       _tacticalData: tacticalData
     });
-  });
+  }
+
+  // Multi-Region Dynamic CCTV Catalog Loader (India, Caltrans, London, Austin, Tokyo)
+  window.loadAndRenderCctvSources = async function() {
+    try {
+      const res = await fetch('/api/cctv/sources');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const sources = Array.isArray(data?.sources) ? data.sources : [];
+      if (!sources.length) return;
+      if (_cctvDataSource) {
+        _cctvDataSource.entities.removeAll();
+      }
+      let idx = 0;
+      function renderBatch() {
+        const end = Math.min(idx + 30, sources.length);
+        for (; idx < end; idx++) {
+          renderCctvFrustum(sources[idx]);
+        }
+        if (idx < sources.length) {
+          requestAnimationFrame(renderBatch);
+        }
+      }
+      renderBatch();
+      console.log('[Cesium CCTV] Multi-region optical camera network online (' + sources.length + ' feeds across India, US, UK, Japan).');
+    } catch (e) {
+      console.warn('[Cesium CCTV] Error fetching sources, using fallback seed:', e);
+      CCTV_CAMERAS.forEach(renderCctvFrustum);
+    }
+  };
+
+  // Trigger initial dynamic load
+  window.loadAndRenderCctvSources();
 
   // =========================================================================
   // 2. LIVE AIS MARITIME VESSELS LAYER

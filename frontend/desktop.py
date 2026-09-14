@@ -234,15 +234,15 @@ class _StreamingPrefixFilter:
                     self.capturing_cmd = False
                     self.cmd_in_single = False
                     self.cmd_in_double = False
-                    # Check if this bracket block is a tactical God's Eye or system directive
-                    m_cmd = re.match(r'\[CMD(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_nav = re.match(r'\[NAV(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_layer = re.match(r'\[LAYER(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_zoom = re.match(r'\[ZOOM(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_radio = re.match(r'\[RADIO(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_sfx = re.match(r'\[SFX(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_annotate = re.match(r'\[ANNOTATE(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_cockpit = re.match(r'\[COCKPIT(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
+                    # Check if this bracket block is a tactical God's Eye or system directive (whitespace tolerant)
+                    m_cmd = re.match(r'\[\s*CMD(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
+                    m_nav = re.match(r'\[\s*NAV(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
+                    m_layer = re.match(r'\[\s*LAYER(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
+                    m_zoom = re.match(r'\[\s*ZOOM(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
+                    m_radio = re.match(r'\[\s*RADIO(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
+                    m_sfx = re.match(r'\[\s*SFX(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
+                    m_annotate = re.match(r'\[\s*ANNOTATE(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
+                    m_cockpit = re.match(r'\[\s*COCKPIT(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
 
                     if m_cmd:
                         cmd_to_run = m_cmd.group(1).strip()
@@ -443,21 +443,63 @@ KNOWN_COORDS = {
     "zurich": (47.3769, 8.5417),
     "geneva": (46.2044, 6.1432),
     "amsterdam": (52.3676, 4.9041),
+
+    # Global Aviation Hubs & Air Traffic Centers
+    "atlanta": (33.6407, -84.4277),
+    "hartsfield": (33.6407, -84.4277),
+    "hartsfield-jackson": (33.6407, -84.4277),
+    "hartsfield-jackson atlanta international airport": (33.6407, -84.4277),
+    "atl": (33.6407, -84.4277),
+    "chicago o'hare": (41.9742, -87.9073),
+    "o'hare": (41.9742, -87.9073),
+    "ord": (41.9742, -87.9073),
+    "heathrow": (51.4700, -0.4543),
+    "london heathrow": (51.4700, -0.4543),
+    "lhr": (51.4700, -0.4543),
+    "jfk": (40.6413, -73.7781),
+    "john f kennedy": (40.6413, -73.7781),
+    "los angeles international": (33.9416, -118.4085),
+    "lax": (33.9416, -118.4085),
+    "tokyo haneda": (35.5494, 139.7798),
+    "haneda": (35.5494, 139.7798),
+    "hnd": (35.5494, 139.7798),
+    "narita": (35.7720, 140.3929),
+    "nrt": (35.7720, 140.3929),
+    "dubai international": (25.2532, 55.3657),
+    "dxb": (25.2532, 55.3657),
+    "frankfurt": (50.0379, 8.5622),
+    "fra": (50.0379, 8.5622),
+    "singapore changi": (1.3644, 103.9915),
+    "changi": (1.3644, 103.9915),
+    "sin": (1.3644, 103.9915),
+    "kempegowda": (13.1986, 77.7066),
+    "bengaluru airport": (13.1986, 77.7066),
+    "blr": (13.1986, 77.7066),
+    "indira gandhi": (28.5562, 77.1000),
+    "delhi airport": (28.5562, 77.1000),
+    "del": (28.5562, 77.1000),
 }
 
 def resolve_geospatial_coordinates(candidate: str) -> tuple[float, float, str] | None:
     if not candidate:
         return None
-    clean = candidate.strip().lower()
+    clean = re.sub(r"[\u2010\u2011\u2012\u2013\u2014\u2015]", "-", candidate)
+    clean = "".join(c for c in clean if c not in ("\"", "\x27", "`")).strip().lower()
     coord_m = re.search(r'(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)', clean)
     if coord_m:
         lat = float(coord_m.group(1))
         lon = float(coord_m.group(2))
         return lat, lon, f"{lat:.4f}°N, {lon:.4f}°E"
 
-    for k, coords in KNOWN_COORDS.items():
-        if k == clean or k in clean or clean in k:
-            return coords[0], coords[1], k.title()
+    # 1. Exact match first
+    if clean in KNOWN_COORDS:
+        return KNOWN_COORDS[clean][0], KNOWN_COORDS[clean][1], clean.title()
+
+    # 2. Specific key match (longer, boundary-aware matches win over short substrings)
+    matching_keys = [k for k in KNOWN_COORDS if k == clean or (len(k) >= 3 and re.search(r"\b" + re.escape(k) + r"\b", clean)) or (len(clean) >= 4 and clean in k)]
+    if matching_keys:
+        best_k = max(matching_keys, key=len)
+        return KNOWN_COORDS[best_k][0], KNOWN_COORDS[best_k][1], best_k.title()
 
     import difflib
     close_keys = difflib.get_close_matches(clean, KNOWN_COORDS.keys(), n=1, cutoff=0.75)
@@ -688,6 +730,7 @@ class JarvisAPI:
 
         print(f"[desktop] Tactical NAV directive received: '{target_clean}'")
         self._emit("jarvis_play_sfx", {"effect": "target_lock"})
+        self._emit("jarvis_stt_interim", {"text": f"🌐 [TACTICAL ORBIT] Navigating camera to {target_clean.title()}..."})
         self._resolve_and_glide_location(f"go to {target_clean}", glide_only=True)
 
     def _execute_tactical_layer(self, layer_spec: str):
@@ -1375,8 +1418,26 @@ class JarvisAPI:
         </svg>"""
         return svg.strip().encode('utf-8')
 
-    def get_cctv_frame(self, camera_id: str) -> bytes:
-        """Return a dynamic high-fidelity tactical surveillance snapshot for a CCTV camera."""
+    def get_cctv_sources(self) -> list:
+        """Return global multi-region CCTV camera sources across India, UK, USA, Japan."""
+        try:
+            from modules.cctv_service import get_cctv_sources
+            return get_cctv_sources()
+        except Exception as e:
+            print(f"[desktop] Error retrieving CCTV sources: {e}")
+            return []
+
+    def get_cctv_frame(self, camera_id: str) -> tuple:
+        """Return authentic live snapshot and content-type for the requested camera."""
+        try:
+            from modules.cctv_service import fetch_cctv_frame
+            return fetch_cctv_frame(camera_id)
+        except Exception as e:
+            print(f"[desktop] Error fetching live CCTV frame: {e}")
+            return b"", "image/jpeg"
+
+    def _get_legacy_synthetic_cctv_frame(self, camera_id: str) -> bytes:
+        """Legacy fallback synthetic frame."""
         now = time.time()
         cache = getattr(self, '_cctv_frame_cache', {})
         last_t, last_bytes = cache.get(camera_id, (0.0, None))
@@ -3156,19 +3217,28 @@ class JarvisDesktop:
                                     bottle.response.content_type = 'application/json'
                                     return json.dumps(api.get_adsb_flights(feed))
 
+                                @app.route('/api/cctv/sources')
+                                def _bottle_cctv_sources():
+                                    bottle.response.headers['Access-Control-Allow-Origin'] = '*'
+                                    bottle.response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+                                    bottle.response.content_type = 'application/json'
+                                    bottle.response.set_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+                                    return json.dumps({"sources": api.get_cctv_sources()})
+
                                 @app.route('/api/cctv/frame/<camera_id>')
                                 def _bottle_cctv(camera_id):
                                     bottle.response.headers['Access-Control-Allow-Origin'] = '*'
                                     bottle.response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-                                    frame = api.get_cctv_frame(camera_id)
+                                    res = api.get_cctv_frame(camera_id)
+                                    if isinstance(res, tuple) and len(res) == 2:
+                                        frame, mime = res
+                                    else:
+                                        frame = res
+                                        mime = 'image/jpeg'
                                     if not frame:
                                         frame = api.get_cctv_synthetic_bmp(camera_id)
-                                    if isinstance(frame, bytes) and frame.startswith(b'BM'):
-                                        bottle.response.content_type = 'image/bmp'
-                                    elif isinstance(frame, bytes) and (frame.strip().startswith(b'<svg') or frame.strip().startswith(b'<?xml')):
-                                        bottle.response.content_type = 'image/svg+xml'
-                                    else:
-                                        bottle.response.content_type = 'image/jpeg'
+                                        mime = 'image/bmp'
+                                    bottle.response.content_type = mime
                                     bottle.response.set_header('Cache-Control', 'no-cache, no-store, must-revalidate')
                                     return [frame] if isinstance(frame, bytes) else frame
 
