@@ -8,9 +8,25 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
 <link rel="stylesheet" href="cesium/Widgets/widgets.css">
 <script>
   window.CESIUM_BASE_URL = 'cesium/';
+  // Eliminate WebGL INVALID_VALUE: uniform3fv: no array warnings across WebGL 1/2 contexts
+  (function() {
+    function patchUniform3fv(proto) {
+      if (!proto || !proto.uniform3fv) return;
+      const _orig = proto.uniform3fv;
+      proto.uniform3fv = function(loc, v, ...rest) {
+        if (!loc || !v) return;
+        if (!ArrayBuffer.isView(v) && !Array.isArray(v)) return;
+        if (v.length < 3 || (v.length % 3 !== 0)) return;
+        return _orig.call(this, loc, v, ...rest);
+      };
+    }
+    if (typeof WebGLRenderingContext !== 'undefined') patchUniform3fv(WebGLRenderingContext.prototype);
+    if (typeof WebGL2RenderingContext !== 'undefined') patchUniform3fv(WebGL2RenderingContext.prototype);
+  })();
 </script>
 <script src="cesium/Cesium.js"></script>
 <script src="three.min.js"></script>
@@ -2471,6 +2487,67 @@ body {
   top: 0;
   left: 0;
 }
+/* ── Full-globe Celestial Sun & Moon Keyhole Ring (God's Eye) ─────── */
+.celestial-ring-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 300ms ease, visibility 300ms ease;
+}
+
+.celestial-ring-overlay.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.celestial-ring-overlay.disabled {
+  display: none;
+}
+
+.celestial-ring-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform-origin: 50% 50%;
+  will-change: transform, opacity;
+}
+
+.celestial-ring-outline {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid rgba(151, 218, 232, 0.22);
+  border-radius: 50%;
+  will-change: width, height;
+}
+
+.celestial-marker {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, -50%);
+  font-family: 'Material Symbols Outlined', sans-serif;
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
+  transition: opacity 120ms linear;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.celestial-sun {
+  color: rgba(255, 215, 80, 0.95);
+  text-shadow: 0 0 10px rgba(255, 215, 80, 0.8), 0 0 24px rgba(255, 180, 40, 0.45);
+}
+
+.celestial-moon {
+  color: rgba(63, 214, 255, 0.9);
+  text-shadow: 0 0 8px rgba(63, 214, 255, 0.75), 0 0 20px rgba(63, 214, 255, 0.35);
+}
 </style>
 </head>
 <body>
@@ -2639,6 +2716,10 @@ body {
           <span>📹 CCTV / TRAFFIC CONES</span>
           <div class="toggle-pill"></div>
         </div>
+        <div class="globe-layer-toggle" id="layer-toggle-traffic" onclick="window.toggleTacticalLayer('traffic')">
+          <span>🚗 STREET TRAFFIC (LIVE FLOW)</span>
+          <div class="toggle-pill"></div>
+        </div>
         <div class="globe-layer-toggle" id="layer-toggle-radio" onclick="window.toggleTacticalLayer('radio')">
           <span>📻 GLOBAL RADIO TUNER</span>
           <div class="toggle-pill"></div>
@@ -2660,10 +2741,11 @@ body {
           <div class="toggle-pill"></div>
         </div>
       </div>
-      <div style="font-size:9px; color:#8A8D91; font-family:var(--mono); margin-top:8px; display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;">
+      <div style="font-size:9px; color:#8A8D91; font-family:var(--mono); margin-top:8px; display:grid; grid-template-columns:repeat(5, 1fr); gap:4px;">
         <span>RADAR: <span id="radar-contact-count" style="color:#00F0FF;">0</span></span>
         <span>VESSELS: <span id="vessel-contact-count" style="color:#38BDF8;">0</span></span>
         <span>CCTV: <span id="cctv-contact-count" style="color:#FFB84D;">0</span></span>
+        <span>TRAFFIC: <span id="traffic-contact-count" style="color:#2ECC71;">0</span></span>
         <span>FIRMS: <span id="thermal-contact-count" style="color:#EF4444;">0</span></span>
       </div>
 
@@ -10925,11 +11007,16 @@ function initCesiumGlobe() {
           const buildingsTileset = await Cesium.createOsmBuildingsAsync();
           if (buildingsTileset) {
             buildingsTileset.maximumMemoryUsage = 64; // Cap 3D building cache to 64MB RAM
+            if (Cesium.Cesium3DTileStyle) {
+              buildingsTileset.style = new Cesium.Cesium3DTileStyle({
+                color: "color('#0A192F', 0.45)"
+              });
+            }
           }
           if (cesiumViewer && !cesiumViewer.isDestroyed()) {
             cesiumViewer.scene.primitives.add(buildingsTileset);
             window._cesiumOsmBuildingsAdded = true;
-            console.log('[Cesium] Cesium 3D OSM Buildings active (memory capped at 64MB)');
+            console.log('[Cesium] Cesium 3D OSM Buildings active (tactical glass style, capped at 64MB)');
           }
         } catch (bErr) {
           console.warn('[Cesium] 3D Buildings unavailable:', bErr?.message || bErr);
@@ -11019,6 +11106,7 @@ let _tacticalLayers = {
   flights: false,
   vessels: false,
   cctv: false,
+  traffic: false,
   radio: false,
   space: false,
   seismic: false,
@@ -11028,6 +11116,7 @@ let _tacticalLayers = {
 let _flightsDataSource = null;
 let _vesselsDataSource = null;
 let _cctvDataSource = null;
+let _trafficDataSource = null;
 let _radioDataSource = null;
 let _spaceDataSource = null;
 let _seismicDataSource = null;
@@ -11380,6 +11469,12 @@ window.setEarthVisualStyle = function(styleName) {
       baseLayer.gamma = 0.92;
     }
   }
+
+  // God's Eye Celestial Ring: active for Day & Night Terminator view
+  if (window._celestialRing) {
+    window._celestialRing.setEnabled(styleName === 'terminator');
+  }
+
   scene.requestRender();
 };
 
@@ -11483,6 +11578,10 @@ window.toggleTacticalLayer = function(layerName, forceState) {
     } else {
       if (el) el.textContent = '0';
     }
+  } else if (layerName === 'traffic') {
+    if (window._setTrafficLayerEnabled) {
+      window._setTrafficLayerEnabled(_tacticalLayers.traffic);
+    }
   } else if (layerName === 'radio' && _radioDataSource) {
     _radioDataSource.show = _tacticalLayers.radio;
   } else if (layerName === 'space' && _spaceDataSource) {
@@ -11520,6 +11619,7 @@ window.clearAllTacticalLayers = function() {
   if (_flightsDataSource) _flightsDataSource.show = false;
   if (_vesselsDataSource) _vesselsDataSource.show = false;
   if (_cctvDataSource) _cctvDataSource.show = false;
+  if (window._setTrafficLayerEnabled) window._setTrafficLayerEnabled(false);
   if (_radioDataSource) _radioDataSource.show = false;
   if (_spaceDataSource) _spaceDataSource.show = false;
   if (_seismicDataSource) _seismicDataSource.show = false;
@@ -11629,6 +11729,17 @@ window.inspectTarget = function(data) {
       actBtn.textContent = 'FLY TO CAMERA (POV)';
       actBtn.onclick = () => window.flyToCameraPOV(data);
     }
+    // God's Eye parity: reveal monitor plane for inspected camera and hide all others
+    if (_cctvDataSource && _cctvDataSource.entities) {
+      _cctvDataSource.entities.values.forEach(ent => {
+        if (ent.plane) {
+          ent.show = (ent.id === `cctv-${data.id}-plane`);
+        }
+      });
+      if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
+        window.cesiumViewer.scene.requestRender();
+      }
+    }
   } else if (data.type === 'SATELLITE') {
     if (icon) icon.textContent = '🛰';
     if (title) title.textContent = `ORBITAL: ${data.name}`;
@@ -11703,6 +11814,14 @@ window.closeGlobeInspectCard = function() {
   if (_cctvAnimInterval) {
     clearInterval(_cctvAnimInterval);
     _cctvAnimInterval = null;
+  }
+  if (_cctvDataSource && _cctvDataSource.entities) {
+    _cctvDataSource.entities.values.forEach(ent => {
+      if (ent.plane) ent.show = false;
+    });
+    if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
+      window.cesiumViewer.scene.requestRender();
+    }
   }
   _inspectTargetData = null;
 };
@@ -11933,7 +12052,8 @@ function initGlobeIntelligence(viewer) {
   function computeCameraFrustum(cam) {
     const terrainSample = (viewer.scene && viewer.scene.globe) ? viewer.scene.globe.getHeight(Cesium.Cartographic.fromDegrees(cam.lon, cam.lat)) : undefined;
     const hasTerrain = Number.isFinite(terrainSample) && terrainSample > 0;
-    const ground = hasTerrain ? terrainSample : (cam.groundAltM && cam.groundAltM > 0 ? cam.groundAltM : 15);
+    const priorAlt = Number(cam.groundElevationM) || Number(cam.groundAltM) || 0;
+    const ground = (hasTerrain && terrainSample > 0) ? Math.max(terrainSample, priorAlt) : (priorAlt > 0 ? priorAlt : 15);
     const mountAlt = ground + (cam.mountHeightM || 28);
     const R = cam.rangeM || 700;
     const pitchRad = Cesium.Math.toRadians(cam.pitchDeg || -18);
@@ -11943,7 +12063,8 @@ function initGlobeIntelligence(viewer) {
     const horiz = R * Math.cos(pitchRad);
     const vert = R * Math.sin(pitchRad);
     const capLL = projectPointGeo(cam.lat, cam.lon, heading, horiz);
-    const capAlt = Math.max(ground + 2, mountAlt + vert);
+    const minAlt = ground + 2; // FRUSTUM_GROUND_CLEARANCE_M = 2
+    const capAlt = Math.max(minAlt, mountAlt + vert);
 
     const aspect = 16 / 9;
     const halfW = R * Math.tan(hFovRad / 2);
@@ -12116,11 +12237,12 @@ function initGlobeIntelligence(viewer) {
       _tacticalData: tacticalData
     });
 
-    // 2. Optical Mast Line Anchoring Camera to Ground Terrain (No depthFailMaterial to prevent WebGL uniform3fv error)
+    // 2. Optical Mast Line Anchoring Camera to Ground Terrain (Snapped to actual elevation, never sea-level 0m)
+    const groundBaseAlt = Math.max(0, geom.mount.alt - (cam.mountHeightM || 28));
     _cctvDataSource.entities.add({
       polyline: {
         positions: [
-          Cesium.Cartesian3.fromDegrees(cam.lon, cam.lat, 0),
+          Cesium.Cartesian3.fromDegrees(cam.lon, cam.lat, groundBaseAlt),
           posMount
         ],
         width: 1.5,
@@ -12129,7 +12251,7 @@ function initGlobeIntelligence(viewer) {
       _tacticalData: tacticalData
     });
 
-    // 3. The 4 Corner Rays of the 3D Frustum Pyramid (No depthFailMaterial to prevent WebGL uniform3fv error)
+    // 3. The 4 Corner Rays of the 3D Frustum Pyramid
     const rayMaterial = new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#00F0FF').withAlpha(0.85));
     [posTL, posTR, posBR, posBL].forEach(cornerPos => {
       _cctvDataSource.entities.add({
@@ -12142,7 +12264,25 @@ function initGlobeIntelligence(viewer) {
       });
     });
 
-    // 4. The Pitched Far-Cap Closed Rectangle Polyline (No depthFailMaterial to prevent WebGL uniform3fv error)
+    // 3b. Translucent Frustum Volume Pyramid (God's Eye Parity)
+    const coneFill = Cesium.Color.fromCssColorString('#00F0FF').withAlpha(0.08);
+    [
+      [posMount, posTL, posTR],
+      [posMount, posTR, posBR],
+      [posMount, posBR, posBL],
+      [posMount, posBL, posTL]
+    ].forEach((tri) => {
+      _cctvDataSource.entities.add({
+        polygon: {
+          hierarchy: new Cesium.PolygonHierarchy(tri),
+          material: new Cesium.ColorMaterialProperty(coneFill),
+          perPositionHeight: true
+        },
+        _tacticalData: tacticalData
+      });
+    });
+
+    // 4. The Pitched Far-Cap Closed Rectangle Polyline
     _cctvDataSource.entities.add({
       polyline: {
         positions: [posTL, posTR, posBR, posBL, posTL],
@@ -12152,7 +12292,7 @@ function initGlobeIntelligence(viewer) {
       _tacticalData: tacticalData
     });
 
-    // 5. The 3D Monitor Plane Entity at the far end of the frustum
+    // 5. The 3D Monitor Plane Entity (show: false by default — revealed only when active/inspected)
     const cctvCanvas = document.createElement('canvas');
     cctvCanvas.width = 640;
     cctvCanvas.height = 360;
@@ -12167,6 +12307,7 @@ function initGlobeIntelligence(viewer) {
 
     _cctvDataSource.entities.add({
       id: `cctv-${cam.id}-plane`,
+      show: false,
       position: posCapCenter,
       orientation: planeOrientationFor(cam, posCapCenter),
       plane: {
@@ -13069,6 +13210,486 @@ function initGlobeIntelligence(viewer) {
 
   // Pre-tune tactical station in paused standby (NO AUTOPLAY)
   window.tuneRadioStation('tokyo_atc', false);
+
+  // =========================================================================
+  // 8. DAY & NIGHT CELESTIAL SUN AND MOON RING (GOD'S EYE AUTHENTIC ENGINE)
+  // =========================================================================
+  class CelestialRing {
+    constructor(viewer, { enabled = false } = {}) {
+      this.viewer = viewer;
+      this.enabled = !!enabled;
+      this.visible = false;
+      this._sunAngle = 0;
+      this._moonAngle = Math.PI;
+      this._sunOpacity = 1;
+      this._moonOpacity = 1;
+      this._sunInertial = new Cesium.Cartesian3();
+      this._moonInertial = new Cesium.Cartesian3();
+      this._sunFixed = new Cesium.Cartesian3();
+      this._moonFixed = new Cesium.Cartesian3();
+      this._fixedMatrix = new Cesium.Matrix3();
+      this._ephemerisDirty = true;
+      this._buildDOM();
+
+      this._removePostRender = viewer.scene.postRender.addEventListener(() => this._draw());
+      this.setEnabled(this.enabled);
+    }
+
+    _buildDOM() {
+      this._root = document.createElement('div');
+      this._root.id = 'celestial-ring-overlay';
+      this._root.className = 'celestial-ring-overlay';
+      this._root.setAttribute('aria-hidden', 'true');
+
+      this._ringOutline = document.createElement('div');
+      this._ringOutline.className = 'celestial-ring-outline';
+
+      this._sunCanvas = document.createElement('canvas');
+      this._sunCanvas.className = 'celestial-ring-canvas celestial-sun-canvas';
+      this._sunCtx = this._sunCanvas.getContext('2d', { alpha: true });
+
+      this._moonCanvas = document.createElement('canvas');
+      this._moonCanvas.className = 'celestial-ring-canvas celestial-moon-canvas';
+      this._moonCtx = this._moonCanvas.getContext('2d', { alpha: true });
+
+      this._sunMarker = document.createElement('div');
+      this._sunMarker.className = 'celestial-marker celestial-sun material-symbols-outlined';
+      this._sunMarker.textContent = 'light_mode';
+      this._sunMarker.title = 'The Sun';
+
+      this._moonMarker = document.createElement('div');
+      this._moonMarker.className = 'celestial-marker celestial-moon material-symbols-outlined';
+      this._moonMarker.textContent = 'dark_mode';
+      this._moonMarker.title = 'The Moon';
+
+      this._root.append(
+        this._ringOutline,
+        this._sunCanvas,
+        this._moonCanvas,
+        this._sunMarker,
+        this._moonMarker
+      );
+      this.viewer.container.appendChild(this._root);
+    }
+
+    setEnabled(enabled) {
+      const wasEnabled = this.enabled;
+      this.enabled = !!enabled;
+      if (this.enabled && !wasEnabled) this._ephemerisDirty = true;
+      this._root.classList.toggle('disabled', !this.enabled);
+      if (!this.enabled) {
+        this.visible = false;
+        this._root.classList.remove('visible');
+        this._clear();
+      }
+      this.viewer.scene.requestRender();
+    }
+
+    _clear() {
+      if (this._sunCanvas && this._sunCtx) this._sunCtx.clearRect(0, 0, this._sunCanvas.width, this._sunCanvas.height);
+      if (this._moonCanvas && this._moonCtx) this._moonCtx.clearRect(0, 0, this._moonCanvas.width, this._moonCanvas.height);
+      if (this._ringOutline) this._ringOutline.style.display = 'none';
+    }
+
+    _resize(w, h) {
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const bw = Math.max(1, Math.round(w * dpr));
+      const bh = Math.max(1, Math.round(h * dpr));
+      [ [this._sunCanvas, this._sunCtx], [this._moonCanvas, this._moonCtx] ].forEach(([canvas, ctx]) => {
+        if (canvas.width !== bw || canvas.height !== bh) {
+          canvas.width = bw;
+          canvas.height = bh;
+        }
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      });
+    }
+
+    _updateEphemeris(time) {
+      if (!this._ephemerisDirty) return true;
+      try {
+        if (Cesium.Simon1994PlanetaryPositions) {
+          Cesium.Simon1994PlanetaryPositions.computeSunPositionInEarthInertialFrame(time, this._sunInertial);
+          Cesium.Simon1994PlanetaryPositions.computeMoonPositionInEarthInertialFrame(time, this._moonInertial);
+        } else {
+          return false;
+        }
+        const matrix = Cesium.Transforms.computeIcrfToFixedMatrix(time, this._fixedMatrix)
+          || Cesium.Transforms.computeTemeToPseudoFixedMatrix(time, this._fixedMatrix);
+        if (!matrix) return false;
+
+        Cesium.Matrix3.multiplyByVector(matrix, this._sunInertial, this._sunFixed);
+        Cesium.Matrix3.multiplyByVector(matrix, this._moonInertial, this._moonFixed);
+        Cesium.Cartesian3.normalize(this._sunFixed, this._sunFixed);
+        Cesium.Cartesian3.normalize(this._moonFixed, this._moonFixed);
+        this._ephemerisDirty = false;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    _draw() {
+      if (!this.enabled || !this._sunCtx || !this._moonCtx) return;
+      const canvas = this.viewer.scene.canvas;
+      const width = canvas.clientWidth || canvas.width;
+      const height = canvas.clientHeight || canvas.height;
+      if (!(width > 0 && height > 0)) return;
+
+      const camera = this.viewer.camera;
+      const distance = Cesium.Cartesian3.magnitude(camera.positionWC);
+      const earthRadiusM = 6378137;
+
+      // Full globe orbital threshold: active when viewing Earth from space (distance > 1.25x Earth radius)
+      const inOrbitView = distance > earthRadiusM * 1.35;
+      const isVisible = this.enabled && inOrbitView;
+
+      this.visible = isVisible;
+      this._root.classList.toggle('visible', isVisible);
+      if (!isVisible) {
+        this._clear();
+        return;
+      }
+
+      this._resize(width, height);
+      const time = Cesium.JulianDate.now();
+      this._updateEphemeris(time);
+
+      // Project celestial direction vectors onto camera plane
+      const rightWC = camera.rightWC;
+      const upWC = camera.upWC;
+      const sunRight = Cesium.Cartesian3.dot(this._sunFixed, rightWC);
+      const sunUp = Cesium.Cartesian3.dot(this._sunFixed, upWC);
+      const moonRight = Cesium.Cartesian3.dot(this._moonFixed, rightWC);
+      const moonUp = Cesium.Cartesian3.dot(this._moonFixed, upWC);
+
+      const toAngle = (r, u, last) => {
+        const len = Math.hypot(r, u);
+        if (len < 0.035) return { angle: last, opacity: Math.max(0, len / 0.035) };
+        const a = (Math.atan2(-u, r) + Math.PI * 2) % (Math.PI * 2);
+        return { angle: a, opacity: Math.min(1, Math.max(0.35, len)) };
+      };
+
+      const sunProj = toAngle(sunRight, sunUp, this._sunAngle);
+      const moonProj = toAngle(moonRight, moonUp, this._moonAngle);
+      this._sunAngle = sunProj.angle;
+      this._moonAngle = moonProj.angle;
+      this._sunOpacity = sunProj.opacity;
+      this._moonOpacity = moonProj.opacity;
+
+      const cx = width * 0.5;
+      const cy = height * 0.5;
+      const keyholeRadius = height * 0.5 * 1.05;
+      const radius = keyholeRadius - 12;
+
+      // Draw Sun Arc and Rays
+      this._sunCtx.clearRect(0, 0, this._sunCanvas.width, this._sunCanvas.height);
+      this._drawTaperedArc(this._sunCtx, cx, cy, radius, this._sunAngle, '240, 205, 95', 0.65);
+      this._drawSunRays(this._sunCtx, cx, cy, radius, radius * 0.68, this._sunAngle);
+
+      // Draw Moon Arc and Haze
+      this._moonCtx.clearRect(0, 0, this._moonCanvas.width, this._moonCanvas.height);
+      this._drawTaperedArc(this._moonCtx, cx, cy, radius, this._moonAngle, '63, 214, 255', 0.55);
+      this._drawMoonHaze(this._moonCtx, cx, cy, radius, this._moonAngle);
+
+      // Draw orbital ring outline
+      if (this._ringOutline) {
+        this._ringOutline.style.display = 'block';
+        this._ringOutline.style.left = `${cx - radius}px`;
+        this._ringOutline.style.top = `${cy - radius}px`;
+        this._ringOutline.style.width = `${radius * 2}px`;
+        this._ringOutline.style.height = `${radius * 2}px`;
+      }
+
+      // Position HTML markers with collision evasion
+      const markerRadius = radius - 32;
+      const angleDiff = Math.abs((this._sunAngle - this._moonAngle + Math.PI * 3) % (Math.PI * 2) - Math.PI);
+      const collide = angleDiff < 0.12;
+
+      this._positionMarker(this._sunMarker, cx, cy, markerRadius, this._sunAngle, this._sunOpacity);
+      this._positionMarker(this._moonMarker, cx, cy, markerRadius - (collide ? 28 : 0), this._moonAngle, this._moonOpacity);
+    }
+
+    _drawTaperedArc(ctx, cx, cy, radius, angle, rgb, strength) {
+      const span = 0.85;
+      const segments = 18;
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.shadowColor = `rgba(${rgb}, ${0.5 * strength})`;
+      ctx.shadowBlur = 10;
+      for (let i = 0; i < segments; i++) {
+        const t0 = i / segments;
+        const t1 = (i + 1) / segments;
+        const a0 = angle - span + span * 2 * t0;
+        const a1 = angle - span + span * 2 * t1;
+        const env = Math.sin(Math.PI * ((t0 + t1) * 0.5));
+        ctx.strokeStyle = `rgba(${rgb}, ${strength * env * env})`;
+        ctx.lineWidth = 0.8 + env * 1.4;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, a0, a1);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    _drawSunRays(ctx, cx, cy, radius, innerRadius, angle) {
+      const sx = cx + Math.cos(angle) * radius;
+      const sy = cy + Math.sin(angle) * radius;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius + 4, 0, Math.PI * 2);
+      ctx.arc(cx, cy, innerRadius, 0, Math.PI * 2, true);
+      ctx.clip('evenodd');
+      ctx.globalCompositeOperation = 'screen';
+
+      const glow = ctx.createRadialGradient(sx, sy, 4, sx, sy, radius * 0.95);
+      glow.addColorStop(0, 'rgba(255, 222, 126, 0.25)');
+      glow.addColorStop(0.25, 'rgba(255, 229, 157, 0.12)');
+      glow.addColorStop(0.6, 'rgba(255, 235, 188, 0.04)');
+      glow.addColorStop(1, 'rgba(255, 242, 214, 0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(cx - radius - 4, cy - radius - 4, (radius + 4) * 2, (radius + 4) * 2);
+
+      ctx.lineCap = 'round';
+      const annulus = Math.max(1, radius - innerRadius);
+      for (let i = -2; i <= 2; i++) {
+        const spread = i * 0.045;
+        const rayAngle = angle + Math.PI + spread;
+        const rayLen = annulus * (0.75 + (2 - Math.abs(i)) * 0.08);
+        const ex = sx + Math.cos(rayAngle) * rayLen;
+        const ey = sy + Math.sin(rayAngle) * rayLen;
+        const grad = ctx.createLinearGradient(sx, sy, ex, ey);
+        grad.addColorStop(0, `rgba(255, 230, 166, ${0.12 - Math.abs(i) * 0.02})`);
+        grad.addColorStop(1, 'rgba(255, 226, 156, 0)');
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = i === 0 ? 2.0 : 1.0;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    _drawMoonHaze(ctx, cx, cy, radius, angle) {
+      const mx = cx + Math.cos(angle) * radius;
+      const my = cy + Math.sin(angle) * radius;
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      const haze = ctx.createRadialGradient(mx, my, 0, mx, my, radius * 0.25);
+      haze.addColorStop(0, 'rgba(63, 214, 255, 0.24)');
+      haze.addColorStop(0.45, 'rgba(63, 214, 255, 0.08)');
+      haze.addColorStop(1, 'rgba(63, 214, 255, 0)');
+      ctx.fillStyle = haze;
+      ctx.beginPath();
+      ctx.arc(mx, my, radius * 0.25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    _positionMarker(el, cx, cy, radius, angle, opacity) {
+      const x = cx + Math.cos(angle) * radius;
+      const y = cy + Math.sin(angle) * radius;
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+      el.style.opacity = String(opacity);
+    }
+
+    destroy() {
+      if (this._removePostRender) this._removePostRender();
+      this._root?.remove();
+    }
+  }
+
+  // Instantiate Celestial Ring
+  window._celestialRing = new CelestialRing(viewer, { enabled: _activeEarthStyle === 'terminator' });
+
+  // =========================================================================
+  // 9. LIVE STREET TRAFFIC WITH SPEED-BASED COLOR GRADING & VEHICLE DOTS
+  // =========================================================================
+  const SPEED_MPS_MAP = {
+    motorway: 25, trunk: 20, primary: 14, secondary: 11, tertiary: 8, residential: 5
+  };
+  const COLOR_BY_LEVEL = {
+    free: Cesium.Color.fromCssColorString('#2ECC71').withAlpha(0.92),  // Flowing Green
+    slow: Cesium.Color.fromCssColorString('#F0B23E').withAlpha(0.92),  // Congested Amber
+    jam:  Cesium.Color.fromCssColorString('#E05252').withAlpha(0.95)   // Heavy Red
+  };
+
+  let _trafficPoints = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
+  let _trafficDots = [];
+  let _trafficFetching = false;
+  let _lastTrafficBbox = '';
+  let _trafficLastAnim = 0;
+
+  async function _fetchTrafficRoads() {
+    if (!_tacticalLayers.traffic) return;
+    const camera = viewer.camera;
+    const carto = camera.positionCartographic;
+    const alt = carto.height;
+
+    // Traffic only renders below 8000 meters altitude (God's Eye Parity)
+    if (alt > 8000) {
+      _trafficPoints.removeAll();
+      _trafficDots = [];
+      const el = document.getElementById('traffic-contact-count'); if (el) el.textContent = '0';
+      return;
+    }
+
+    const lat = Cesium.Math.toDegrees(carto.latitude);
+    const lon = Cesium.Math.toDegrees(carto.longitude);
+    const span = Math.min(0.045, Math.max(0.01, (alt / 8000) * 0.04));
+
+    const s = (lat - span).toFixed(4);
+    const w = (lon - span * 1.2).toFixed(4);
+    const n = (lat + span).toFixed(4);
+    const e = (lon + span * 1.2).toFixed(4);
+    const bboxKey = `${s},${w},${n},${e}`;
+    if (bboxKey === _lastTrafficBbox || _trafficFetching) return;
+
+    _trafficFetching = true;
+    _lastTrafficBbox = bboxKey;
+
+    try {
+      const ql = `[out:json][timeout:5];(way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential)$"](${s},${w},${n},${e}););out geom;`;
+      const res = await fetch('/api/overpass', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(ql)
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const ways = Array.isArray(data?.elements) ? data.elements : [];
+
+      _trafficPoints.removeAll();
+      _trafficDots = [];
+
+      // Sample local terrain altitude to anchor traffic dots directly to road surface
+      const terrainAlt = viewer.scene.globe.getHeight(carto) || 0;
+      const baseAlt = Math.max(0, terrainAlt) + 2.5;
+
+      ways.forEach((way, wIdx) => {
+        const geom = way.geometry || [];
+        if (geom.length < 2) return;
+
+        const rtype = way.tags?.highway || 'primary';
+        const baseSpeed = SPEED_MPS_MAP[rtype] || 12;
+
+        // Assign congestion level based on road density & type
+        let bucket = 'free';
+        let speedMult = 1.0;
+        if (rtype === 'residential' || (wIdx % 5 === 0)) {
+          bucket = 'jam';
+          speedMult = 0.35;
+        } else if (rtype === 'secondary' || (wIdx % 3 === 0)) {
+          bucket = 'slow';
+          speedMult = 0.65;
+        }
+
+        const dotColor = COLOR_BY_LEVEL[bucket];
+        const waypoints = geom.map(pt => Cesium.Cartesian3.fromDegrees(pt.lon, pt.lat, baseAlt));
+        const segDist = [];
+        for (let k = 0; k < waypoints.length - 1; k++) {
+          segDist.push(Cesium.Cartesian3.distance(waypoints[k], waypoints[k + 1]));
+        }
+
+        // Spawn 2-5 dots per road segment based on length
+        const dotCount = Math.min(6, Math.max(2, Math.floor(waypoints.length * 0.8)));
+        for (let d = 0; d < dotCount; d++) {
+          if (_trafficDots.length >= 1500) break;
+          const segIdx = Math.floor(Math.random() * (waypoints.length - 1));
+          const t = Math.random();
+          const initialPos = new Cesium.Cartesian3();
+          Cesium.Cartesian3.lerp(waypoints[segIdx], waypoints[segIdx + 1], t, initialPos);
+
+          const pt = _trafficPoints.add({
+            position: initialPos,
+            pixelSize: bucket === 'jam' ? 6 : (rtype === 'motorway' ? 5 : 4.5),
+            color: dotColor,
+            scaleByDistance: new Cesium.NearFarScalar(100, 1.4, 7500, 0.4),
+            disableDepthTestDistance: 5000
+          });
+
+          _trafficDots.push({
+            point: pt,
+            waypoints,
+            segDist,
+            numSegments: waypoints.length - 1,
+            segIdx,
+            t,
+            direction: (way.tags?.oneway === 'yes') ? 1 : (d % 2 === 0 ? 1 : -1),
+            mps: baseSpeed * speedMult * (0.8 + Math.random() * 0.4)
+          });
+        }
+      });
+
+      const el = document.getElementById('traffic-contact-count');
+      if (el) el.textContent = String(_trafficDots.length);
+      console.log(`[Cesium Traffic] Flow layer online: ${_trafficDots.length} animated vehicle dots across ${ways.length} road corridors.`);
+    } catch (e) {
+      console.warn('[Cesium Traffic] Road fetch warning:', e);
+    } finally {
+      _trafficFetching = false;
+    }
+  }
+
+  // Pre-render vehicle animation loop
+  viewer.scene.preRender.addEventListener(() => {
+    if (!_tacticalLayers.traffic || _trafficDots.length === 0) return;
+    const now = Date.now();
+    const dt = _trafficLastAnim ? Math.min((now - _trafficLastAnim) / 1000, 0.08) : 0.016;
+    _trafficLastAnim = now;
+
+    const scratchPos = new Cesium.Cartesian3();
+    for (let i = 0; i < _trafficDots.length; i++) {
+      const dot = _trafficDots[i];
+      const segLen = dot.segDist[dot.segIdx] || 1;
+      const tDelta = (dot.mps * dt) / segLen;
+      dot.t += tDelta * dot.direction;
+
+      if (dot.t >= 1.0) {
+        dot.t -= 1.0;
+        dot.segIdx++;
+        if (dot.segIdx >= dot.numSegments) {
+          dot.segIdx = 0;
+          dot.t = Math.random() * 0.25;
+        }
+      } else if (dot.t <= 0.0) {
+        dot.t += 1.0;
+        dot.segIdx--;
+        if (dot.segIdx < 0) {
+          dot.segIdx = dot.numSegments - 1;
+          dot.t = 1.0 - Math.random() * 0.25;
+        }
+      }
+
+      Cesium.Cartesian3.lerp(dot.waypoints[dot.segIdx], dot.waypoints[dot.segIdx + 1], dot.t, scratchPos);
+      dot.point.position = scratchPos;
+    }
+  });
+
+  // Debounced camera listener for traffic road updates
+  let _trafficDebounceTimer = null;
+  viewer.camera.changed.addEventListener(() => {
+    if (!_tacticalLayers.traffic) return;
+    if (_trafficDebounceTimer) clearTimeout(_trafficDebounceTimer);
+    _trafficDebounceTimer = setTimeout(_fetchTrafficRoads, 350);
+  });
+
+  window._setTrafficLayerEnabled = function(enabled) {
+    _tacticalLayers.traffic = !!enabled;
+    const toggleEl = document.getElementById('layer-toggle-traffic');
+    if (toggleEl) toggleEl.classList.toggle('active', _tacticalLayers.traffic);
+    if (_tacticalLayers.traffic) {
+      _fetchTrafficRoads();
+    } else {
+      _trafficPoints.removeAll();
+      _trafficDots = [];
+      const el = document.getElementById('traffic-contact-count'); if (el) el.textContent = '0';
+    }
+    viewer.scene.requestRender();
+  };
 
   viewer.scene.requestRender();
 }

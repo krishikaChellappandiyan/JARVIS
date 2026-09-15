@@ -1107,6 +1107,39 @@ class JarvisVoice:
         mime = "audio/wav" if audio_bytes.startswith(b"RIFF") else "audio/mp3"
         return f"data:{mime};base64,{b64}"
 
+    def speak(self, text: str) -> None:
+        """Synthesizes and immediately plays audio on system speakers."""
+        if not text:
+            return
+        audio_bytes = self.narrate(text)
+        if not audio_bytes:
+            return
+        try:
+            import subprocess
+            import tempfile
+            import shutil
+            suffix = ".wav" if audio_bytes.startswith(b"RIFF") else ".mp3"
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+                f.write(audio_bytes)
+                temp_path = f.name
+            players = ["mpv", "ffplay", "paplay", "aplay"]
+            for player in players:
+                if shutil.which(player):
+                    if player == "ffplay":
+                        cmd = [player, "-nodisp", "-autoexit", "-loglevel", "quiet", temp_path]
+                    elif player == "mpv":
+                        cmd = [player, "--no-video", "--really-quiet", temp_path]
+                    else:
+                        cmd = [player, temp_path]
+                    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    break
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[jarvis_voice] speak error: {e}")
+
     # ── Public interface ──────────────────────────────────────
 
     def resolve_search_subject(self, query: str, target: Target = None) -> str:

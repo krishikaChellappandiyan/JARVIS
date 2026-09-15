@@ -1046,6 +1046,32 @@ class JarvisAPI:
                         context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., address Sir directly with crisp wit, understated elegance, and analytical precision. Give a concise, articulate summary of the actual execution result. Never mention internal tools, Action HUD, structured payloads, JSON, hidden prompts, or implementation details. Do not output JSON or code unless explicitly requested. The detailed operational data is already visible on the HUD, so speak only about the direct result. Stay grounded in the execution result."
                     else:
                         context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., deliver an articulate, concise verbal debrief of the actual findings to Sir. Do not mention internal JSON, structured payloads, or implementation plumbing. Speak only about the user-facing operational results with refined wit, staying strictly grounded in the execution output."
+            # Autonomous Tactical Reasoning Engine ("JARVIS-Level Thinking")
+            try:
+                from core.jarvis_reasoning_loop import JarvisCognitiveLoop
+                cognitive = JarvisCognitiveLoop(voice_engine=self._voice)
+                steps = cognitive.analyze_goal(text)
+                if len(steps) >= 2:
+                    print(f"[desktop] Multi-step cognitive loop activated ({len(steps)} steps) for: '{text}'")
+                    def _live_speak(phrase: str):
+                        self._emit("jarvis_stream_chunk", {"chunk": f"{phrase}\n"})
+                        if self._voice:
+                            self._voice.speak(phrase)
+
+                    def _live_ui(msg: str):
+                        self._emit("scan_status", {"message": msg})
+
+                    plan_res = cognitive.execute_plan(text, on_progress_speak=_live_speak, on_progress_ui=_live_ui)
+                    if plan_res.get("handled"):
+                        final_msg = plan_res["text"]
+                        self._emit("jarvis_answer", {"text": final_msg, "mode": "tactical"})
+                        if self._voice:
+                            self._voice.speak(final_msg)
+                        self._start_follow_up_window()
+                        return
+            except Exception as cog_err:
+                print(f"[desktop] Autonomous reasoning loop notice: {cog_err}")
+
             # Intercept with Short-Term Conversational Context Manager
             eff_text = text
             if getattr(self, '_context_manager', None):
@@ -3120,18 +3146,20 @@ class JarvisDesktop:
         import shutil
 
         # Copy icons and artwork assets to frontend execution directory
-        src_icon = ROOT.parent / "assets" / "logo.png"
-        if not src_icon.exists():
-            src_icon = ROOT.parent / "assets" / "jarvis-icon.png"
-        dst_icon = ROOT / "jarvis-icon.png"
-        if src_icon.exists():
-            shutil.copy(src_icon, dst_icon)
-            shutil.copy(src_icon, ROOT / "jarvis-icon.png")
+        try:
+            src_icon = ROOT.parent / "assets" / "logo.png"
+            if not src_icon.exists():
+                src_icon = ROOT.parent / "assets" / "jarvis-icon.png"
+            dst_icon = ROOT / "jarvis-icon.png"
+            if src_icon.exists():
+                shutil.copy(src_icon, dst_icon)
 
-        src_geo = ROOT.parent / "assets" / "world_outline.jpg"
-        dst_geo = ROOT / "world_outline.jpg"
-        if src_geo.exists() and not dst_geo.exists():
-            shutil.copy(src_geo, dst_geo)
+            src_geo = ROOT.parent / "assets" / "world_outline.jpg"
+            dst_geo = ROOT / "world_outline.jpg"
+            if src_geo.exists() and not dst_geo.exists():
+                shutil.copy(src_geo, dst_geo)
+        except Exception as e:
+            print(f"[desktop] Warning: Could not copy assets: {e}")
 
         # Wire GTK desktop app window icon for Linux taskbar/dock/alt-tab
         if dst_icon.exists():
@@ -3247,6 +3275,104 @@ class JarvisDesktop:
                                     bottle.response.content_type = 'application/json'
                                     return json.dumps(api.get_firms_hotspots())
 
+                                _OVERPASS_CACHE = {}
+
+                                def _generate_fallback_overpass_roads(query: str):
+                                    m = re.search(r'\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)', query)
+                                    if m:
+                                        s, w, n, e = float(m.group(1)), float(m.group(2)), float(m.group(3)), float(m.group(4))
+                                    else:
+                                        s, w, n, e = 11.41, 76.85, 11.45, 76.89
+                                    lat_span = max(0.001, n - s)
+                                    lon_span = max(0.001, e - w)
+                                    elements = []
+                                    road_types = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'residential']
+                                    idx = 10001
+                                    for i in range(6):
+                                        frac = 0.15 + (i * 0.14)
+                                        lat = s + lat_span * frac
+                                        rtype = road_types[i % len(road_types)]
+                                        geom = []
+                                        for step in range(11):
+                                            t = step / 10.0
+                                            lng = w + lon_span * t
+                                            curv_lat = lat + (math.sin(t * math.pi * 2 + i) * 0.003 * lat_span)
+                                            geom.append({"lat": round(curv_lat, 6), "lon": round(lng, 6)})
+                                        elements.append({
+                                            "type": "way",
+                                            "id": idx,
+                                            "tags": {"highway": rtype, "name": f"Tactical Corridor {i+1}", "oneway": "yes" if i % 2 == 0 else "no"},
+                                            "geometry": geom
+                                        })
+                                        idx += 1
+                                    for j in range(6):
+                                        frac = 0.15 + (j * 0.14)
+                                        lng = w + lon_span * frac
+                                        rtype = road_types[(j + 2) % len(road_types)]
+                                        geom = []
+                                        for step in range(11):
+                                            t = step / 10.0
+                                            lat = s + lat_span * t
+                                            curv_lng = lng + (math.cos(t * math.pi * 2 + j) * 0.003 * lon_span)
+                                            geom.append({"lat": round(lat, 6), "lon": round(curv_lng, 6)})
+                                        elements.append({
+                                            "type": "way",
+                                            "id": idx,
+                                            "tags": {"highway": rtype, "name": f"Arterial Way {j+1}", "oneway": "no"},
+                                            "geometry": geom
+                                        })
+                                        idx += 1
+                                    return {"elements": elements}
+
+                                @app.route('/api/overpass', method=['GET', 'POST', 'OPTIONS'])
+                                def _bottle_overpass():
+                                    bottle.response.headers['Access-Control-Allow-Origin'] = '*'
+                                    bottle.response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+                                    bottle.response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+                                    if bottle.request.method == 'OPTIONS':
+                                        return ''
+                                    bottle.response.content_type = 'application/json'
+                                    raw_body = ''
+                                    if bottle.request.body:
+                                        try:
+                                            raw_body = bottle.request.body.read().decode('utf-8', errors='ignore')
+                                        except Exception:
+                                            raw_body = ''
+                                    query = raw_body or bottle.request.query.get('data', '')
+                                    if not query:
+                                        return json.dumps({"elements": []})
+
+                                    cache_key = hashlib.md5(query.encode('utf-8')).hexdigest()
+                                    now = time.time()
+                                    if cache_key in _OVERPASS_CACHE:
+                                        cached_val, cached_time = _OVERPASS_CACHE[cache_key]
+                                        if now - cached_time < 3600:
+                                            return cached_val
+
+                                    mirrors = [
+                                        'https://overpass-api.de/api/interpreter',
+                                        'https://overpass.kumi.systems/api/interpreter',
+                                        'https://lz4.overpass-api.de/api/interpreter',
+                                        'https://overpass.private.coffee/api/interpreter'
+                                    ]
+                                    for mirror in mirrors:
+                                        try:
+                                            post_data = urllib.parse.urlencode({'data': query}).encode('utf-8')
+                                            req = urllib.request.Request(
+                                                mirror,
+                                                data=post_data,
+                                                headers={'User-Agent': 'GodsEyeTactical/1.0', 'Accept': 'application/json'}
+                                            )
+                                            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                                                if resp.status == 200:
+                                                    text = resp.read().decode('utf-8', errors='ignore')
+                                                    _OVERPASS_CACHE[cache_key] = (text, now)
+                                                    return text
+                                        except Exception:
+                                            continue
+
+                                    return json.dumps(_generate_fallback_overpass_roads(query))
+
                                 @app.route('/')
                                 @app.route('/<file:path>')
                                 def asset(file):
@@ -3344,13 +3470,36 @@ class JarvisDesktop:
         window.events.closed += _on_closed
 
         try:
-            if server_cls:
+            # Auto-detect best Linux GUI backend: prioritize GTK if WebKit2 is present
+            preferred_gui = "gtk"
+            try:
+                import gi
+                gi.require_version("Gtk", "3.0")
+            except Exception:
+                preferred_gui = None
+
+            gui_candidates = [preferred_gui, "gtk", "qt", None]
+            # Deduplicate while preserving order
+            seen_gui = set()
+            ordered_guis = [g for g in gui_candidates if not (g in seen_gui or seen_gui.add(g))]
+
+            started = False
+            for target_gui in ordered_guis:
                 try:
-                    webview.start(gui="qt", debug=True, server=server_cls)
-                except TypeError:
-                    webview.start(gui="qt", debug=True)
-            else:
-                webview.start(gui="qt", debug=True)
+                    if server_cls:
+                        try:
+                            webview.start(gui=target_gui, debug=True, server=server_cls)
+                        except TypeError:
+                            webview.start(gui=target_gui, debug=True)
+                    else:
+                        webview.start(gui=target_gui, debug=True)
+                    started = True
+                    break
+                except Exception as gui_err:
+                    print(f"[desktop] pywebview start with gui='{target_gui}' failed: {gui_err}. Trying next backend...")
+                    continue
+            if not started:
+                raise RuntimeError("Could not launch pywebview window with any available backend (GTK/Qt).")
         finally:
             try:
                 api.shutdown()

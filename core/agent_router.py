@@ -227,14 +227,26 @@ class AgentRouter:
             return True, ack, task, "traffic_intel"
 
         # ── 9. Check for CCTV Surveillance Feeds ──────────────────
-        if any(kw in text_lower for kw in ["cctv", "traffic cam", "security camera", "public camera", "surveillance camera"]):
-            city = "shinjuku" if any(w in text_lower for w in ["tokyo", "shinjuku", "japan"]) else "austin"
+        if any(kw in text_lower for kw in ["cctv", "traffic cam", "security camera", "public camera", "surveillance camera", "cameras in", "cams in"]):
+            city = ""
+            m_in = re.search(r'\b(?:in|at|for|around|near)\s+([a-zA-Z\s,\.\-]+)$', text_lower)
+            if m_in:
+                city = m_in.group(1).strip()
+            else:
+                m_cctv = re.search(r'(?:cctv|cameras?|cams?|surveillance)\s+(?:in|for|at|around|near)?\s*([a-zA-Z\s,\.\-]+)', text_lower)
+                if m_cctv:
+                    city = m_cctv.group(1).strip()
+            city_clean = re.sub(r'\b(?:cctv|cameras?|cams?|surveillance|traffic|security|public|the|a)\b', '', city, flags=re.I).strip()
+            city_clean = re.sub(r'^(?:in|at|for|around|near)\s+', '', city_clean, flags=re.I).strip()
+            city_clean = re.sub(r'[?!.,]+$', '', city_clean).strip()
+            target_city = city_clean.title() if city_clean else "Global Sectors"
+
             task = self.task_manager.create_task(
                 type_=TaskType.BROWSER_SURF.value,
-                title=f"CCTV Surveillance: {city.title()}",
-                data={"cctv": True, "city": city}
+                title=f"CCTV Surveillance: {target_city}",
+                data={"cctv": True, "city": city_clean or "global"}
             )
-            return True, f"Connecting to live public CCTV surveillance feeds for {city.title()}.", task, "cctv_intel"
+            return True, f"Connecting to live public CCTV surveillance feeds for {target_city}, Sir.", task, "cctv_intel"
 
         return False, "", None, ""
 

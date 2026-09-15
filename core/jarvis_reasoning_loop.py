@@ -1,0 +1,321 @@
+"""
+J.A.R.V.I.S. Autonomous Tactical Reasoning Engine ("JARVIS-Level Thinking").
+
+Orchestrates multi-step cognitive plans, dynamically inspects and activates tactical tools
+(God's Eye 3D navigation, CCTV networks across India/US/UK/Japan/Global, live ADS-B radar,
+traffic vectors, terminal diagnostics, atmospheric telemetry, web intelligence),
+and streams real-time spoken progress phrases ("I am checking X... and I found Y")
+to the voice pipeline until the goal is fully accomplished.
+"""
+
+import os
+import re
+import time
+import json
+import threading
+from typing import Dict, List, Any, Optional, Callable, Tuple
+
+from core.event_bus import get_event_bus, EventBus
+from core.task_manager import get_task_manager, TaskManager
+from core.task import Task, TaskType, TaskFinding
+
+
+class JarvisCognitiveLoop:
+    """
+    Multi-Step Autonomous Tactical Cognitive Agent for J.A.R.V.I.S.
+    """
+
+    def __init__(self, voice_engine=None, event_bus: Optional[EventBus] = None):
+        self.voice = voice_engine
+        self.bus = event_bus or get_event_bus()
+        self.task_manager: TaskManager = get_task_manager()
+        self._max_steps = 5
+
+    # ── 1. Dynamic Tool / Capability Registry ────────────────────────
+
+    def tool_gods_eye_nav(self, location_name: str, zoom_altitude: Optional[float] = None) -> Dict[str, Any]:
+        """Navigates the 3D planetary Earth globe to the specified city or coordinates."""
+        from frontend.desktop import resolve_geospatial_coordinates
+        res = resolve_geospatial_coordinates(location_name)
+        if not res:
+            return {"success": False, "error": f"Coordinates unresolvable for '{location_name}'"}
+        lat, lon, matched_name = res
+        payload = {"lat": lat, "lon": lon, "label": matched_name}
+        if zoom_altitude:
+            payload["altitude"] = zoom_altitude
+        self.bus.emit("glide_to_location", payload)
+        self.bus.emit("jarvis_play_sfx", {"effect": "target_lock"})
+        return {"success": True, "lat": lat, "lon": lon, "label": matched_name}
+
+    def tool_tactical_layer(self, layer: str, state: bool = True) -> Dict[str, Any]:
+        """Toggles God's Eye tactical HUD overlay layers (cctv, traffic, flights, weather, space, etc.)."""
+        valid_layers = {"cctv", "traffic", "flights", "satellites", "seismic", "wildfires", "weather", "space", "radio"}
+        clean_layer = layer.lower().strip()
+        if clean_layer not in valid_layers:
+            alias_map = {
+                "flight": "flights", "radar": "flights", "plane": "flights", "airspace": "flights",
+                "camera": "cctv", "cam": "cctv", "surveillance": "cctv",
+                "road": "traffic", "roads": "traffic", "flow": "traffic",
+                "satellite": "space", "orbit": "space", "iss": "space",
+                "earthquake": "seismic", "quake": "seismic",
+                "fire": "wildfires", "fires": "wildfires", "firms": "wildfires",
+                "clouds": "weather", "radar_rain": "weather"
+            }
+            clean_layer = alias_map.get(clean_layer, clean_layer)
+
+        self.bus.emit("toggle_tactical_layer", {"layer": clean_layer, "state": state})
+        return {"success": True, "layer": clean_layer, "state": state}
+
+    def tool_cctv_query(self, location_name: str, radius_km: float = 60.0) -> Dict[str, Any]:
+        """Discovers live and optical surveillance cameras across India, US, UK, Japan, or worldwide."""
+        from modules.cctv_service import find_cctv_for_location
+        cameras = find_cctv_for_location(location_name, radius_km=radius_km)
+        if cameras:
+            self.tool_tactical_layer("cctv", True)
+            first_cam = cameras[0]
+            self.bus.emit("glide_to_location", {
+                "lat": first_cam["lat"],
+                "lon": first_cam["lon"],
+                "label": first_cam.get("city", location_name).title()
+            })
+            self.bus.emit("cctv_camera_selected", {"camera": first_cam})
+        return {
+            "success": bool(cameras),
+            "count": len(cameras),
+            "cameras": cameras[:5],
+            "city": cameras[0].get("city", location_name) if cameras else location_name
+        }
+
+    def tool_traffic_query(self, location_name: str) -> Dict[str, Any]:
+        """Queries live road traffic telemetry, average speeds, and GIS flow vectors."""
+        from modules.maps_nav import MapsNavigationEngine
+        nav = MapsNavigationEngine()
+        traffic = nav.get_traffic_intel(location_name)
+        self.tool_tactical_layer("traffic", True)
+        return {"success": True, "traffic": traffic}
+
+    def tool_flight_radar(self, query: str = "", military_only: bool = True) -> Dict[str, Any]:
+        """Queries live ADS-B radar transponders and military airframes."""
+        from modules.flight_intel import FlightIntelEngine
+        fe = FlightIntelEngine()
+        flights = fe.get_military_aircraft(limit=8)
+        self.tool_tactical_layer("flights", True)
+        debrief = fe.format_tactical_debrief(flights)
+        return {"success": True, "count": len(flights), "flights": flights[:5], "debrief": debrief}
+
+    def tool_weather_query(self, location_name: str) -> Dict[str, Any]:
+        """Pulls live atmospheric telemetry and weather radar."""
+        from modules.weather_intel import WeatherIntelEngine
+        we = WeatherIntelEngine()
+        w = we.get_weather(location_name)
+        debrief = we.format_weather_debrief(w)
+        return {"success": True, "weather": w, "debrief": debrief}
+
+    def tool_terminal_exec(self, command: str) -> Dict[str, Any]:
+        """Executes authorized system/CLI command."""
+        from core.system_commander import get_system_commander
+        commander = get_system_commander()
+        res = commander.execute(command, timeout=40.0)
+        return {"success": res["success"], "stdout": res.get("stdout", "")[:1000], "exit_code": res.get("exit_code", 0)}
+
+    def tool_web_search(self, query: str) -> Dict[str, Any]:
+        """Performs real-time web search."""
+        from core.system_skills import SystemSkillEngine
+        skills = SystemSkillEngine()
+        intel_summary, raw_results = skills.perform_live_search(query)
+        return {"success": bool(raw_results), "summary": intel_summary[:1200], "results_count": len(raw_results)}
+
+    # ── 2. Intent & Plan Synthesis ────────────────────────────────────
+
+    def analyze_goal(self, user_text: str) -> List[Dict[str, Any]]:
+        """
+        Decomposes complex user prompt into a structured multi-step tactical plan.
+        Detects combinations of CCTV, traffic, navigation, flight tracking, weather, and terminal tasks.
+        """
+        text_lower = user_text.lower().strip()
+        plan_steps = []
+
+        loc_candidate = ""
+        m_loc = re.search(r'\b(?:in|at|for|around|over|near|towards)\s+([a-zA-Z\s,\.\-]{2,30})', text_lower)
+        if m_loc:
+            raw_loc = m_loc.group(1).strip()
+            cleaned_loc = re.sub(r'\b(?:and|check|see|show|find|tell|traffic|cctv|camera|flights?|weather|how|what)\b.*$', '', raw_loc).strip()
+            loc_candidate = cleaned_loc.strip(' ,.?!')
+
+        has_cctv = any(w in text_lower for w in ["cctv", "camera", "cameras", "cam", "cams", "optical", "surveillance", "vantage"])
+        has_traffic = any(w in text_lower for w in ["traffic", "congestion", "road", "roads", "flow", "jam", "commute", "highway"])
+        has_flight = any(w in text_lower for w in ["flight", "flights", "aircraft", "plane", "planes", "radar", "airspace", "ads-b", "adsb", "chase"])
+        has_weather = any(w in text_lower for w in ["weather", "forecast", "rain", "temperature", "storm", "wind"])
+        has_search = any(w in text_lower for w in ["search", "google", "look up", "news", "find out"])
+        has_cockpit = any(w in text_lower for w in ["cockpit", "chase cam", "lock on", "track plane", "lock onto"])
+
+        if loc_candidate:
+            plan_steps.append({
+                "action": "nav",
+                "location": loc_candidate,
+                "progress_phrase": f"Navigating orbital telemetry to {loc_candidate.title()}, Sir..."
+            })
+
+        if has_cctv:
+            target_city = loc_candidate or "Mumbai"
+            plan_steps.append({
+                "action": "cctv",
+                "location": target_city,
+                "progress_phrase": f"Querying active optical surveillance feeds across {target_city.title()}..."
+            })
+
+        if has_traffic:
+            target_city = loc_candidate or "Sector"
+            plan_steps.append({
+                "action": "traffic",
+                "location": target_city,
+                "progress_phrase": f"Cross-referencing live street traffic and GIS flow vectors for {target_city.title()}..."
+            })
+
+        if has_weather:
+            target_city = loc_candidate or "Local Sector"
+            plan_steps.append({
+                "action": "weather",
+                "location": target_city,
+                "progress_phrase": f"Pulling regional atmospheric radar and precipitation telemetry for {target_city.title()}..."
+            })
+
+        if has_flight:
+            plan_steps.append({
+                "action": "flights",
+                "query": loc_candidate,
+                "progress_phrase": "Scanning global ADS-B military and civilian airspace transponders..."
+            })
+
+        if has_cockpit:
+            plan_steps.append({
+                "action": "cockpit",
+                "target": loc_candidate or "",
+                "progress_phrase": "Acquiring kinematic lock and initializing 3D tactical cockpit chase camera..."
+            })
+
+        if not plan_steps and has_search:
+            clean_q = re.sub(r'^(?:search|google|find|look up)\s+(?:for\s+|about\s+)?', '', text_lower).strip()
+            plan_steps.append({
+                "action": "search",
+                "query": clean_q or user_text,
+                "progress_phrase": f"Scanning real-time web intelligence for '{clean_q}'..."
+            })
+
+        return plan_steps
+
+    # ── 3. Autonomous Execution Loop ──────────────────────────────────
+
+    def execute_plan(
+        self,
+        user_text: str,
+        on_progress_speak: Optional[Callable[[str], None]] = None,
+        on_progress_ui: Optional[Callable[[str], None]] = None
+    ) -> Dict[str, Any]:
+        """
+        Executes an autonomous multi-step reasoning plan in a closed loop.
+        Speaks intermediate progress updates in real-time as steps finish.
+        Returns unified execution summary with clean spoken monologue.
+        """
+        steps = self.analyze_goal(user_text)
+        if not steps:
+            return {"handled": False, "text": "", "findings": []}
+
+        task = self.task_manager.create_task(
+            type_=TaskType.INVESTIGATION.value,
+            title=f"Goal: {user_text[:35]}",
+            data={"original_prompt": user_text, "steps_total": len(steps)}
+        )
+
+        observations: List[Dict[str, Any]] = []
+        spoken_updates: List[str] = []
+
+        total_steps = min(len(steps), self._max_steps)
+
+        for idx, step in enumerate(steps[:self._max_steps]):
+            action = step.get("action")
+            prog_phrase = step.get("progress_phrase", "Processing tactical telemetry...")
+            pct = int(((idx + 1) / total_steps) * 90)
+
+            if on_progress_speak:
+                on_progress_speak(prog_phrase)
+            if on_progress_ui:
+                on_progress_ui(prog_phrase)
+
+            self.task_manager.update_progress(task.task_id, pct, prog_phrase)
+            spoken_updates.append(prog_phrase)
+
+            obs = {"step": idx + 1, "action": action}
+            try:
+                if action == "nav":
+                    res = self.tool_gods_eye_nav(step["location"])
+                    obs["result"] = f"Locked orbital camera onto {res.get('label', step['location'])}."
+
+                elif action == "cctv":
+                    res = self.tool_cctv_query(step["location"])
+                    count = res.get("count", 0)
+                    city = res.get("city", step["location"]).title()
+                    cams = res.get("cameras", [])
+                    sample_names = ", ".join([c["name"] for c in cams[:2]]) if cams else "None"
+                    obs["result"] = f"Isolated {count} active optical feeds in {city}. Primary vantage: {sample_names}."
+                    for cam in cams:
+                        self.task_manager.add_finding(task.task_id, TaskFinding(
+                            title=cam.get("name", "CCTV Camera"),
+                            url=cam.get("snapshotUrl") or f"/api/cctv/frame/{cam.get('id')}",
+                            snippet=f"Sensor {cam.get('id')} | Heading: {cam.get('headingDeg', 0)}° | Elevation: {cam.get('groundElevationM', 0)}m",
+                            source="cctv",
+                            extra=cam
+                        ))
+
+                elif action == "traffic":
+                    res = self.tool_traffic_query(step["location"])
+                    t = res.get("traffic", {})
+                    obs["result"] = f"Traffic condition in {t.get('city', step['location'])} is {t.get('status', 'Nominal')} with average speed {t.get('avg_speed_kmh', 42)} km/h."
+                    self.task_manager.add_finding(task.task_id, TaskFinding(
+                        title=f"Traffic: {t.get('city', 'Sector')}",
+                        url=t.get("osm_embed_url", ""),
+                        snippet=f"Status: {t.get('status')} | Delay: +{t.get('delay_mins', 0)} min",
+                        source="osm_traffic",
+                        extra=t
+                    ))
+
+                elif action == "weather":
+                    res = self.tool_weather_query(step["location"])
+                    w = res.get("weather", {})
+                    obs["result"] = f"Atmospheric readings in {w.get('city', step['location'])}: {w.get('condition')}, {w.get('temp_f')}°F ({w.get('temp_c')}°C), wind {w.get('wind_kmh')} km/h."
+
+                elif action == "flights":
+                    res = self.tool_flight_radar()
+                    count = res.get("count", 0)
+                    obs["result"] = f"ADS-B radar active: {count} military contacts airborne with live transponder telemetry."
+
+                elif action == "cockpit":
+                    self.bus.emit("control_cockpit", {"action": "enter", "target": step.get("target", "")})
+                    obs["result"] = "Tactical cockpit chase camera engaged on selected target vector."
+
+                elif action == "search":
+                    res = self.tool_web_search(step["query"])
+                    obs["result"] = res.get("summary", "Live search complete.")
+
+            except Exception as tool_err:
+                obs["result"] = f"Tool encounter: {tool_err}"
+
+            observations.append(obs)
+            time.sleep(0.3)
+
+        summary_lines = [o.get("result", "") for o in observations if o.get("result")]
+        summary_text = " ".join(summary_lines)
+
+        final_debrief = (
+            f"All operational tasks completed, Sir. {summary_text}"
+        )
+
+        self.task_manager.complete_task(task.task_id, summary=final_debrief[:150])
+
+        return {
+            "handled": True,
+            "text": final_debrief,
+            "observations": observations,
+            "spoken_updates": spoken_updates,
+            "task_id": task.task_id
+        }

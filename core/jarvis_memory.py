@@ -88,8 +88,11 @@ class JarvisMemory:
                 if ds["name"] not in existing_names:
                     existing.append(ds)
 
-        with open(self.filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        try:
+            with open(self.filepath, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except OSError:
+            pass
 
     def load_memory(self):
         try:
