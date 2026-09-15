@@ -105,17 +105,18 @@ class WeatherIntelEngine:
         except Exception:
             pass
 
-        # 3. Default fallback: Home Sector Kotagiri, Nilgiris
-        res = {'city': 'Kotagiri', 'lat': 11.4228, 'lon': 76.8661, 'country': 'IN'}
-        self._local_sector_cache = res
-        return res
+        # 3. No fallback: do not invent coordinates
+        return None
 
     def resolve_location(self, location_query: str) -> Optional[Dict[str, Any]]:
         """
         Resolve location name to lat/lon using local gazetteer or Open-Meteo geocoding.
+        Returns None if location is empty or cannot be resolved.
         """
-        loc_clean = location_query.strip().lower()
-        if not loc_clean or loc_clean in ('local', 'here', 'my location', 'current location', 'home', 'our sector', 'local sector'):
+        loc_clean = (location_query or "").strip().lower()
+        if not loc_clean:
+            return None
+        if loc_clean in ('local', 'here', 'my location', 'current location', 'home', 'our sector', 'local sector'):
             return self._resolve_local_sector()
 
         # 1. Try local gazetteer
@@ -152,16 +153,14 @@ class WeatherIntelEngine:
 
         return None
 
-    def get_weather(self, location_query: str = '') -> Dict[str, Any]:
+    def get_weather(self, location_query: str = '') -> Optional[Dict[str, Any]]:
         """
         Get current weather conditions for a specified location.
+        Returns None if location cannot be resolved.
         """
         target_loc = self.resolve_location(location_query)
         if not target_loc:
-            fixture = dict(OFFLINE_WEATHER_FIXTURE)
-            if location_query:
-                fixture['city'] = location_query.title()
-            return fixture
+            return None
 
         lat = target_loc['lat']
         lon = target_loc['lon']

@@ -193,12 +193,20 @@ class AgentRouter:
             m_loc = re.search(r'(?:weather|forecast|temperature)\s+(?:in|for|at)\s+([a-zA-Z\s,]+)', text_lower)
             if m_loc:
                 loc = m_loc.group(1).strip()
+            if not loc:
+                m_in = re.search(r'\bin\s+([a-zA-Z\s]+)$', text_lower)
+                if m_in:
+                    loc = m_in.group(1).strip()
+            loc_clean = re.sub(r'^(?:the|a)\s+', '', loc, flags=re.I).strip()
+            loc_clean = re.sub(r'[?!.,]+$', '', loc_clean).strip()
+            if not loc_clean:
+                return True, "Which city or region would you like atmospheric telemetry for, Sir?", None, "clarification"
             task = self.task_manager.create_task(
                 type_=TaskType.WEATHER_INTEL.value,
-                title=f"Weather Telemetry: {loc.title() if loc else 'Local Sector'}",
-                data={"location": loc, "query": text_strip}
+                title=f"Weather Telemetry: {loc_clean.title()}",
+                data={"location": loc_clean, "query": text_strip}
             )
-            ack = f"Scanning atmospheric telemetry for {loc.title()}, partner." if loc else "Pulling live atmospheric telemetry for our sector."
+            ack = f"Scanning atmospheric telemetry for {loc_clean.title()}, partner."
             return True, ack, task, "weather_intel"
 
         # ── 8B. Check for Live Traffic & GIS Map Telemetry ────────
@@ -217,7 +225,9 @@ class AgentRouter:
             loc_clean = re.sub(r'^(?:the|a)\s+', '', loc, flags=re.I).strip()
             # Clean trailing question marks or punctuation
             loc_clean = re.sub(r'[?!.,]+$', '', loc_clean).strip()
-            display_loc = loc_clean.title() if loc_clean else "Local Sector"
+            if not loc_clean:
+                return True, "Which city or sector would you like live traffic telemetry for, Sir?", None, "clarification"
+            display_loc = loc_clean.title()
             task = self.task_manager.create_task(
                 type_=TaskType.TRAFFIC_INTEL.value,
                 title=f"Traffic Telemetry: {display_loc}",
@@ -239,12 +249,14 @@ class AgentRouter:
             city_clean = re.sub(r'\b(?:cctv|cameras?|cams?|surveillance|traffic|security|public|the|a)\b', '', city, flags=re.I).strip()
             city_clean = re.sub(r'^(?:in|at|for|around|near)\s+', '', city_clean, flags=re.I).strip()
             city_clean = re.sub(r'[?!.,]+$', '', city_clean).strip()
-            target_city = city_clean.title() if city_clean else "Global Sectors"
+            if not city_clean:
+                return True, "Which city would you like optical surveillance feeds for, Sir?", None, "clarification"
+            target_city = city_clean.title()
 
             task = self.task_manager.create_task(
                 type_=TaskType.BROWSER_SURF.value,
                 title=f"CCTV Surveillance: {target_city}",
-                data={"cctv": True, "city": city_clean or "global"}
+                data={"cctv": True, "city": city_clean}
             )
             return True, f"Connecting to live public CCTV surveillance feeds for {target_city}, Sir.", task, "cctv_intel"
 

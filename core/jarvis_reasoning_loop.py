@@ -91,8 +91,9 @@ class JarvisCognitiveLoop:
         from modules.maps_nav import MapsNavigationEngine
         nav = MapsNavigationEngine()
         traffic = nav.get_traffic_intel(location_name)
-        self.tool_tactical_layer("traffic", True)
-        return {"success": True, "traffic": traffic}
+        if traffic and "lat" in traffic:
+            self.tool_tactical_layer("traffic", True)
+        return {"success": bool(traffic and "lat" in traffic), "traffic": traffic}
 
     def tool_flight_radar(self, query: str = "", military_only: bool = True) -> Dict[str, Any]:
         """Queries live ADS-B radar transponders and military airframes."""
@@ -108,6 +109,8 @@ class JarvisCognitiveLoop:
         from modules.weather_intel import WeatherIntelEngine
         we = WeatherIntelEngine()
         w = we.get_weather(location_name)
+        if not w:
+            return {"success": False, "weather": {}, "debrief": f"Atmospheric readings for '{location_name}' could not be resolved."}
         debrief = we.format_weather_debrief(w)
         return {"success": True, "weather": w, "debrief": debrief}
 
@@ -157,28 +160,46 @@ class JarvisCognitiveLoop:
             })
 
         if has_cctv:
-            target_city = loc_candidate or "Mumbai"
-            plan_steps.append({
-                "action": "cctv",
-                "location": target_city,
-                "progress_phrase": f"Querying active optical surveillance feeds across {target_city.title()}..."
-            })
+            if loc_candidate:
+                plan_steps.append({
+                    "action": "cctv",
+                    "location": loc_candidate,
+                    "progress_phrase": f"Querying active optical surveillance feeds across {loc_candidate.title()}..."
+                })
+            else:
+                plan_steps.append({
+                    "action": "ask_location",
+                    "topic": "optical surveillance feeds",
+                    "progress_phrase": "Awaiting location designation for optical surveillance feeds..."
+                })
 
         if has_traffic:
-            target_city = loc_candidate or "Sector"
-            plan_steps.append({
-                "action": "traffic",
-                "location": target_city,
-                "progress_phrase": f"Cross-referencing live street traffic and GIS flow vectors for {target_city.title()}..."
-            })
+            if loc_candidate:
+                plan_steps.append({
+                    "action": "traffic",
+                    "location": loc_candidate,
+                    "progress_phrase": f"Cross-referencing live street traffic and GIS flow vectors for {loc_candidate.title()}..."
+                })
+            else:
+                plan_steps.append({
+                    "action": "ask_location",
+                    "topic": "live street traffic telemetry",
+                    "progress_phrase": "Awaiting location designation for traffic telemetry..."
+                })
 
         if has_weather:
-            target_city = loc_candidate or "Local Sector"
-            plan_steps.append({
-                "action": "weather",
-                "location": target_city,
-                "progress_phrase": f"Pulling regional atmospheric radar and precipitation telemetry for {target_city.title()}..."
-            })
+            if loc_candidate:
+                plan_steps.append({
+                    "action": "weather",
+                    "location": loc_candidate,
+                    "progress_phrase": f"Pulling regional atmospheric radar and precipitation telemetry for {loc_candidate.title()}..."
+                })
+            else:
+                plan_steps.append({
+                    "action": "ask_location",
+                    "topic": "atmospheric telemetry",
+                    "progress_phrase": "Awaiting location designation for atmospheric telemetry..."
+                })
 
         if has_flight:
             plan_steps.append({
@@ -247,7 +268,21 @@ class JarvisCognitiveLoop:
 
             obs = {"step": idx + 1, "action": action}
             try:
-                if action == "nav":
+                if action == "ask_location":
+                    topic = step.get("topic", "telemetry")
+                    clarification = f"Which city or region would you like {topic} for, Sir?"
+                    if on_progress_speak:
+                        on_progress_speak(clarification)
+                    self.task_manager.complete_task(task.task_id, {"status": "clarification", "message": clarification})
+                    return {
+                        "handled": True,
+                        "text": clarification,
+                        "spoken_text": clarification,
+                        "findings": [],
+                        "steps": spoken_updates
+                    }
+
+                elif action == "nav":
                     res = self.tool_gods_eye_nav(step["location"])
                     obs["result"] = f"Locked orbital camera onto {res.get('label', step['location'])}."
 

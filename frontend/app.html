@@ -2641,13 +2641,12 @@ body {
         <span style="color:#22C55E; font-size:10px;">LOCK</span>
       </div>
       <div class="globe-hud-coords" id="globe-coords-label">
-        TARGET: <span style="color:#FFB84D;">KOTAGIRI SECTOR</span> • 11.4228° N, 76.8661° E
+        SECTOR: <span style="color:#00F0FF;">GLOBAL AIRSPACE</span> • ORBITAL OVERVIEW
       </div>
       <div class="globe-hud-btn-row">
         <button class="globe-hud-btn" style="border-color:rgba(0,240,255,0.4); color:#00F0FF;" onclick="window.resetGlobeOrbitView()">ORBIT VIEW</button>
-        <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(11.4228, 76.8661, 'Kotagiri')">KOTAGIRI</button>
-        <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(11.3530, 76.7959, 'Coonoor')">COONOOR</button>
-        <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(11.4102, 76.6950, 'Ooty')">OOTY</button>
+        <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(19.0760, 72.8777, 'Mumbai')">MUMBAI</button>
+        <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(28.6139, 77.2090, 'Delhi')">DELHI</button>
         <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(12.9716, 77.5946, 'Bengaluru')">BENGALURU</button>
         <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(37.7749, -122.4194, 'San Francisco')">SF</button>
         <button class="globe-hud-btn" style="border-color:rgba(255,157,46,0.45); color:#FFB84D;" onclick="window.openSettingsOverlay()">⚙ SETTINGS</button>
@@ -9756,7 +9755,7 @@ window.resetGlobeOrbitView = function() {
   }
   if (window.cesiumViewer && typeof Cesium !== 'undefined' && !window.cesiumViewer.isDestroyed()) {
     window.cesiumViewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(76.8661, 11.4228, 22000000),
+      destination: Cesium.Cartesian3.fromDegrees(0.0, 20.0, 25000000),
       orientation: {
         heading: Cesium.Math.toRadians(0),
         pitch: Cesium.Math.toRadians(-90),
@@ -9768,7 +9767,11 @@ window.resetGlobeOrbitView = function() {
 };
 
 window.glideToGlobe = function(lat, lon, label) {
-  window.focusGlobeCoordinates(lat || 11.4228, lon || 76.8661, label || 'Kotagiri');
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    window.focusGlobeCoordinates(lat, lon, label || 'Sector');
+  } else {
+    window.resetGlobeOrbitView();
+  }
 };
 
 // ── Phase 2: 3D Map Whiteboard & Range Ring Annotation Engine ──
@@ -10106,93 +10109,6 @@ const JarvisCockpit = {
   _scratchCamOffset: new Cesium.Cartesian3(),
   _scratchEnu: new Cesium.Matrix4(),
 
-  seedContingencyFlight() {
-    const viewer = window.cesiumViewer;
-    if (!viewer || viewer.isDestroyed() || typeof _flightsDataSource === 'undefined' || !_flightsDataSource) return null;
-    const centerLon = 76.8661, centerLat = 11.4228;
-    const altMeters = 8500;
-    const pos = Cesium.Cartesian3.fromDegrees(centerLon, centerLat, altMeters);
-    const jetSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#FF9D2E"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>`;
-    const jetIconUri = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(jetSvg);
-    const entity = _flightsDataSource.entities.add({
-      position: pos,
-      model: {
-        uri: '/models/jet.glb',
-        minimumPixelSize: 36,
-        maximumScale: 150,
-        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 50000)
-      },
-      orientation: Cesium.Transforms.headingPitchRollQuaternion(
-        pos,
-        new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(45 + MODEL_HEADING_OFFSET_DEG), 0, 0)
-      ),
-      billboard: {
-        image: jetIconUri,
-        width: 26,
-        height: 26,
-        rotation: Cesium.Math.toRadians(360 - 45),
-        color: Cesium.Color.fromCssColorString('#FF9D2E'),
-        verticalOrigin: Cesium.VerticalOrigin.CENTER,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(35000, Number.POSITIVE_INFINITY)
-      },
-      label: {
-        text: '✈ VIPER-11 FL280',
-        font: 'bold 10px JetBrains Mono, monospace',
-        fillColor: Cesium.Color.fromCssColorString('#FF9D2E'),
-        outlineColor: Cesium.Color.BLACK,
-        outlineWidth: 3,
-        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-        pixelOffset: new Cesium.Cartesian2(0, -16),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY
-      },
-      _tacticalData: {
-        type: 'AIRCRAFT',
-        callsign: 'VIPER-11',
-        hex: 'AE5F31',
-        alt: 28000,
-        speed: 480,
-        lat: centerLat,
-        lon: centerLon,
-        heading: 45,
-        squawk: '7700',
-        typeCode: 'F35A',
-        desc: 'Tactical Recon Patrol',
-        category: 'MILITARY RECON',
-        isMil: true
-      }
-    });
-    entity._tacticalData._entity = entity;
-
-    const dropLine = _flightsDataSource.entities.add({
-      polyline: {
-        positions: Cesium.Cartesian3.fromDegreesArrayHeights([
-          centerLon, centerLat, 0,
-          centerLon, centerLat, altMeters
-        ]),
-        width: 1.2,
-        material: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#FF9D2E').withAlpha(0.35))
-      },
-      _tacticalData: entity._tacticalData
-    });
-
-    window._aircraftFlightMap = window._aircraftFlightMap || new Map();
-    window._aircraftFlightMap.set('VIPER-11', {
-      callsign: 'VIPER-11',
-      entity: entity,
-      dropLine: dropLine,
-      lat: centerLat,
-      lon: centerLon,
-      altMeters: altMeters,
-      speedKnots: 480,
-      headingDeg: 45,
-      lastSeen: performance.now()
-    });
-
-    return entity;
-  },
-
   ensureCockpitVisor() {
     let visor = document.getElementById('jarvis-cockpit-visor');
     if (!visor) {
@@ -10277,7 +10193,7 @@ const JarvisCockpit = {
 
     let target = null;
     if (typeof _flightsDataSource !== 'undefined' && _flightsDataSource && _flightsDataSource.entities.values.length > 0) {
-      const entities = _flightsDataSource.entities.values.filter(e => e._tacticalData && (e.billboard || e.model));
+      const entities = _flightsDataSource.entities.values.filter(e => e._tacticalData && e.billboard);
       if (entities.length > 0) {
         if (targetCallsignOrId) {
           target = entities.find(e => (e._tacticalData.callsign || '').toLowerCase() === String(targetCallsignOrId).toLowerCase()) || entities[0];
@@ -10290,17 +10206,17 @@ const JarvisCockpit = {
     }
 
     if (!target) {
-      target = this.seedContingencyFlight();
-      if (!target) {
-        console.warn('[Cockpit] No airborne contact available to chase.');
-        return;
+      console.warn('[Cockpit] No airborne contact currently detected in radar layer.');
+      if (typeof showSubtitles === 'function') {
+        showSubtitles('⚠ No airborne contact detected in radar layer to enter cockpit view.', 'WARN');
       }
+      return;
     }
 
     this.active = true;
     this.activeEntity = target;
-    const isCockpit = (this.viewMode === 'cockpit');
-    this.activeEntity.show = !isCockpit;
+    this.viewMode = 'cockpit';
+    this.activeEntity.show = false; // God's Eye standard: contact hidden while in 1st person cockpit
 
     viewer.trackedEntity = undefined;
     viewer.scene.screenSpaceCameraController.enableInputs = false;
@@ -10315,11 +10231,11 @@ const JarvisCockpit = {
 
     this.showCockpitHud(target._tacticalData);
     const visor = this.ensureCockpitVisor();
-    if (visor) visor.style.display = isCockpit ? 'block' : 'none';
+    if (visor) visor.style.display = 'block';
 
     if (window.JarvisSFX) window.JarvisSFX.targetLock();
     if (typeof showSubtitles === 'function') {
-      showSubtitles(`🎮 Cockpit camera engaged: ${target._tacticalData?.callsign || 'CONTACT'} [${this.viewMode === 'chase' ? 'TAIL CHASE 3RD PERSON' : 'COCKPIT 1ST PERSON'}]`, 'COCKPIT');
+      showSubtitles(`🎮 Cockpit camera engaged: ${target._tacticalData?.callsign || 'CONTACT'} [COCKPIT 1ST PERSON]`, 'COCKPIT');
     }
   },
 
@@ -10359,10 +10275,8 @@ const JarvisCockpit = {
     // 2. Local surface normal (Up from Earth surface)
     Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(targetPos, this._scratchSurfaceUp);
 
-    // 3. Camera forward look direction with downward pitch (God's Eye standard: -4° cockpit, -8° chase)
-    const isCockpit = (this.viewMode === 'cockpit');
-    const viewPitchDeg = isCockpit ? -4.0 : -8.0;
-    const viewPitchRad = Cesium.Math.toRadians(viewPitchDeg);
+    // 3. Camera forward look direction with downward pitch (God's Eye standard: -4° cockpit POV)
+    const viewPitchRad = Cesium.Math.toRadians(-4.0);
 
     this._scratchLocalFwd.x = Math.sin(headingRad) * Math.cos(viewPitchRad);
     this._scratchLocalFwd.y = Math.cos(headingRad) * Math.cos(viewPitchRad);
@@ -10377,11 +10291,9 @@ const JarvisCockpit = {
     Cesium.Matrix4.multiplyByPointAsVector(this._scratchEnu, this._scratchLocalUp, this._scratchWorldUp);
     Cesium.Cartesian3.normalize(this._scratchWorldUp, this._scratchWorldUp);
 
-    // 5. Camera positioning:
-    // In Cockpit POV: 7.0m forward on windshield/nose, 2.6m up
-    // In Chase Mode: -130.0m behind aircraft, 28.0m up (true third person rear view)
-    const forwardDist = isCockpit ? 7.0 : -130.0;
-    const upDist = isCockpit ? 2.6 : 28.0;
+    // 5. First-person Cockpit camera placement (7.0m forward on windshield/nose, 2.6m up)
+    const forwardDist = 7.0;
+    const upDist = 2.6;
 
     Cesium.Cartesian3.multiplyByScalar(this._scratchWorldH, forwardDist, this._scratchCamPos);
     Cesium.Cartesian3.add(targetPos, this._scratchCamPos, this._scratchCamPos);
@@ -10397,42 +10309,29 @@ const JarvisCockpit = {
     });
 
     if (this.activeEntity) {
-      this.activeEntity.show = !isCockpit;
+      this.activeEntity.show = false; // Entity hidden while inside cockpit (God's Eye standard)
     }
 
     const visor = this.ensureCockpitVisor();
     if (visor) {
-      visor.style.display = isCockpit ? 'block' : 'none';
+      visor.style.display = 'block';
     }
 
     this.updateHudTelemetry(data);
   },
 
   toggleViewMode() {
-    this.viewMode = (this.viewMode === 'chase' ? 'cockpit' : 'chase');
-    const isCockpit = (this.viewMode === 'cockpit');
-    if (this.activeEntity) {
-      this.activeEntity.show = !isCockpit;
-    }
-    const visor = this.ensureCockpitVisor();
-    if (visor) {
-      visor.style.display = isCockpit ? 'block' : 'none';
-    }
-    const btn = document.getElementById('cockpit-viewmode-btn');
-    if (btn) {
-      btn.innerHTML = isCockpit
-        ? '<span style="color:#00F0FF;">🕹️ COCKPIT POV</span> ❯ <span style="color:#A0AEC0;">[SWITCH TO CHASE]</span>'
-        : '<span style="color:#FFB84D;">🎥 CHASE CAM</span> ❯ <span style="color:#A0AEC0;">[SWITCH TO COCKPIT]</span>';
-    }
+    // Pure Cockpit POV mode active
     if (window.JarvisSFX) window.JarvisSFX.uiClick();
-    if (typeof showSubtitles === 'function') {
-      showSubtitles(isCockpit ? '🎮 Cockpit 1st Person POV Active' : '✈ Tail Chase 3rd Person Cam Active', 'COCKPIT');
-    }
   },
 
   exit() {
     if (!this.active) return;
     this.active = false;
+    const visor = document.getElementById('jarvis-cockpit-visor');
+    if (visor) visor.style.display = 'none';
+    this.hideCockpitHud();
+
     const viewer = window.cesiumViewer;
     if (viewer && !viewer.isDestroyed()) {
       if (this._preUpdateRemover) {
@@ -10442,6 +10341,10 @@ const JarvisCockpit = {
       viewer.scene.screenSpaceCameraController.enableInputs = true;
       viewer.scene.requestRenderMode = false;
       viewer.trackedEntity = undefined;
+
+      if (this.activeEntity) {
+        this.activeEntity.show = true;
+      }
 
       // If still on 3D Earth, elevate camera to safe tactical overview above aircraft
       if (this.activeEntity && typeof SpatialNav !== 'undefined' && SpatialNav.currentX > 500) {
@@ -10466,6 +10369,7 @@ const JarvisCockpit = {
         }
       }
     }
+    this.activeEntity = null;
     if (this.activeEntity) {
       this.activeEntity.show = true;
     }
@@ -10758,10 +10662,8 @@ function sfInit() {
   beaconRing.rotation.x = Math.PI / 2;
   beaconPin.add(beaconRing);
 
-  // Initial beacon on Kotagiri (11.4228, 76.8661)
-  const initPos = latLonToVector3(11.4228, 76.8661, globeRadius + 2);
-  beaconPin.position.copy(initPos);
-  beaconPin.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), initPos.clone().normalize());
+  // Beacon pin remains hidden until user or orbital telemetry focuses on coordinates
+  beaconPin.visible = false;
   earthMesh.add(beaconPin);
 
   // Tactical Reconnaissance Markers (Live OSINT & ADS-B Contacts in LEO)
@@ -11026,9 +10928,9 @@ function initCesiumGlobe() {
     window.loadCesiumBuildings = loadCesiumBuildings;
     loadCesiumBuildings();
 
-    // Initial God's Eye orbital view centered on South Asia / Kotagiri (11.4228° N, 76.8661° E)
+    // Initial God's Eye orbital view: neutral global planetary overview
     cesiumViewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(76.8661, 11.4228, 22000000),
+      destination: Cesium.Cartesian3.fromDegrees(0.0, 20.0, 25000000),
       orientation: {
         heading: Cesium.Math.toRadians(0),
         pitch: Cesium.Math.toRadians(-90),
@@ -11036,9 +10938,10 @@ function initCesiumGlobe() {
       }
     });
 
-    // Tactical target beacon entity (always visible with disableDepthTestDistance)
+    // Tactical target beacon entity (hidden until coordinates are focused)
     window.cesiumBeacon = cesiumViewer.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(76.8661, 11.4228, 500),
+      position: Cesium.Cartesian3.fromDegrees(0.0, 20.0, 500),
+      show: false,
       point: {
         pixelSize: 14,
         color: Cesium.Color.fromCssColorString('#00F0FF'),
@@ -11047,14 +10950,14 @@ function initCesiumGlobe() {
         disableDepthTestDistance: Number.POSITIVE_INFINITY
       },
       label: {
-        text: 'TARGET: KOTAGIRI SECTOR',
+        text: 'SECTOR TARGET',
         font: 'bold 12px JetBrains Mono, monospace',
         fillColor: Cesium.Color.fromCssColorString('#FFB84D'),
         outlineColor: Cesium.Color.BLACK,
         outlineWidth: 3,
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-        pixelOffset: new Cesium.Cartesian2(0, -20),
+        pixelOffset: new Cesium.Cartesian2(0, -22),
         disableDepthTestDistance: Number.POSITIVE_INFINITY
       }
     });
@@ -12513,12 +12416,6 @@ function initGlobeIntelligence(viewer) {
       const speedMps = Math.max(120, (ac.speedKnots || 420) * 0.514444);
       const distM = speedMps * dt;
 
-      // Tactical combat air patrol orbit for contingency flight VIPER-11
-      if (ac.callsign === 'VIPER-11') {
-        ac.headingDeg = (ac.headingDeg + dt * 1.5) % 360;
-        if (ac.entity._tacticalData) ac.entity._tacticalData.heading = ac.headingDeg;
-      }
-
       const hdgRad = Cesium.Math.toRadians(ac.headingDeg || 0);
 
       // Spherical dead reckoning step
@@ -12715,16 +12612,6 @@ function initGlobeIntelligence(viewer) {
             const initPos = Cesium.Cartesian3.fromDegrees(Number(ac.lon), Number(ac.lat), altMeters);
             const entity = _flightsDataSource.entities.add({
               position: initPos,
-              model: {
-                uri: '/models/jet.glb',
-                minimumPixelSize: 32,
-                maximumScale: 140,
-                distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 40000)
-              },
-              orientation: Cesium.Transforms.headingPitchRollQuaternion(
-                initPos,
-                new Cesium.HeadingPitchRoll(Cesium.Math.toRadians((trackAngle || 0) + MODEL_HEADING_OFFSET_DEG), 0, 0)
-              ),
               billboard: {
                 image: JET_ICON,
                 width: 22,
@@ -12732,8 +12619,7 @@ function initGlobeIntelligence(viewer) {
                 rotation: Cesium.Math.toRadians(360 - trackAngle),
                 color: Cesium.Color.fromCssColorString(classification.color),
                 verticalOrigin: Cesium.VerticalOrigin.CENTER,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                distanceDisplayCondition: new Cesium.DistanceDisplayCondition(25000, 10000000)
+                disableDepthTestDistance: Number.POSITIVE_INFINITY
               },
               label: {
                 text: `✈ ${callsign} ${fl}`,
@@ -12744,8 +12630,7 @@ function initGlobeIntelligence(viewer) {
                 style: Cesium.LabelStyle.FILL_AND_OUTLINE,
                 verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                 pixelOffset: new Cesium.Cartesian2(0, -14),
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 9000000)
+                disableDepthTestDistance: Number.POSITIVE_INFINITY
               },
               _tacticalData: {
                 type: 'AIRCRAFT',
@@ -12949,7 +12834,7 @@ function initGlobeIntelligence(viewer) {
   setInterval(updateISSPosition, 5000);
 
   // ── Phase 5: Satellite Orbit Pass Predictor (Analytical Keplerian Propagator) ──
-  window.predictNextSatellitePass = function(targetLat = 11.4228, targetLon = 76.8661, targetLabel = 'SECTOR') {
+  window.predictNextSatellitePass = function(targetLat = 0.0, targetLon = 20.0, targetLabel = 'SECTOR') {
     const nowSec = Date.now() / 1000;
     let bestPass = null;
     let minDistanceKm = Infinity;
@@ -13205,8 +13090,7 @@ function initGlobeIntelligence(viewer) {
   fetchLiveThermal();
   setInterval(fetchLiveThermal, 60000);
 
-  // Initial sector weather probe
-  window.updateSectorWeather(11.4228, 76.8661, 'Kotagiri');
+  // Weather telemetry updates on user demand or explicit sector focus
 
   // Pre-tune tactical station in paused standby (NO AUTOPLAY)
   window.tuneRadioStation('tokyo_atc', false);

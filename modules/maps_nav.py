@@ -248,20 +248,23 @@ class MapsNavigationEngine:
             },
         }
 
+        if not q:
+            return {}
+
         for k, v in presets.items():
             if k in q:
                 return dict(v)
 
         # Fallback to OpenStreetMap Nominatim live query
         try:
-            url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(q or 'Kotagiri')}&format=json&limit=1"
+            url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(q)}&format=json&limit=1"
             req = urllib.request.Request(url, headers={'User-Agent': 'JARVIS-OSINT-Console/2.0'})
             with urllib.request.urlopen(req, timeout=3.5) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
                 if data:
                     item = data[0]
-                    lat = float(item.get("lat", 11.4228))
-                    lon = float(item.get("lon", 76.8661))
+                    lat = float(item.get("lat", 0.0))
+                    lon = float(item.get("lon", 0.0))
                     name = item.get("display_name", "").split(",")[0]
                     return {
                         "city": name or q.title(),
@@ -278,8 +281,8 @@ class MapsNavigationEngine:
         except Exception:
             pass
 
-        # Final default fallback to Kotagiri sector
-        return dict(presets["kotagiri"])
+        # Return empty dictionary if location cannot be resolved
+        return {}
 
     def get_traffic_intel(self, location_query: str = "") -> Dict[str, Any]:
         """
@@ -287,6 +290,12 @@ class MapsNavigationEngine:
         Returns rich structured payload with bounding boxes, corridor flow, speeds, and OSM embed URL.
         """
         loc_data = self.geocode(location_query)
+        if not loc_data or "lat" not in loc_data:
+            return {
+                "error": f"Location '{location_query}' could not be resolved. Please specify a valid city or region.",
+                "status": "Unknown",
+                "city": location_query or "Unknown"
+            }
         lat = loc_data["lat"]
         lon = loc_data["lon"]
         city = loc_data["city"]
