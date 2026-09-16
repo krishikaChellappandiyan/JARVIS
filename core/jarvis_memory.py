@@ -70,18 +70,18 @@ class JarvisMemory:
         if not data:
             data = {
                 "user_speech_patterns": [
-                    "User prefers concise, witty, energetic, swearing voice responses.",
-                    "The user/operator is NOT Dean. Refer to the user as 'bruh', 'buddy', or 'partner'.",
+                    "Always address the operator as 'Sir'.",
+                    "Maintain understated British elegance, razor wit, and mathematical precision.",
                     "STT acoustic tuning for JARVIS wake recognition."
                 ],
                 "failures_and_lessons": [
-                    "Speech recognition of target usernames is error-prone; trigger target dialog modal when intent is 'investigate' without clean target."
+                    "Speech recognition of target identifiers is error-prone; trigger target dialog modal when intent is 'investigate' without clean target."
                 ],
                 "learned_skills": default_skills,
                 "history_log": []
             }
         else:
-            # Sync default skills so all 9 partner capabilities are active
+            # Sync default skills so all 9 executive capabilities are active
             existing = data.setdefault("learned_skills", [])
             existing_names = {s.get("name") for s in existing}
             for ds in default_skills:

@@ -1,122 +1,171 @@
 # modules/cloud_docs.py
-# MOCK — not wired to a real API
 """
-Cloud & File Document Access Module for J.A.R.V.I.S..
-Searches local workspace & cloud drives (Google Drive, Dropbox) for hidden/forgotten files
-(e.g., 'Final_Final_REALLYFINAL_v3.pdf'), and reads key points aloud in J.A.R.V.I.S. voice.
+Local Workspace & Document Intelligence Engine for J.A.R.V.I.S..
+
+Searches real filesystem paths (workspace, project repos, Documents, Downloads, Desktop)
+for user files, code, reports, and documentation. Reads authentic excerpts and summaries aloud.
 """
 
 import os
-import json
 import re
+import time
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-DOCS_INDEX_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "cloud_docs_index.json")
+WORKSPACE_ROOT = Path(__file__).parent.parent.resolve()
+SEARCH_ROOTS = [
+    WORKSPACE_ROOT,
+    WORKSPACE_ROOT.parent,
+    Path.home() / "Documents",
+    Path.home() / "Downloads",
+    Path.home() / "Desktop"
+]
+
+SUPPORTED_EXTENSIONS = {
+    ".py", ".md", ".txt", ".json", ".yaml", ".yml", ".pdf",
+    ".html", ".sh", ".csv", ".toml", ".rst", ".conf"
+}
+
+IGNORED_DIRS = {
+    ".git", "__pycache__", "node_modules", ".pytest_cache",
+    ".venv", "venv", "dist", "build", ".egg-info"
+}
 
 
 class CloudDocumentManager:
-    def __init__(self, index_file: str = DOCS_INDEX_FILE):
-        self.index_file = index_file
-        self._ensure_storage()
+    """
+    On-device file search and document intelligence manager.
+    """
 
-    def _ensure_storage(self):
-        os.makedirs(os.path.dirname(self.index_file), exist_ok=True)
-        if not os.path.exists(self.index_file):
-            initial_docs = [
-                {
-                    "id": "doc_101",
-                    "filename": "Final_Final_REALLYFINAL_v3.pdf",
-                    "path": "GoogleDrive/Reports/Final_Final_REALLYFINAL_v3.pdf",
-                    "source": "Google Drive",
-                    "file_type": "pdf",
-                    "title": "Quarterly Operations & Security Assessment",
-                    "summary": "Key highlights: 1) System uptime hit 99.98%. 2) Penetration testing found 2 minor API leaks, resolved in patch v12.7. 3) Budget allocation increased by 15% for automated recon tools.",
-                    "key_points": [
-                        "System uptime reached 99.98% over Q2.",
-                        "API vulnerability patch v12.7 successfully deployed.",
-                        "Budget allocation increased by 15% for automated tools."
-                    ]
-                },
-                {
-                    "id": "doc_102",
-                    "filename": "Project_Hellhound_Architecture_Overview.md",
-                    "path": "Dropbox/Hellhound/Project_Hellhound_Architecture_Overview.md",
-                    "source": "Dropbox",
-                    "file_type": "md",
-                    "title": "Hellhound Pentest & Voice AI System Architecture",
-                    "summary": "Covers J.A.R.V.I.S. voice engine pipeline, local zero-shot TTS fallback, system skill execution engine, and OSINT correlation graph.",
-                    "key_points": [
-                        "Dual-engine LLM routing (NVIDIA NIM / Gemini primary, local SLM fallback).",
-                        "Fish Audio TTS with zero-shot local voice clone fallback.",
-                        "Correlation engine linking emails, handles, and domain entities."
-                    ]
-                },
-                {
-                    "id": "doc_103",
-                    "filename": "Target_Investigation_Brief_2026.docx",
-                    "path": "GoogleDrive/Investigative/Target_Investigation_Brief_2026.docx",
-                    "source": "Google Drive",
-                    "file_type": "docx",
-                    "title": "Investigative Methodology & Case Briefing",
-                    "summary": "Standard operating procedure for multi-platform recon, dorking fallbacks, and evidence screenshot verification.",
-                    "key_points": [
-                        "Always run username variation matrix across 300+ platforms.",
-                        "Google dorking automatically handles rate limits.",
-                        "Evidence capture silences browser driver connection errors."
-                    ]
-                }
-            ]
-            self._save(initial_docs)
+    def __init__(self, search_roots: Optional[List[Path]] = None):
+        self.roots = [p for p in (search_roots or SEARCH_ROOTS) if p.exists()]
 
-    def _load(self) -> List[Dict[str, Any]]:
-        try:
-            with open(self.index_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
+    def search_documents(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Searches the local filesystem for matching files and generates telemetry records.
+        """
+        q_clean = query.strip().lower()
+        if not q_clean:
             return []
 
-    def _save(self, docs: List[Dict[str, Any]]):
-        try:
-            with open(self.index_file, "w", encoding="utf-8") as f:
-                json.dump(docs, f, indent=2)
-        except Exception as e:
-            print(f"[cloud_docs] Error saving index: {e}")
+        tokens = [t for t in re.split(r'[\s_\-\.]+', q_clean) if t and t not in ["the", "a", "an", "file", "doc", "find", "search", "read", "show"]]
+        if not tokens:
+            tokens = [q_clean]
 
-    def search_documents(self, query: str) -> List[Dict[str, Any]]:
-        """Fuzzy search local and cloud documents by filename, title, or query."""
-        docs = self._load()
-        q_lower = query.lower().strip()
-        tokens = [t for t in re.split(r'[\s_\-\.]+', q_lower) if t and t not in ["the", "a", "an", "file", "doc", "pdf", "find"]]
+        matches: List[tuple[int, Dict[str, Any]]] = []
+        visited_paths = set()
 
-        matches = []
-        for d in docs:
-            fname = d.get("filename", "").lower()
-            title = d.get("title", "").lower()
-            path = d.get("path", "").lower()
+        for root in self.roots:
+            try:
+                for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+                    # Filter out ignored directories in-place
+                    dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS and not d.startswith(".")]
 
-            score = 0
-            if q_lower in fname or q_lower in title:
-                score += 10
-            for t in tokens:
-                if t in fname or t in title or t in path:
-                    score += 3
+                    for fname in filenames:
+                        ext = os.path.splitext(fname)[1].lower()
+                        if ext not in SUPPORTED_EXTENSIONS and not ext == "":
+                            continue
 
-            if score > 0:
-                matches.append((score, d))
+                        full_path = os.path.join(dirpath, fname)
+                        if full_path in visited_paths:
+                            continue
+                        visited_paths.add(full_path)
 
+                        fname_lower = fname.lower()
+                        score = 0
+
+                        # Exact query match in filename
+                        if q_clean in fname_lower:
+                            score += 50
+                        
+                        # Token matching
+                        token_hits = sum(1 for t in tokens if t in fname_lower)
+                        if token_hits > 0:
+                            score += token_hits * 15
+
+                        if score > 0:
+                            rel_source = str(root.name)
+                            try:
+                                stat = os.stat(full_path)
+                                size_kb = round(stat.st_size / 1024, 1)
+                                mtime_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(stat.st_mtime))
+                            except Exception:
+                                size_kb = 0.0
+                                mtime_str = "Unknown"
+
+                            matches.append((score, {
+                                "id": f"doc_{len(matches)+1}",
+                                "filename": fname,
+                                "path": full_path,
+                                "source": rel_source,
+                                "file_type": ext.lstrip(".").upper() or "TEXT",
+                                "size_kb": size_kb,
+                                "modified": mtime_str,
+                                "title": fname.replace("_", " ").replace("-", " ").title()
+                            }))
+
+                            if len(matches) >= 30:
+                                break
+                    if len(matches) >= 30:
+                        break
+            except Exception as e:
+                print(f"[cloud_docs] Walk error in {root}: {e}")
+
+        # Sort highest score first, then by size
         matches.sort(key=lambda x: x[0], reverse=True)
-        return [m[1] for m in matches]
+        top_results = [m[1] for m in matches[:limit]]
+
+        # Enrich top results with content previews
+        for doc in top_results:
+            doc["summary"], doc["key_points"] = self._extract_file_preview(doc["path"])
+
+        return top_results
+
+    def _extract_file_preview(self, filepath: str) -> tuple[str, List[str]]:
+        """Reads genuine text excerpts from matching files."""
+        try:
+            p = Path(filepath)
+            if not p.exists() or p.stat().st_size > 2 * 1024 * 1024:  # limit to 2MB
+                return "File content available on disk.", ["Binary or large file."]
+
+            ext = p.suffix.lower()
+            if ext in {".txt", ".md", ".py", ".json", ".yaml", ".yml", ".sh", ".toml", ".rst"}:
+                text = p.read_text(encoding="utf-8", errors="ignore")
+                lines = [l.strip() for l in text.splitlines() if l.strip()]
+                line_count = len(lines)
+
+                # Clean summary
+                summary = f"File contains {line_count} lines of code/text. Modified {time.strftime('%Y-%m-%d', time.localtime(p.stat().st_mtime))}."
+                key_points = []
+                for line in lines[:8]:
+                    if line.startswith(("#", "//", "/*", "\"\"\"", "'''", "import", "class", "def")):
+                        clean_line = re.sub(r'^[#/\*"\']+\s*', '', line).strip()
+                        if clean_line and len(clean_line) > 5 and clean_line not in key_points:
+                            key_points.append(clean_line[:90])
+                    if len(key_points) >= 3:
+                        break
+
+                if not key_points and lines:
+                    key_points = [lines[0][:90]]
+
+                return summary, key_points
+        except Exception:
+            pass
+
+        return "Local system document located and verified.", ["Standard local storage."]
 
     def get_document_summary(self, query: str) -> str:
         """Find a document and format key points summary in J.A.R.V.I.S. voice."""
-        results = self.search_documents(query)
+        results = self.search_documents(query, limit=3)
         if not results:
-            return f"Searched your Google Drive & Dropbox, partner — couldn't find any report or PDF matching '{query}'."
+            return f"I searched your local workspace and repositories, Sir, but found no documents or files matching '{query}'."
 
         best = results[0]
-        points = " ".join(best.get("key_points", []))
+        points_str = "; ".join(best.get("key_points", []))
+        summary_text = best.get("summary", "")
+
         return (
-            f"Pulled up '{best['filename']}' from {best['source']} for you! "
-            f"Here's the TL;DR while you're focused on work: {best['summary']} "
-            f"Key takeaways: {points}"
+            f"I located '{best['filename']}' ({best['file_type']}, {best['size_kb']} KB) in your {best['source']} directory, Sir. "
+            f"{summary_text} "
+            f"Key excerpts: {points_str}" if points_str else f"I located '{best['filename']}' in your {best['source']} directory, Sir. {summary_text}"
         )

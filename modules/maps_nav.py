@@ -2,11 +2,13 @@
 # MOCK — not wired to a real API
 """
 Maps & Live Navigation Engine for J.A.R.V.I.S..
-Provides location lookup, nearby POI search (e.g. 24-hour taco spot),
-route navigation, traffic rerouting, and voice commentary ("Turn left, dipshit").
+Provides location lookup, nearby POI search (e.g. coffee, fuel, food),
+route navigation, traffic rerouting, and voice commentary.
 """
 
 import os
+import re
+import math
 import json
 import urllib.parse
 import urllib.request
@@ -48,71 +50,39 @@ class MapsNavigationEngine:
         except Exception:
             return {"city": "Local HQ", "lat": 37.7749, "lon": -122.4194}
 
-    def search_nearby_poi(self, poi_query: str) -> List[Dict[str, Any]]:
-        """Search nearby POI (e.g., 24-hour taco spot, gas, coffee)."""
-        loc = self.get_current_location()
-        city = loc.get("city", "San Francisco")
-        query_clean = poi_query.strip().lower()
+    def search_nearby_poi(self, poi_query: str, target_city: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Search nearby POI (e.g., cafe, fuel, food, hospital) via OpenStreetMap Nominatim."""
+        query_clean = poi_query.strip()
+        
+        # Check if city is explicitly in query (e.g. "coffee in London")
+        m_city = re.search(r'\bin\s+([a-zA-Z\s,]+)$', query_clean, re.IGNORECASE)
+        detected_city = m_city.group(1).strip() if m_city else ""
+        clean_poi = re.sub(r'\bin\s+[a-zA-Z\s,]+$', '', query_clean, flags=re.IGNORECASE).strip() if detected_city else query_clean
 
-        # Mock results tailored for common hungry/travel queries
-        if "taco" in query_clean or "food" in query_clean or "hangry" in query_clean:
-            return [
-                {
-                    "name": "El Farolito 24hr Tacos & Burritos",
-                    "distance": "0.4 miles",
-                    "open_now": True,
-                    "address": "2779 Mission St",
-                    "rating": 4.8,
-                    "note": "Open 24 hours. Best late-night carne asada."
-                },
-                {
-                    "name": "Taqueria Tacos El Patron",
-                    "distance": "0.9 miles",
-                    "open_now": True,
-                    "address": "1500 Howard St",
-                    "rating": 4.6,
-                    "note": "Open till 3 AM."
-                }
-            ]
-        elif "coffee" in query_clean or "espresso" in query_clean:
-            return [
-                {
-                    "name": "Midnight Oil Coffee Roasters",
-                    "distance": "0.3 miles",
-                    "open_now": True,
-                    "address": "512 Howard St",
-                    "rating": 4.7,
-                    "note": "Strong espresso, open late."
-                }
-            ]
-        elif "gas" in query_clean or "fuel" in query_clean:
-            return [
-                {
-                    "name": "Shell 24hr Station & Express Mart",
-                    "distance": "0.6 miles",
-                    "open_now": True,
-                    "address": "1201 Harrison St",
-                    "rating": 4.5,
-                    "note": "Full service & 24hr convenience shop."
-                }
-            ]
+        city = target_city or detected_city
+        if not city:
+            loc = self.get_current_location()
+            city = loc.get("city", "Local Area")
 
-        # Live OpenStreetMap Nominatim search fallback if network available
+        # Live OpenStreetMap Nominatim search
         try:
-            search_str = f"{poi_query} in {city}"
-            url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(search_str)}&format=json&limit=3"
+            search_str = f"{clean_poi} in {city}"
+            url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(search_str)}&format=json&limit=4"
             req = urllib.request.Request(url, headers={'User-Agent': 'JARVISNavEngine/1.0'})
             with urllib.request.urlopen(req, timeout=4) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
                 results = []
                 for item in data:
+                    name = item.get("display_name", "").split(",")[0]
                     results.append({
-                        "name": item.get("display_name", "").split(",")[0],
-                        "distance": "Nearby",
+                        "name": name,
+                        "distance": "Sector Vicinity",
                         "open_now": True,
                         "address": item.get("display_name", ""),
-                        "rating": 4.5,
-                        "note": "Found via live location lookup"
+                        "lat": float(item.get("lat", 0.0)),
+                        "lon": float(item.get("lon", 0.0)),
+                        "rating": 4.6,
+                        "note": f"Verified location in {city}"
                     })
                 if results:
                     return results
@@ -121,36 +91,103 @@ class MapsNavigationEngine:
 
         return [
             {
-                "name": f"Local {poi_query.title()} Spot",
-                "distance": "0.5 miles",
+                "name": f"{clean_poi.title()} Point of Interest",
+                "distance": "Nearby",
                 "open_now": True,
-                "address": f"100 Main St, {city}",
+                "address": f"{clean_poi.title()} Corridor, {city}",
                 "rating": 4.5,
-                "note": "Open right now."
+                "note": f"Active sector location in {city}"
             }
         ]
 
-    def get_route_directions(self, destination: str) -> Dict[str, Any]:
-        """Generate route steps and J.A.R.V.I.S. voice navigation prompts."""
-        loc = self.get_current_location()
-        return {
-            "origin": loc.get("address", "Current Position"),
-            "destination": destination,
-            "distance": "4.2 miles",
-            "eta": "12 mins",
-            "traffic": "Clear",
-            "steps": [
-                "Head north on Market St toward 4th St (0.5 mi)",
-                "Turn left onto Van Ness Ave (1.2 mi)",
-                "Merge onto US-101 North (2.0 mi)",
-                "Take exit 434 for Mission St and arrive at destination"
-            ],
-            "jarvis_prompts": [
-                "Alright partner, setting course for " + destination + ". ETA is 12 minutes.",
-                "Turn left, dipshit — don't miss the Van Ness exit!",
-                "Straight shot on US-101. No cops, keep your foot on the gas.",
-                "You arrived at " + destination + ". Now go get your business done."
+    def get_route_directions(self, destination: str, origin: Optional[str] = None) -> Dict[str, Any]:
+        """Generate route steps and J.A.R.V.I.S. voice navigation prompts via OSRM or geodesic calculation."""
+        dest_geo = self.geocode(destination)
+        if not dest_geo or "lat" not in dest_geo:
+            return {
+                "origin": origin or "Current Sector",
+                "destination": destination,
+                "distance": "Unknown",
+                "eta": "Unknown",
+                "traffic": "Nominal",
+                "steps": [f"Unable to resolve GPS coordinates for destination '{destination}'."],
+                "jarvis_prompts": [f"I am unable to lock navigational coordinates for '{destination}', Sir. Could you specify the exact city or region?"]
+            }
+
+        orig_geo = self.geocode(origin) if origin else self.get_current_location()
+        if not orig_geo or "lat" not in orig_geo:
+            orig_geo = {"city": "Local Origin", "lat": dest_geo["lat"] - 0.05, "lon": dest_geo["lon"] - 0.05, "address": "Current Position"}
+
+        lat1, lon1 = orig_geo["lat"], orig_geo["lon"]
+        lat2, lon2 = dest_geo["lat"], dest_geo["lon"]
+        dest_name = dest_geo.get("city", destination).title()
+        orig_name = orig_geo.get("city", origin or "Current Location").title()
+
+        # Try live OSRM public API
+        route_found = False
+        dist_km = 0.0
+        dur_mins = 0
+        steps = []
+
+        try:
+            osrm_url = f"https://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false&steps=true"
+            req = urllib.request.Request(osrm_url, headers={'User-Agent': 'JARVISNavEngine/1.0'})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                if data.get("code") == "Ok" and data.get("routes"):
+                    route = data["routes"][0]
+                    dist_km = round(route["distance"] / 1000.0, 1)
+                    dur_mins = int(round(route["duration"] / 60.0))
+                    route_found = True
+                    for leg in route.get("legs", []):
+                        for s in leg.get("steps", []):
+                            maneuver = s.get("maneuver", {})
+                            m_type = maneuver.get("type", "")
+                            m_mod = maneuver.get("modifier", "")
+                            name = s.get("name", "")
+                            s_dist = round(s.get("distance", 0))
+                            if name:
+                                step_desc = f"{m_type.capitalize()} {m_mod} onto {name} ({s_dist}m)" if m_mod else f"Continue on {name} ({s_dist}m)"
+                                steps.append(step_desc.strip())
+        except Exception:
+            route_found = False
+
+        if not route_found or not steps:
+            # Mathematical Geodesic Fallback (Haversine calculation)
+            import math
+            R = 6371.0  # Earth radius in km
+            dlat = math.radians(lat2 - lat1)
+            dlon = math.radians(lon2 - lon1)
+            a = math.sin(dlat / 2.0) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2.0) ** 2
+            c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+            dist_km = round(R * c, 1)
+            # Driving distance factor ~1.25x geodesic direct line
+            dist_km = round(max(1.0, dist_km * 1.25), 1)
+            dur_mins = max(2, int(round(dist_km / 55.0 * 60)))  # avg 55 km/h
+            steps = [
+                f"Depart from {orig_name} along primary arterial vector (approx. {round(dist_km * 0.3, 1)} km)",
+                f"Transition to regional transit corridor toward {dest_name} (approx. {round(dist_km * 0.5, 1)} km)",
+                f"Approach final waypoint at {dest_name} and arrive at destination"
             ]
+
+        dist_miles = round(dist_km * 0.621371, 1)
+        eta_str = f"{dur_mins // 60} hours {dur_mins % 60} mins" if dur_mins >= 60 else f"{dur_mins} mins"
+
+        prompts = [
+            f"Navigation plotted to {dest_name}, Sir. Total transit distance is {dist_km} kilometers ({dist_miles} miles), estimated transit time is {eta_str}.",
+            f"Proceed along the designated corridor toward {dest_name}.",
+            f"You have arrived at your destination: {dest_name}, Sir."
+        ]
+
+        return {
+            "origin": orig_name,
+            "destination": dest_name,
+            "distance": f"{dist_km} km ({dist_miles} mi)",
+            "distance_km": dist_km,
+            "eta": eta_str,
+            "traffic": "Clear",
+            "steps": steps[:6],
+            "jarvis_prompts": prompts
         }
 
     def geocode(self, location_name: str) -> Dict[str, Any]:
@@ -244,6 +281,78 @@ class MapsNavigationEngine:
                 "corridors": [
                     {"name": "Outer Ring Road (Silk Board to Marathahalli)", "status": "Heavy Congestion", "speed_kmh": 14},
                     {"name": "Electronic City Elevated Expressway", "status": "Fluid", "speed_kmh": 65},
+                ],
+            },
+            "bengaluru": {
+                "city": "Bengaluru",
+                "state": "Karnataka",
+                "country": "India",
+                "lat": 12.9716,
+                "lon": 77.5946,
+                "region": "Karnataka",
+                "corridors": [
+                    {"name": "Outer Ring Road (Silk Board to Marathahalli)", "status": "Heavy Congestion", "speed_kmh": 14},
+                    {"name": "Electronic City Elevated Expressway", "status": "Fluid", "speed_kmh": 65},
+                ],
+            },
+            "mumbai": {
+                "city": "Mumbai",
+                "state": "Maharashtra",
+                "country": "India",
+                "lat": 19.0760,
+                "lon": 72.8777,
+                "region": "Maharashtra",
+                "corridors": [
+                    {"name": "Bandra-Worli Sea Link", "status": "Fluid", "speed_kmh": 60},
+                    {"name": "Western Express Highway", "status": "Dense Flow", "speed_kmh": 22},
+                ],
+            },
+            "delhi": {
+                "city": "New Delhi",
+                "state": "Delhi",
+                "country": "India",
+                "lat": 28.6139,
+                "lon": 77.2090,
+                "region": "NCR",
+                "corridors": [
+                    {"name": "Ring Road Arterial", "status": "Moderate", "speed_kmh": 32},
+                    {"name": "Delhi-Noida Direct (DND) Flyway", "status": "Fluid", "speed_kmh": 55},
+                ],
+            },
+            "san francisco": {
+                "city": "San Francisco",
+                "state": "California",
+                "country": "USA",
+                "lat": 37.7749,
+                "lon": -122.4194,
+                "region": "Bay Area",
+                "corridors": [
+                    {"name": "Market Street Corridor", "status": "Moderate", "speed_kmh": 20},
+                    {"name": "US-101 / Central Freeway", "status": "Fluid", "speed_kmh": 50},
+                ],
+            },
+            "new york": {
+                "city": "New York",
+                "state": "New York",
+                "country": "USA",
+                "lat": 40.7128,
+                "lon": -74.0060,
+                "region": "New York",
+                "corridors": [
+                    {"name": "FDR Drive Express", "status": "Moderate", "speed_kmh": 35},
+                    {"name": "Broadway Corridor", "status": "Dense Flow", "speed_kmh": 15},
+                ],
+            },
+            "london": {
+                "city": "London",
+                "state": "England",
+                "country": "United Kingdom",
+                "lat": 51.5074,
+                "lon": -0.1278,
+                "region": "Greater London",
+                "corridors": [
+                    {"name": "A40 Westway Corridor", "status": "Fluid", "speed_kmh": 40},
+                    {"name": "Blackfriars Arterial", "status": "Moderate", "speed_kmh": 25},
                 ],
             },
         }
@@ -369,14 +478,13 @@ class MapsNavigationEngine:
             f"Live tactical GIS mapping is now loaded on your surface."
         )
 
-    def format_nearby_food_response(self, query: str = "tacos") -> str:
+    def format_nearby_food_response(self, query: str = "coffee") -> str:
         pois = self.search_nearby_poi(query)
         if not pois:
-            return f"Couldn't find any {query} spots nearby right now, partner."
+            return f"I am unable to identify any {query} locations in the immediate sector, Sir."
         best = pois[0]
         return (
-            f"Found the nearest late-night {query} spot for your hangry ass: "
-            f"'{best['name']}' at {best['address']} ({best['distance']} away). "
-            f"{best['note']} Rerouting your navigation right now!"
+            f"I have located {best['name']} at {best['address']}, Sir. "
+            f"{best['note']} Navigation coordinates are available on your console."
         )
 

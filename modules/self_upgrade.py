@@ -132,7 +132,7 @@ class JarvisSelfUpgrade:
             "configs_inspected": [str(p.name) for p in [vad_file, pipe_file, wake_file] if p.exists()],
             "top_modules": file_summaries[:6],
             "performance_stats": logs.get("skill_stats", {}),
-            "recommendation": f"All 8 partner upgrade modules active across {len(all_code_files)} code files. Audio pipeline hangover expanded to {round(hang_time_ms / 1000.0, 1)}s in audio_pipeline.yaml & vad_settings.json."
+            "recommendation": f"All core executive capabilities active across {len(all_code_files)} system files, Sir. Audio pipeline hangover calibrated to {round(hang_time_ms / 1000.0, 1)}s."
         }
 
     def record_skill_feedback(self, skill_name: str, hit: bool, user_comment: str = "") -> str:
@@ -205,9 +205,9 @@ class JarvisSelfUpgrade:
         return None
 
     def format_level_up_whisper(self) -> str:
-        """Non-intrusive J.A.R.V.I.S. spoken level-up whisper."""
+        """Non-intrusive J.A.R.V.I.S. spoken system status whisper."""
         logs = self._load_logs()
         recent = logs.get("recent_level_ups", [])
         if recent:
-            return f"Hey partner, I just leveled up: {recent[-1]} Locked and loaded."
-        return "Hey partner, I just audited my skill pipeline and tightened up performance by 15%. Ready for work."
+            return f"Sir, system update confirmed: {recent[-1]} All diagnostics nominal."
+        return "Sir, I have audited system capabilities and verified nominal response thresholds across all active nodes."

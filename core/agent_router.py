@@ -23,11 +23,11 @@ class AgentRouter:
         # ── 0. Check for Mode Switch Commands ─────────────────────
         if any(kw in text_lower for kw in ["osint mode", "war room", "recon mode", "tactical mode", "war mode", "warm mode", "warm room", "engage osint", "engage war"]):
             self.event_bus.emit("set_app_mode", {"mode": "osint"})
-            return True, "War room mode engaged, partner. Reconnaissance and target tracking active.", None, "mode_switch_osint"
+            return True, "Tactical intelligence and target reconnaissance mode engaged, Sir.", None, "mode_switch_osint"
 
-        if any(kw in text_lower for kw in ["partner mode", "assistant mode", "casual mode", "companion mode"]):
+        if any(kw in text_lower for kw in ["partner mode", "assistant mode", "casual mode", "companion mode", "executive mode"]):
             self.event_bus.emit("set_app_mode", {"mode": "partner"})
-            return True, "Switched back to partner mode, buddy. Keeping things clean and quiet.", None, "mode_switch_partner"
+            return True, "Returning to primary executive mode, Sir. Systems standing by.", None, "mode_switch_partner"
 
         active_task = self.task_manager.get_active_task()
 
@@ -42,7 +42,7 @@ class AgentRouter:
         if any(w in text_lower for w in ["minimize", "minimize panel", "minimize window", "hide panel", "hide window", "minimize that", "hide that", "put it down", "minimize that window"]):
             if target_task:
                 self.task_manager.minimize_task(target_task.task_id)
-                return True, "Minimized the panel, buddy.", target_task, "followup_minimize"
+                return True, "Minimized the panel, Sir.", target_task, "followup_minimize"
 
         # B. Expand/Maximize command
         if any(w in text_lower for w in ["expand", "maximize", "show panel", "show window", "restore panel", "restore window", "bring it up", "open panel", "restore", "restore surface", "expand surface", "restore task", "maximize window", "bring that up"]):
@@ -88,7 +88,7 @@ class AgentRouter:
                 title=f"YouTube Search: {query}",
                 data={"query": query}
             )
-            return True, f"Searching YouTube for '{query}', buddy.", task, "youtube_search"
+            return True, f"Searching YouTube for '{query}', Sir.", task, "youtube_search"
 
         # ── 3. Check for Autonomous Terminal / System Command ──────
         # Handles explicit commands, backticks, or direct CLI binary execution (dig, nmap, curl, etc.)
@@ -137,6 +137,20 @@ class AgentRouter:
                     data={"query": query}
                 )
                 return True, f"Searching Google for '{query}'.", task, "google_search"
+
+        # ── 4.5 Check for System & Hardware Diagnostics ───────────
+        if any(kw in text_lower for kw in [
+            "system diagnostic", "hardware diagnostic", "system status", "hardware status",
+            "system telemetry", "hardware stats", "system stats", "diagnostics",
+            "how are system resources", "system resources", "cpu load", "battery status",
+            "thermal status", "thermals", "resource monitor"
+        ]):
+            task = self.task_manager.create_task(
+                type_=TaskType.SYSTEM_DIAGNOSTIC.value,
+                title="System Diagnostic & Telemetry",
+                data={"query": text_strip}
+            )
+            return True, "Running full hardware and system diagnostics, Sir.", task, "system_diagnostic"
 
         # ── 5. Check for System Action (App Launch) ────────────────
         m_app = re.search(r'^(?:open|launch|run|start)\s+(?:application|app|program)?\s*([a-zA-Z0-9_\-\s]+)$', text_lower)
@@ -206,7 +220,7 @@ class AgentRouter:
                 title=f"Weather Telemetry: {loc_clean.title()}",
                 data={"location": loc_clean, "query": text_strip}
             )
-            ack = f"Scanning atmospheric telemetry for {loc_clean.title()}, partner."
+            ack = f"Scanning atmospheric telemetry for {loc_clean.title()}, Sir."
             return True, ack, task, "weather_intel"
 
         # ── 8B. Check for Live Traffic & GIS Map Telemetry ────────

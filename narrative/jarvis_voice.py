@@ -1034,7 +1034,7 @@ class JarvisVoice:
             import asyncio
             import edge_tts
             async def _run():
-                communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="+8%", pitch="-4Hz")
+                communicate = edge_tts.Communicate(text, "en-GB-RyanNeural", rate="+4%", pitch="-2Hz")
                 buf = bytearray()
                 async for chunk in communicate.stream():
                     if chunk["type"] == "audio":
@@ -1270,9 +1270,7 @@ class JarvisVoice:
                     )
                 if intel_summary:
                     delivery_style = (
-                        "Present the REAL facts using your authentic, hilarious, cocky, profane J.A.R.V.I.S. swagger ('fuck', 'shit', 'partner', 'bruh')."
-                        if self.persona_name == "jarvis"
-                        else "Present the REAL facts using your sophisticated, articulate, dryly witty J.A.R.V.I.S. style, addressing the operator as 'Sir'."
+                        "Present the REAL facts using your sophisticated, articulate, dryly witty J.A.R.V.I.S. style, addressing the operator as 'Sir'."
                     )
                     live_search_intel = (
                         f"\n\n[REAL-WORLD LIVE WEB SCAN RESULTS FOR '{resolved_search_query}']:\n{intel_summary}\n\n"
@@ -1333,7 +1331,7 @@ class JarvisVoice:
                     print(f"[voice] Autonomous command launch error: {e}")
 
                 if not cleaned or len(cleaned) < 5:
-                    addressed = "Sir" if self.persona_name == "jarvis" else "partner"
+                    addressed = "Sir"
                     cleaned = f"Executing `{cmd_to_run}` on your system now, {addressed}. Check the panel."
 
             cleaned = re.sub(r'\[CMD[^\]]*\]', '', cleaned, flags=re.IGNORECASE).strip()
@@ -1552,9 +1550,9 @@ Output ONLY a JSON object:
         """J.A.R.V.I.S. in-character rate limit message."""
         prompt = (
             "You just got rate limited by the API. "
-            "Tell the user in J.A.R.V.I.S.'s articulate, calm voice — 1-2 sentences. "
-            "Stay in character. Swear naturally and be cocky about it. "
-            "Say you'll be back and they can still investigate."
+            "Inform Sir in J.A.R.V.I.S.'s articulate, calm British voice — 1-2 sentences. "
+            "Stay in character with understated dry wit, noting the neural link is temporarily cooling down. "
+            "Reassure Sir that local subsystems remain operational."
         )
         res = self._ask_slm(prompt, self.advisor_prompt, max_tokens=150)
         return res["text"]
@@ -1633,8 +1631,8 @@ Output only the raw target string. No markdown, no quotes, no explanation."""
         if (result.startswith('"') and result.endswith('"')) or (result.startswith('“') and result.endswith('”')):
             result = result[1:-1].strip()
 
-        # 5. Sanitize accidental "Dean" name references to "bruh"
-        result = re.sub(r'\bDean\b', 'bruh', result)
+        # 5. Sanitize accidental "Dean" name references to "Sir"
+        result = re.sub(r'\bDean\b', 'Sir', result)
 
         result = re.sub(r'^(?:ASSISTANT|AI)\s*:\s*', '', result, flags=re.IGNORECASE).strip()
 

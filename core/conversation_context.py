@@ -150,7 +150,7 @@ class ConversationContextManager:
             self._log_decision(clean, classification, intent, entities, resolved, latency, note="Direct navigation fast-path")
             return classification, intent, entities, resolved
 
-        inv_match = re.match(r'^(?:stalk|pivot|investigate|scan|trace|lookup|dox)\s+(\S+)$', lower)
+        inv_match = re.match(r'^(?:investigate|deep_scan|recon|scan|trace|lookup|pivot|stalk|dox)\s+(\S+)$', lower)
         if inv_match and inv_match.group(1) not in ("me", "jarvis", "us", "again", "them"):
             target_extracted = inv_match.group(1).strip()
             classification = "new_command"
@@ -195,7 +195,7 @@ class ConversationContextManager:
             self._log_decision(clean, classification, intent, entities, resolved, latency, note="Release lock / exit chase")
             return classification, intent, entities, resolved
 
-        ambiguous_inv_pat = r'^(?:start\s+(?:an?\s+)?investigation|investigate(?:\s+(?:someone|something|target|person))?|stalk\s+(?:someone|target))$'
+        ambiguous_inv_pat = r'^(?:start\s+(?:an?\s+)?(?:investigation|recon)|investigate(?:\s+(?:someone|something|target|person))?|recon(?:\s+(?:someone|something|target|person))?|stalk\s+(?:someone|target))$'
         if re.match(ambiguous_inv_pat, lower):
             classification = "new_command"
             intent = "investigate"

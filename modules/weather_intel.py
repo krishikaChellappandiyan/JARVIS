@@ -233,6 +233,6 @@ class WeatherIntelEngine:
         humidity = w.get('humidity', 50)
 
         return (
-            f"Weather check for {city}: It's {cond}, sitting at {temp_f}°F ({temp_c}°C). "
-            f"Winds clocking at {wind} km/h with {humidity}% humidity. Good enough to operate, partner."
+            f"Atmospheric telemetry for {city}: Currently {cond}, temperature {temp_f}°F ({temp_c}°C). "
+            f"Winds clocking at {wind} km/h with {humidity}% humidity. Conditions are nominal for operations, Sir."
         )

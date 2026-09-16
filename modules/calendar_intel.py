@@ -3,7 +3,7 @@
 """
 Calendar & Scheduling Intel Module for J.A.R.V.I.S..
 Provides event management, double-booking conflict detection, auto-rescheduling,
-and J.A.R.V.I.S. persona reminders ("Hey, dumbass, you got a meeting in 5").
+and J.A.R.V.I.S. persona reminders.
 """
 
 import os
@@ -152,22 +152,22 @@ class CalendarIntelManager:
         if imminent:
             for e, mins in imminent:
                 if mins <= 5:
-                    lines.append(f"Hey, dumbass, you got '{e['title']}' in {mins} minutes at {e.get('location', 'TBD')}! Get moving!")
+                    lines.append(f"Sir, a brief reminder: you have '{e['title']}' scheduled in {mins} minutes at {e.get('location', 'TBD')}.")
                 else:
-                    lines.append(f"Heads up, partner: '{e['title']}' is starting in {mins} minutes.")
+                    lines.append(f"Sir, '{e['title']}' commences in {mins} minutes.")
 
         if conflicts:
             c = conflicts[0]
             lines.append(
-                f"You double-booked your dumb ass at {c['event_a']['start']}! "
-                f"'{c['event_a']['title']}' overlaps with '{c['event_b']['title']}'. Want me to auto-reschedule one?"
+                f"I have detected a scheduling conflict at {c['event_a']['start']}, Sir: "
+                f"'{c['event_a']['title']}' overlaps with '{c['event_b']['title']}'. Shall I adjust your itinerary?"
             )
 
         if not lines and upcoming:
             next_evt = upcoming[0]
-            lines.append(f"Next workflow on your plate is '{next_evt['title']}' at {next_evt['start']}. Clear skies for now.")
+            lines.append(f"Next appointment on your schedule is '{next_evt['title']}' at {next_evt['start']}, Sir.")
 
         if not lines:
-            lines.append("Calendar is completely clear right now, buddy. No meetings to blow off.")
+            lines.append("Your schedule is completely clear at present, Sir.")
 
         return " ".join(lines)

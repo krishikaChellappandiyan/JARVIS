@@ -1151,7 +1151,7 @@ class JarvisAPI:
                 self._run_ask(eff_text)
         except Exception as e:
             print(f"[desktop] Error processing input: {e}")
-            self._emit("error", {"message": f"Partner system error: {str(e)}"})
+            self._emit("error", {"message": f"System error: {str(e)}"})
 
     def investigate(self, target: str):
         print(f"\n[desktop] Starting investigation: {target}")
@@ -1221,9 +1221,9 @@ class JarvisAPI:
             persona_instructions = (
                 f"Persona Spoken Instructions:\n"
                 f"Give a short, punchy 1-2 sentence J.A.R.V.I.S. spoken debrief to Sir about the actual result.\n"
-                f"Stay in character — cocky swagger, natural swearing, hilarious.\n"
-                f"If it succeeded, brag and summarize the result.\n"
-                f"If it failed or had nothing to commit, curse and tell your partner the actual fact honestly.\n"
+                f"Stay in character — understated British elegance, dry wit, and mathematical precision.\n"
+                f"If it succeeded, concisely summarize the outcome with quiet confidence.\n"
+                f"If it failed or had nothing to report, inform Sir clearly and directly of the status.\n"
                 f"Never output markdown code blocks, never output [CMD] directives. Output pure spoken dialogue only."
             )
 
@@ -2304,7 +2304,7 @@ class JarvisAPI:
         except Exception as e:
             print(f"[desktop] Voice chat execution error: {e}")
             result = {
-                "text": f"Sorry, partner. Hit a slight snag processing that: {str(e)}",
+                "text": f"Sir, encountered an unexpected exception while processing that: {str(e)}",
                 "error": True,
                 "mode": "advisor"
             }

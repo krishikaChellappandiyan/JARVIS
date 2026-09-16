@@ -174,7 +174,7 @@ class FlightIntelEngine:
         Generate J.A.R.V.I.S. spoken briefing on active military targets.
         """
         if not flights:
-            return 'Airspace radar is clear, partner. No military signatures pinged right now.'
+            return 'Airspace radar reports no military transponder signatures in range, Sir.'
 
         top = flights[0]
         desc = top.get('desc') or top.get('t') or 'tactical aircraft'

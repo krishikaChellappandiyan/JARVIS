@@ -32,9 +32,9 @@ class InboxIntelManager:
             initial_inbox = [
                 {
                     "id": "msg_101",
-                    "sender": "Boss <vought_boss@company.com>",
-                    "subject": "WE NEED TO TALK - Q3 Review",
-                    "snippet": "Sir, urgent update. We need to talk about the budget deployment ASAP before the 4 PM sync.",
+                    "sender": "Operations Lead <operations@hellhound.org>",
+                    "subject": "Executive Briefing - Q3 Operations",
+                    "snippet": "Sir, urgent update: all system telemetry nodes are synchronized and ready for the 4 PM review.",
                     "date": now_str,
                     "unread": True,
                     "urgent": True
@@ -124,24 +124,16 @@ class InboxIntelManager:
         self._save(messages)
 
     def get_tldr_summary(self) -> str:
-        """Generate a sharp, profane J.A.R.V.I.S. TL;DR of urgent inbox items."""
+        """Generate an articulate J.A.R.V.I.S. briefing of urgent inbox items."""
         urgent = self.scan_urgent()
         if not urgent:
-            return "Inbox is clear of emergency shit right now, partner. No panic texts or flight delays."
+            return "Your inbox is clear of urgent communications at present, Sir."
 
-        lines = [f"Listen up: you got {len(urgent)} urgent inbox item(s) that need your eyes:"]
+        lines = [f"Sir, I have flagged {len(urgent)} high-priority item(s) requiring your attention:"]
         for m in urgent[:3]:
             sender_name = m.get("sender", "Unknown").split("<")[0].strip()
             subj = m.get("subject", "")
-            snip = m.get("snippet", "")
-            if "WE NEED TO TALK" in subj.upper():
-                lines.append(f"• Boss panic warning from {sender_name}: '{subj}'. TL;DR: Drop what you're doing, boss wants a word.")
-            elif "FLIGHT" in subj.upper() or "DELAY" in subj.upper():
-                lines.append(f"• Travel Alert: {subj}. TL;DR: {snip}")
-            elif "SECURITY" in subj.upper() or "SECRET" in subj.upper():
-                lines.append(f"• Security Alert: {subj}. TL;DR: {snip}")
-            else:
-                lines.append(f"• Urgent from {sender_name}: '{subj}' — {snip[:80]}...")
+            snippet = m.get("snippet", "")
+            lines.append(f"• From {sender_name}: '{subj}' — {snippet}")
 
-        lines.append("Review 'em before someone starts yellin'.")
         return "\n".join(lines)

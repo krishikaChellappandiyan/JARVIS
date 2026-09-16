@@ -3,7 +3,7 @@
 J.A.R.V.I.S. Action HUD Panel Overlay Generator.
 Creates live visual pop-up cards and HTML overlay displays whenever J.A.R.V.I.S.
 searches the web, opens an app, checks calendar/inbox, inspects code, or modifies configs.
-Includes J.A.R.V.I.S.'s spoken dialogue: "Here, see the screen, partner — I found this!"
+Includes J.A.R.V.I.S.'s spoken dialogue: "Telemetry verified and loaded onto your HUD, Sir."
 """
 
 import os
@@ -39,7 +39,7 @@ class HUDPanelManager:
             "action_type": action_type,
             "details": details,
             "preview": preview_link_or_file or "N/A",
-            "spoken_intro": "Here, see the screen, partner — I found this!",
+            "spoken_intro": "Telemetry verified and loaded onto your HUD, Sir.",
             "status": "LIVE HUD ACTIVE"
         }
 
@@ -147,7 +147,7 @@ class HUDPanelManager:
             <div class="hud-badge">{data.get('action_type', 'ACTION')}</div>
         </div>
         <div class="hud-body">
-            <p><strong>Partner Voice Notice:</strong> "{data.get('spoken_intro', '')}"</p>
+            <p><strong>J.A.R.V.I.S. Telemetry:</strong> "{data.get('spoken_intro', '')}"</p>
             <p><strong>Action Title:</strong> {data.get('title', '')}</p>
             <p><strong>Execution Details:</strong> {data.get('details', '')}</p>
         </div>

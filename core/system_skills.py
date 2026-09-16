@@ -391,6 +391,29 @@ class SystemSkillEngine:
                     payload = self.hud_engine.build_structured_payload(f"Traffic Intel: {traffic_data.get('city')}", "MAPS", raw_results, debrief_msg)
                     return True, debrief_msg, False, "", payload
 
+                elif task.type == TaskType.SYSTEM_DIAGNOSTIC.value:
+                    task_mgr.update_progress(task.task_id, 30, "Querying live hardware telemetry...")
+                    from modules.system_diagnostics import SystemDiagnosticsEngine
+                    diag = SystemDiagnosticsEngine()
+                    metrics = diag.get_metrics()
+                    debrief_msg = diag.format_tactical_debrief(metrics)
+                    payload = diag.build_hud_payload(metrics)
+                    for item in payload.get("findings", []):
+                        task_mgr.add_finding(task.task_id, TaskFinding(
+                            title=item["headline"],
+                            url=item["url"],
+                            snippet=item["summary"],
+                            source="system_telemetry",
+                            extra=metrics
+                        ))
+                    task_mgr.complete_task(task.task_id, summary=f"CPU: {metrics['cpu_percent']}%, RAM: {metrics['ram_percent']}%, Thermals: {metrics['peak_thermal_c']}°C")
+                    try:
+                        from frontend.hud_panel import HUDPanelManager
+                        HUDPanelManager().show_action_hud(title="System Diagnostics & Hardware Telemetry", action_type="DIAGNOSTIC", details=debrief_msg)
+                    except Exception:
+                        pass
+                    return True, debrief_msg, False, "", payload
+
                 elif task.type == TaskType.BROWSER_SURF.value and task.data.get("cctv"):
                     # Tactical CCTV requests are routed directly to God's Eye 3D Earth console
                     # instead of popping up legacy Action HUD JSON panels.
@@ -619,9 +642,9 @@ class SystemSkillEngine:
             payload = self.hud_engine.build_structured_payload("Diagnostic Audit", "TERMINAL", raw, msg)
             return True, msg, False, "", payload
 
-        # 8. Sarcastic Phrase Triggers
+        # 8. Sarcastic Hardware Alert Triggers
         if "oh great" in text_lower or "printer jammed" in text_lower or "printer" in text_lower:
-            msg = "Oh great, the damn printer's taking a dump again. Give it a solid kick, partner, or let me blow it to pieces."
+            msg = "Hardware alert: The printer is reporting a mechanical paper jam, Sir. I recommend a manual inspection rather than percussive maintenance."
             raw = [{"title": "Hardware Exception", "snippet": msg, "url": "dev://printer0"}]
             payload = self.hud_engine.build_structured_payload("Hardware Alert", "HARDWARE ALERT", raw, msg)
             try:
@@ -696,6 +719,24 @@ class SystemSkillEngine:
             except Exception:
                 pass
             return True, msg, False, "", payload
+
+        # 13. System Hardware Diagnostic Telemetry
+        if any(kw in text_lower for kw in [
+            "system diagnostic", "hardware diagnostic", "system status", "hardware status",
+            "system telemetry", "hardware stats", "system stats", "cpu load", "battery status",
+            "thermal status", "thermals", "resource monitor"
+        ]):
+            from modules.system_diagnostics import SystemDiagnosticsEngine
+            diag = SystemDiagnosticsEngine()
+            metrics = diag.get_metrics()
+            debrief_msg = diag.format_tactical_debrief(metrics)
+            payload = diag.build_hud_payload(metrics)
+            try:
+                from frontend.hud_panel import HUDPanelManager
+                HUDPanelManager().show_action_hud(title="System Diagnostics & Hardware Telemetry", action_type="DIAGNOSTIC", details=debrief_msg)
+            except Exception:
+                pass
+            return True, debrief_msg, False, "", payload
 
         return False, "", False, "", {}
 

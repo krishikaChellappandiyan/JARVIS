@@ -2,7 +2,7 @@
 # MOCK — not wired to a real API
 """
 Smart Home & IoT Controls Module for J.A.R.V.I.S..
-Provides controls for lights, thermostat, locks, and arrival routines ("I'm home, you beautiful bastard").
+Provides controls for lights, thermostat, locks, and arrival routines.
 """
 
 import os
@@ -59,14 +59,14 @@ class SmartHomeManager:
         state["lights"]["brightness"] = brightness
         self._save(state)
         status = f"turned {'ON' if on else 'OFF'} (brightness: {brightness}%)"
-        return f"Lights {status}, partner."
+        return f"Lights {status}, Sir."
 
     def set_thermostat(self, temp: int) -> str:
         state = self._load()
         state.setdefault("thermostat", {})["target_temp"] = temp
         state["thermostat"]["current_temp"] = temp
         self._save(state)
-        return f"Thermostat cranked to {temp}°F. Cozy as hell."
+        return f"Thermostat adjusted to {temp}°F, Sir."
 
     def set_lock_state(self, lock_door: bool) -> str:
         state = self._load()
@@ -74,13 +74,13 @@ class SmartHomeManager:
         state.setdefault("locks", {})["front_door"] = lock_val
         self._save(state)
         if lock_door:
-            return "Front door locked up tight, buddy. No unwanted guests getting through."
+            return "Perimeter secured. The front entrance has been locked, Sir."
         else:
-            return "Front door unlocked. Come on in."
+            return "Front entrance unlocked, Sir."
 
     def handle_arrival(self) -> str:
-        """Arrival routine triggered by 'I'm home, you beautiful bastard'."""
+        """Arrival routine triggered by arrival commands."""
         self.set_light_state(on=True, brightness=100)
         self.set_thermostat(72)
         self.set_lock_state(lock_door=False)
-        return "Cranked the heat to 72°, turned on the lights, and unlocked the door for you. Welcome home, you beautiful bastard!"
+        return "Welcome home, Sir. Adjusting environment to arrival protocol: thermostat set to 72°F, illumination enabled, and entrance unlocked."
