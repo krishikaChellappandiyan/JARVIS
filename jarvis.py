@@ -9,8 +9,21 @@ PROJECT_ROOT = Path(__file__).parent.resolve()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# If running inside 'point-break' environment which lacks GTK bindings, switch to system python3
-if "point-break" in sys.executable and os.path.exists("/usr/bin/python3") and "JARVIS_SYS_EXEC" not in os.environ:
+# If running inside a virtual environment that lacks GTK or Qt bindings, switch to system python3
+def _needs_gui_fallback():
+    try:
+        import gi
+        return False
+    except ImportError:
+        pass
+    try:
+        import qtpy
+        return False
+    except ImportError:
+        pass
+    return True
+
+if _needs_gui_fallback() and os.path.exists("/usr/bin/python3") and "JARVIS_SYS_EXEC" not in os.environ:
     os.environ["JARVIS_SYS_EXEC"] = "1"
     os.execv("/usr/bin/python3", ["/usr/bin/python3"] + sys.argv)
 

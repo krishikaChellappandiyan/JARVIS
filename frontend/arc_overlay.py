@@ -70,7 +70,7 @@ class ArcReactorOverlay:
                 shadow=False,
                 focus=False,           # Don't steal focus from user's active app
                 min_size=(100, 100),
-                background_color='#00000000',
+                background_color='#000000',
             )
 
             if self.window:
