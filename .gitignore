@@ -90,6 +90,7 @@ scratch/
 
 # Development, testing & internal training scripts
 tests/
+test/
 scripts/
 *.md
 !README.md
