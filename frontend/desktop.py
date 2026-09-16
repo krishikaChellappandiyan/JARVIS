@@ -32,6 +32,7 @@ for f in required_flags.split():
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = current_flags
 
 import base64
+import hashlib
 import tempfile
 import shutil
 import struct
@@ -464,6 +465,12 @@ def resolve_geospatial_coordinates(candidate: str) -> tuple[float, float, str] |
         lon = float(coord_m.group(2))
         return lat, lon, f"{lat:.4f}°N, {lon:.4f}°E"
 
+    # Phonetic alias mapping for Indian cities frequently misheard by STT
+    if clean in ("quimatur", "quimador", "quimatore", "coimbator", "coimbathur", "kovai"):
+        clean = "coimbatore"
+    elif clean in ("channel", "chenai", "chenna") and "english" not in clean:
+        clean = "chennai"
+
     # 1. Exact match first
     if clean in KNOWN_COORDS:
         return KNOWN_COORDS[clean][0], KNOWN_COORDS[clean][1], clean.title()
@@ -864,7 +871,33 @@ class JarvisAPI:
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         out_path = screenshot_dir / f"screenshot_{int(time.time())}.png"
 
-        # 1. Try grim (Wayland)
+        # 1. Try mss (fastest and handles X11 / XWayland with 0 subprocess overhead)
+        try:
+            import mss
+            with mss.mss() as sct:
+                sct.shot(output=str(out_path))
+                if out_path.exists() and out_path.stat().st_size > 1000:
+                    print(f"[desktop] Vision Eye captured screen via mss: {out_path}")
+                    return str(out_path)
+        except Exception as e:
+            pass
+
+        # 2. Try GNOME Shell D-Bus screenshot (native to GNOME on Wayland)
+        try:
+            res = subprocess.run([
+                "gdbus", "call", "--session",
+                "--dest", "org.gnome.Shell.Screenshot",
+                "--object-path", "/org/gnome/Shell/Screenshot",
+                "--method", "org.gnome.Shell.Screenshot.Screenshot",
+                "true", "false", str(out_path)
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+            if res.returncode == 0 and out_path.exists() and out_path.stat().st_size > 1000:
+                print(f"[desktop] Vision Eye captured GNOME screen via D-Bus: {out_path}")
+                return str(out_path)
+        except Exception:
+            pass
+
+        # 3. Try grim (wlroots Wayland: Sway / Hyprland)
         try:
             res = subprocess.run(["grim", str(out_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
             if res.returncode == 0 and out_path.exists() and out_path.stat().st_size > 1000:
@@ -873,7 +906,7 @@ class JarvisAPI:
         except Exception:
             pass
 
-        # 2. Try PIL ImageGrab
+        # 4. Try PIL ImageGrab
         try:
             from PIL import ImageGrab
             img = ImageGrab.grab()
@@ -881,10 +914,10 @@ class JarvisAPI:
             if out_path.exists() and out_path.stat().st_size > 1000:
                 print(f"[desktop] Vision Eye captured screen via PIL: {out_path}")
                 return str(out_path)
-        except Exception as e:
-            print(f"[desktop] ImageGrab failed: {e}")
+        except Exception:
+            pass
 
-        # 3. Try scrot or import (X11)
+        # 5. Try scrot or import (X11)
         for tool in ["scrot", "import"]:
             try:
                 cmd = [tool, str(out_path)] if tool == "scrot" else [tool, "-window", "root", str(out_path)]
@@ -1022,8 +1055,7 @@ class JarvisAPI:
                     print(f"[desktop] Multi-step cognitive loop activated ({len(steps)} steps) for: '{text}'")
                     def _live_speak(phrase: str):
                         self._emit("jarvis_stream_chunk", {"chunk": f"{phrase}\n"})
-                        if self._voice:
-                            self._voice.speak(phrase)
+                        self._speak_and_suppress_echo(phrase)
 
                     def _live_ui(msg: str):
                         self._emit("scan_status", {"message": msg})
@@ -1032,8 +1064,7 @@ class JarvisAPI:
                     if plan_res.get("handled"):
                         final_msg = plan_res["text"]
                         self._emit("jarvis_answer", {"text": final_msg, "mode": "tactical"})
-                        if self._voice:
-                            self._voice.speak(final_msg)
+                        self._speak_and_suppress_echo(final_msg)
                         self._start_follow_up_window()
                         return
             except Exception as cog_err:
@@ -1054,8 +1085,7 @@ class JarvisAPI:
                     prompt_q = pending.get("prompt_asked", "Which target username, email, or domain shall we investigate, Sir?")
                     self._emit("jarvis_stream_chunk", {"chunk": prompt_q})
                     self._emit("jarvis_answer", {"text": prompt_q, "mode": "advisor"})
-                    if self._voice:
-                        self._voice.speak(prompt_q)
+                    self._speak_and_suppress_echo(prompt_q)
                     self._start_follow_up_window()
                     return
 
@@ -1073,8 +1103,7 @@ class JarvisAPI:
                     resp_txt = f"Entering tactical cockpit chase camera on {target_call if target_call else 'airborne contact'}, Sir."
                     self._emit("jarvis_stream_chunk", {"chunk": resp_txt})
                     self._emit("jarvis_answer", {"text": resp_txt, "mode": "tactical"})
-                    if self._voice:
-                        self._voice.speak(resp_txt)
+                    self._speak_and_suppress_echo(resp_txt)
                     self._start_follow_up_window()
                     return
 
@@ -1085,8 +1114,7 @@ class JarvisAPI:
                     resp_txt = f"Target lock established on {target_call if target_call else 'active contact'}, Sir."
                     self._emit("jarvis_stream_chunk", {"chunk": resp_txt})
                     self._emit("jarvis_answer", {"text": resp_txt, "mode": "tactical"})
-                    if self._voice:
-                        self._voice.speak(resp_txt)
+                    self._speak_and_suppress_echo(resp_txt)
                     self._start_follow_up_window()
                     return
 
@@ -1097,8 +1125,7 @@ class JarvisAPI:
                     resp_txt = "Releasing target lock and restoring tactical orbital overview, Sir."
                     self._emit("jarvis_stream_chunk", {"chunk": resp_txt})
                     self._emit("jarvis_answer", {"text": resp_txt, "mode": "tactical"})
-                    if self._voice:
-                        self._voice.speak(resp_txt)
+                    self._speak_and_suppress_echo(resp_txt)
                     self._start_follow_up_window()
                     return
 
@@ -1733,6 +1760,23 @@ class JarvisAPI:
             except Exception:
                 pass
             self._current_tts_proc = None
+
+    def _speak_and_suppress_echo(self, text: str):
+        """Speak text via voice engine while registering it for self-echo suppression and setting TTS playback mute."""
+        if not text:
+            return
+        cleaned = self._voice._sanitize_text_for_speech(text) if self._voice else text
+        if cleaned:
+            self._recent_agent_responses.append(cleaned.strip())
+            if len(self._recent_agent_responses) > 25:
+                self._recent_agent_responses.pop(0)
+            dur = max(2.5, len(cleaned) * 0.085)
+            self._tts_playback_until = max(getattr(self, '_tts_playback_until', 0.0), time.time()) + dur
+        if self._voice:
+            try:
+                self._voice.speak(text)
+            except Exception as e:
+                print(f"[desktop] Voice speak error: {e}")
         with self._tts_turn_lock:
             self._tts_turn_id += 1
         self._emit("jarvis_interrupt_speech", {})
@@ -2705,6 +2749,7 @@ class JarvisAPI:
                 with open(wav_path, "rb") as f:
                     wav_bytes = f.read()
                 boundary = "----WebKitFormBoundary" + hex(int(time.time() * 1000))[2:]
+                bias_prompt = "J.A.R.V.I.S., Sir, tactical intelligence, system diagnostics, Coimbatore, Chennai, Bengaluru, Delhi, Mumbai, Hyderabad, Kolkata, radar, telemetry, screen analysis."
                 body = (
                     f"--{boundary}\r\n"
                     f'Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
@@ -2716,6 +2761,9 @@ class JarvisAPI:
                     f"--{boundary}\r\n"
                     f'Content-Disposition: form-data; name="language"\r\n\r\n'
                     f"en\r\n"
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="prompt"\r\n\r\n'
+                    f"{bias_prompt}\r\n"
                     f"--{boundary}--\r\n"
                 ).encode("latin1")
                 req = urllib.request.Request(
@@ -2732,7 +2780,7 @@ class JarvisAPI:
                         payload = json.loads(resp.read().decode("utf-8"))
                         text = (payload.get("text") or "").strip()
                         if text:
-                            return text
+                            return self._sanitize_transcribed_speech(text)
             except Exception as e:
                 print(f"[desktop] Groq Whisper turbo fallback: {e}")
 
@@ -2746,10 +2794,12 @@ class JarvisAPI:
                 with sr.AudioFile(wav_path) as source:
                     audio_data = recognizer.record(source)
                     try:
-                        return recognizer.recognize_google(audio_data, language="en-IN").strip()
+                        raw = recognizer.recognize_google(audio_data, language="en-IN").strip()
+                        return self._sanitize_transcribed_speech(raw)
                     except sr.UnknownValueError:
                         try:
-                            return recognizer.recognize_google(audio_data, language="en-US").strip()
+                            raw = recognizer.recognize_google(audio_data, language="en-US").strip()
+                            return self._sanitize_transcribed_speech(raw)
                         except Exception:
                             return ""
             finally:
@@ -2757,6 +2807,19 @@ class JarvisAPI:
         except Exception as ge:
             print(f"[desktop] Google STT fallback error: {ge}")
             return ""
+
+    @staticmethod
+    def _sanitize_transcribed_speech(text: str) -> str:
+        """Correct common accent-specific phonetic misrecognitions."""
+        if not text:
+            return ""
+        # Coimbatore phonetic variants
+        text = re.sub(r'\b(?:quimatur|quimador|quimatore|coimbator|coimbathur)\b', 'Coimbatore', text, flags=re.IGNORECASE)
+        # Chennai navigation variants (e.g. "take me to channel" -> "take me to Chennai")
+        text = re.sub(r'\b(take\s+(?:me\s+)?to|navigate\s+to|go\s+to|fly\s+to|heading\s+to)\s+channel\b', r'\1 Chennai', text, flags=re.IGNORECASE)
+        # "our system" -> "how is the system" / "how is our system"
+        text = re.sub(r'\b(?:hey\s+jarvis[,\s]+)?our system\b', 'how is the system', text, flags=re.IGNORECASE)
+        return text
 
     def stop_native_mic(self):
         """Stop native Linux microphone recording and transcribe using Google Speech Recognition."""
