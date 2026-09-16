@@ -2626,6 +2626,18 @@ class JarvisAPI:
             print(f"[audio] Normalization notice: {e}")
             return False
 
+    def toggle_arc_reactor(self):
+        """Show/hide the floating Arc Reactor overlay (callable from main console JS)."""
+        overlay = getattr(self, '_arc_overlay', None)
+        if not overlay:
+            return {'status': 'unavailable'}
+        if overlay.is_expanded:
+            overlay.collapse()
+            return {'status': 'collapsed'}
+        else:
+            overlay.expand()
+            return {'status': 'expanded'}
+
     def shutdown(self):
         """Cleanly stop background mic, wake engine, and voice listener threads."""
         print("[desktop] Performing clean shutdown of all background services...")
@@ -3382,6 +3394,22 @@ class JarvisDesktop:
         api.set_window(window)
         # Background voice listener will activate cleanly once the frontend signals pywebviewready
 
+        # ─── Arc Reactor Floating Overlay ───
+        arc_overlay = None
+        try:
+            from frontend.arc_overlay import ArcReactorOverlay
+            arc_overlay = ArcReactorOverlay(api)
+            arc_window = arc_overlay.create_window(webview)
+            if arc_window:
+                api._arc_overlay = arc_overlay
+                print("[desktop] Arc Reactor overlay initialized")
+            else:
+                print("[desktop] Arc Reactor overlay creation returned None — continuing without overlay")
+                arc_overlay = None
+        except Exception as e:
+            print(f"[desktop] Arc Reactor overlay notice: {e} — continuing without overlay")
+            arc_overlay = None
+
         # Patch pywebview PyQt6 permission policy enum bug (int vs QWebEnginePage.PermissionPolicy)
         try:
             import webview.platforms.qt as qt_mod
@@ -3428,6 +3456,15 @@ class JarvisDesktop:
 
         def _on_closed():
             print("\n[desktop] Window closed by user. Performing clean shutdown of all threads...")
+            try:
+                # Close the Arc Reactor overlay if it's still alive
+                if arc_overlay and arc_overlay.window:
+                    try:
+                        arc_overlay.window.destroy()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             try:
                 api.shutdown()
             except Exception:

@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>J.A.R.V.I.S. Arc Reactor</title>
+<style>
+  /* ═══════════════════════════════════════════════════════════════
+     STARK ARC REACTOR — FLOATING EDGE HUD
+     Transparent overlay · Drag · Edge-snap · Push-to-talk
+     ═══════════════════════════════════════════════════════════════ */
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent !important;
+    -webkit-app-region: no-drag;
+    user-select: none;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+
+  :root {
+    --reactor-size: 72px;
+    --core-blue:    #4fc3f7;
+    --core-white:   #e0f7fa;
+    --glow-cyan:    rgba(79, 195, 247, 0.35);
+    --glow-bright:  rgba(79, 195, 247, 0.7);
+    --ring-color:   rgba(79, 195, 247, 0.55);
+    --amber:        #ffb74d;
+    --listening-cyan: #00e5ff;
+  }
+
+  /* ─── CONTAINER ─── */
+  #hud-container {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+
+  /* ─── COLLAPSE ARROW ─── */
+  #collapse-arrow {
+    position: fixed;
+    width: 28px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    pointer-events: auto;
+    z-index: 1000;
+    transition: opacity 0.3s, transform 0.3s;
+    opacity: 0.5;
+  }
+  #collapse-arrow:hover { opacity: 1; }
+  #collapse-arrow svg {
+    width: 16px;
+    height: 24px;
+    fill: var(--core-blue);
+    filter: drop-shadow(0 0 4px var(--glow-cyan));
+    transition: transform 0.3s;
+  }
+  #collapse-arrow.collapsed svg { transform: rotate(180deg); }
+
+  /* ─── REACTOR ASSEMBLY ─── */
+  #reactor-assembly {
+    position: fixed;
+    width: var(--reactor-size);
+    height: var(--reactor-size);
+    cursor: grab;
+    pointer-events: auto;
+    z-index: 999;
+    transition: opacity 0.4s, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #reactor-assembly:active { cursor: grabbing; }
+  #reactor-assembly.hidden {
+    opacity: 0;
+    transform: scale(0.3);
+    pointer-events: none;
+  }
+
+  /* ─── REACTOR RINGS ─── */
+  .reactor-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid var(--ring-color);
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .ring-outer  { width: 100%; height: 100%; animation: spin-slow 12s linear infinite; }
+  .ring-mid    { width: 75%;  height: 75%;  animation: spin-slow 8s linear infinite reverse; border-style: dashed; }
+  .ring-inner  { width: 50%;  height: 50%;  animation: spin-slow 6s linear infinite; }
+
+  /* Ring segment gaps */
+  .ring-outer  { border-top-color: transparent; border-left-color: transparent; }
+  .ring-mid    { border-bottom-color: transparent; }
+  .ring-inner  { border-right-color: transparent; border-top-color: transparent; }
+
+  /* ─── CORE ─── */
+  .reactor-core {
+    position: absolute;
+    width: 28%;
+    height: 28%;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 40%, var(--core-white), var(--core-blue) 60%, transparent 100%);
+    box-shadow:
+      0 0 12px var(--core-blue),
+      0 0 30px var(--glow-cyan),
+      0 0 60px rgba(79, 195, 247, 0.15);
+    animation: breathe 3s ease-in-out infinite;
+  }
+
+  /* ─── GLOW BACKDROP ─── */
+  .reactor-glow {
+    position: absolute;
+    width: 140%;
+    height: 140%;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--glow-cyan) 0%, transparent 70%);
+    opacity: 0.4;
+    animation: breathe 3s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  /* ─── TICK MARKS ─── */
+  .reactor-ticks {
+    position: absolute;
+    width: 88%;
+    height: 88%;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .tick {
+    position: absolute;
+    width: 2px;
+    height: 6px;
+    background: var(--ring-color);
+    top: 0;
+    left: 50%;
+    transform-origin: 50% calc(var(--reactor-size) * 0.44);
+    border-radius: 1px;
+  }
+
+  /* ─── ANIMATIONS ─── */
+  @keyframes spin-slow {
+    from { transform: translate(-50%, -50%) rotate(0deg); }
+    to   { transform: translate(-50%, -50%) rotate(360deg); }
+  }
+  @keyframes breathe {
+    0%, 100% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
+    50%      { opacity: 1;   transform: translate(-50%, -50%) scale(1.08); }
+  }
+  @keyframes pulse-listen {
+    0%, 100% { opacity: 0.8; transform: translate(-50%, -50%) scale(1); }
+    50%      { opacity: 1;   transform: translate(-50%, -50%) scale(1.15); }
+  }
+  @keyframes spin-fast {
+    from { transform: translate(-50%, -50%) rotate(0deg); }
+    to   { transform: translate(-50%, -50%) rotate(360deg); }
+  }
+
+  /* ─── STATE: LISTENING ─── */
+  #reactor-assembly.listening .reactor-core {
+    background: radial-gradient(circle at 40% 40%, #fff, var(--listening-cyan) 60%, transparent 100%);
+    box-shadow: 0 0 20px var(--listening-cyan), 0 0 50px rgba(0, 229, 255, 0.4);
+    animation: pulse-listen 0.8s ease-in-out infinite;
+  }
+  #reactor-assembly.listening .reactor-glow {
+    background: radial-gradient(circle, rgba(0, 229, 255, 0.5) 0%, transparent 70%);
+    animation: pulse-listen 0.8s ease-in-out infinite;
+  }
+  #reactor-assembly.listening .reactor-ring {
+    border-color: rgba(0, 229, 255, 0.7);
+  }
+  #reactor-assembly.listening .ring-outer { border-top-color: transparent; border-left-color: transparent; }
+  #reactor-assembly.listening .ring-mid   { border-bottom-color: transparent; }
+  #reactor-assembly.listening .ring-inner { border-right-color: transparent; border-top-color: transparent; }
+
+  /* ─── STATE: PROCESSING ─── */
+  #reactor-assembly.processing .reactor-core {
+    background: radial-gradient(circle at 40% 40%, #fff3e0, var(--amber) 60%, transparent 100%);
+    box-shadow: 0 0 16px var(--amber), 0 0 40px rgba(255, 183, 77, 0.3);
+  }
+  #reactor-assembly.processing .ring-outer { animation: spin-fast 1.5s linear infinite; }
+  #reactor-assembly.processing .ring-mid   { animation: spin-fast 1s linear infinite reverse; }
+  #reactor-assembly.processing .ring-inner { animation: spin-fast 0.7s linear infinite; }
+  #reactor-assembly.processing .reactor-ring { border-color: rgba(255, 183, 77, 0.6); }
+  #reactor-assembly.processing .ring-outer { border-top-color: transparent; border-left-color: transparent; }
+  #reactor-assembly.processing .ring-mid   { border-bottom-color: transparent; }
+  #reactor-assembly.processing .ring-inner { border-right-color: transparent; border-top-color: transparent; }
+
+  /* ─── STATE: SPEAKING ─── */
+  #reactor-assembly.speaking .reactor-core {
+    animation: breathe 1.2s ease-in-out infinite;
+    box-shadow: 0 0 18px var(--core-blue), 0 0 45px var(--glow-cyan);
+  }
+
+  /* ─── RESPONSE BUBBLE ─── */
+  #response-bubble {
+    position: fixed;
+    max-width: 320px;
+    min-width: 140px;
+    padding: 12px 16px;
+    background: rgba(8, 16, 28, 0.88);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(79, 195, 247, 0.25);
+    border-radius: 12px;
+    color: #e0f0ff;
+    font-size: 13px;
+    line-height: 1.5;
+    z-index: 998;
+    pointer-events: auto;
+    opacity: 0;
+    transform: scale(0.9) translateY(4px);
+    transition: opacity 0.35s, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 12px var(--glow-cyan);
+    cursor: pointer;
+  }
+  #response-bubble.visible {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  #response-bubble .bubble-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--core-blue);
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+  #response-bubble .bubble-text {
+    color: #cde5f5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ─── LISTENING LABEL ─── */
+  #listening-label {
+    position: absolute;
+    bottom: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--listening-cyan);
+    opacity: 0;
+    transition: opacity 0.3s;
+    white-space: nowrap;
+    text-shadow: 0 0 8px rgba(0, 229, 255, 0.5);
+  }
+  #reactor-assembly.listening #listening-label { opacity: 1; }
+  #reactor-assembly.processing #listening-label {
+    opacity: 1;
+    color: var(--amber);
+    text-shadow: 0 0 8px rgba(255, 183, 77, 0.5);
+  }
+</style>
+</head>
+<body>
+
+<div id="hud-container">
+
+  <!-- Collapse/Expand Arrow -->
+  <div id="collapse-arrow" title="Toggle J.A.R.V.I.S.">
+    <svg viewBox="0 0 24 40" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8 6 L18 20 L8 34" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+
+  <!-- Arc Reactor -->
+  <div id="reactor-assembly">
+    <div class="reactor-glow"></div>
+    <div class="reactor-ring ring-outer"></div>
+    <div class="reactor-ring ring-mid"></div>
+    <div class="reactor-ring ring-inner"></div>
+    <div class="reactor-ticks" id="tick-container"></div>
+    <div class="reactor-core"></div>
+    <div id="listening-label">LISTENING</div>
+  </div>
+
+  <!-- Response Bubble -->
+  <div id="response-bubble" onclick="dismissBubble()">
+    <div class="bubble-label">J.A.R.V.I.S.</div>
+    <div class="bubble-text" id="bubble-text"></div>
+  </div>
+
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   ARC REACTOR — INTERACTION ENGINE
+   ═══════════════════════════════════════════════════════════════ */
+
+const reactor   = document.getElementById('reactor-assembly');
+const arrow     = document.getElementById('collapse-arrow');
+const bubble    = document.getElementById('response-bubble');
+const bubbleText = document.getElementById('bubble-text');
+const listenLabel = document.getElementById('listening-label');
+
+// ─── State ───
+let isExpanded     = true;
+let isDragging     = false;
+let isListening    = false;
+let isProcessing   = false;
+let holdTimer      = null;
+let dragStartX     = 0, dragStartY = 0;
+let reactorX       = 0, reactorY   = 0;
+let bubbleDismissTimer = null;
+let mediaRecorder  = null;
+let audioChunks    = [];
+let currentEdge    = 'right';  // which screen edge we're snapped to
+
+// ─── Constants ───
+const HOLD_THRESHOLD_MS = 300;       // ms before hold→listen activates
+const DRAG_THRESHOLD_PX = 6;         // px movement before drag starts
+const REACTOR_SIZE      = 72;
+const ARROW_W           = 28;
+const BUBBLE_AUTO_DISMISS_MS = 12000;
+
+// ─── Generate tick marks ───
+(function generateTicks() {
+  const container = document.getElementById('tick-container');
+  for (let i = 0; i < 12; i++) {
+    const tick = document.createElement('div');
+    tick.className = 'tick';
+    tick.style.transform = `rotate(${i * 30}deg)`;
+    container.appendChild(tick);
+  }
+})();
+
+// ═══════════════════════════════════════════════════════════════
+// POSITIONING & EDGE SNAPPING
+// ═══════════════════════════════════════════════════════════════
+
+function initPosition() {
+  // Default: right edge, vertically centered
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  reactorX = vw - REACTOR_SIZE - 10;
+  reactorY = Math.round(vh / 2 - REACTOR_SIZE / 2);
+  currentEdge = 'right';
+  applyPosition();
+  positionArrow();
+}
+
+function applyPosition() {
+  reactor.style.left = reactorX + 'px';
+  reactor.style.top  = reactorY + 'px';
+}
+
+function snapToEdge() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const cx = reactorX + REACTOR_SIZE / 2;
+  const cy = reactorY + REACTOR_SIZE / 2;
+  const margin = 8;
+
+  // Calculate distance to each edge
+  const distances = {
+    left:   cx,
+    right:  vw - cx,
+    top:    cy,
+    bottom: vh - cy
+  };
+
+  // Find closest edge
+  const closest = Object.entries(distances).reduce((a, b) => a[1] < b[1] ? a : b)[0];
+  currentEdge = closest;
+
+  switch (closest) {
+    case 'right':
+      reactorX = vw - REACTOR_SIZE - margin;
+      reactorY = Math.max(margin, Math.min(vh - REACTOR_SIZE - margin, reactorY));
+      break;
+    case 'left':
+      reactorX = margin;
+      reactorY = Math.max(margin, Math.min(vh - REACTOR_SIZE - margin, reactorY));
+      break;
+    case 'top':
+      reactorY = margin;
+      reactorX = Math.max(margin, Math.min(vw - REACTOR_SIZE - margin, reactorX));
+      break;
+    case 'bottom':
+      reactorY = vh - REACTOR_SIZE - margin;
+      reactorX = Math.max(margin, Math.min(vw - REACTOR_SIZE - margin, reactorX));
+      break;
+  }
+
+  // Smooth transition
+  reactor.style.transition = 'left 0.35s cubic-bezier(0.22,1,0.36,1), top 0.35s cubic-bezier(0.22,1,0.36,1)';
+  applyPosition();
+  setTimeout(() => { reactor.style.transition = ''; }, 400);
+
+  positionArrow();
+
+  // Notify Python of final position
+  try { pywebview.api.move_window(reactorX, reactorY); } catch(e) {}
+}
+
+function positionArrow() {
+  const gap = 2;
+  arrow.classList.remove('collapsed');
+
+  switch (currentEdge) {
+    case 'right':
+      arrow.style.left   = (reactorX - ARROW_W - gap) + 'px';
+      arrow.style.top    = (reactorY + REACTOR_SIZE / 2 - 22) + 'px';
+      arrow.style.transform = 'rotate(0deg)';
+      break;
+    case 'left':
+      arrow.style.left   = (reactorX + REACTOR_SIZE + gap) + 'px';
+      arrow.style.top    = (reactorY + REACTOR_SIZE / 2 - 22) + 'px';
+      arrow.style.transform = 'rotate(180deg)';
+      break;
+    case 'top':
+      arrow.style.left   = (reactorX + REACTOR_SIZE / 2 - 14) + 'px';
+      arrow.style.top    = (reactorY + REACTOR_SIZE + gap) + 'px';
+      arrow.style.transform = 'rotate(-90deg)';
+      break;
+    case 'bottom':
+      arrow.style.left   = (reactorX + REACTOR_SIZE / 2 - 14) + 'px';
+      arrow.style.top    = (reactorY - 44 - gap) + 'px';
+      arrow.style.transform = 'rotate(90deg)';
+      break;
+  }
+
+  // Smooth transition for arrow too
+  arrow.style.transition = 'left 0.35s cubic-bezier(0.22,1,0.36,1), top 0.35s cubic-bezier(0.22,1,0.36,1)';
+  setTimeout(() => { arrow.style.transition = ''; }, 400);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// COLLAPSE / EXPAND
+// ═══════════════════════════════════════════════════════════════
+
+arrow.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (isExpanded) {
+    collapse();
+  } else {
+    expand();
+  }
+});
+
+function collapse() {
+  isExpanded = false;
+  reactor.classList.add('hidden');
+  arrow.classList.add('collapsed');
+  dismissBubble();
+  try { pywebview.api.on_collapse(); } catch(e) {}
+}
+
+function expand() {
+  isExpanded = true;
+  reactor.classList.remove('hidden');
+  arrow.classList.remove('collapsed');
+  try { pywebview.api.on_expand(); } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DRAG & HOLD-TO-LISTEN
+// ═══════════════════════════════════════════════════════════════
+
+let mouseDownTime = 0;
+let mouseDownPos  = { x: 0, y: 0 };
+let hasDragged    = false;
+
+reactor.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  mouseDownTime  = Date.now();
+  mouseDownPos   = { x: e.clientX, y: e.clientY };
+  dragStartX     = e.clientX - reactorX;
+  dragStartY     = e.clientY - reactorY;
+  hasDragged     = false;
+
+  // Start hold timer for push-to-talk
+  holdTimer = setTimeout(() => {
+    if (!hasDragged) {
+      startListening();
+    }
+  }, HOLD_THRESHOLD_MS);
+
+  document.addEventListener('mousemove', onDragMove);
+  document.addEventListener('mouseup',   onDragEnd);
+});
+
+function onDragMove(e) {
+  const dx = Math.abs(e.clientX - mouseDownPos.x);
+  const dy = Math.abs(e.clientY - mouseDownPos.y);
+
+  if (dx > DRAG_THRESHOLD_PX || dy > DRAG_THRESHOLD_PX) {
+    hasDragged = true;
+    clearTimeout(holdTimer);
+
+    if (isListening) {
+      cancelListening();
+    }
+
+    isDragging = true;
+    reactorX = e.clientX - dragStartX;
+    reactorY = e.clientY - dragStartY;
+    applyPosition();
+
+    // Move arrow along during drag
+    positionArrow();
+  }
+}
+
+function onDragEnd(e) {
+  document.removeEventListener('mousemove', onDragMove);
+  document.removeEventListener('mouseup',   onDragEnd);
+
+  clearTimeout(holdTimer);
+
+  if (isDragging) {
+    isDragging = false;
+    snapToEdge();
+  } else if (isListening) {
+    stopListening();
+  }
+}
+
+// Double-click → open full console
+reactor.addEventListener('dblclick', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  try { pywebview.api.open_console(); } catch(e) {}
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PUSH-TO-TALK: MICROPHONE
+// ═══════════════════════════════════════════════════════════════
+
+async function startListening() {
+  if (isListening || isProcessing) return;
+  isListening = true;
+  reactor.classList.add('listening');
+  listenLabel.textContent = 'LISTENING';
+  dismissBubble();
+
+  // Notify Python to capture screenshot
+  try { pywebview.api.push_to_talk_start(); } catch(e) {}
+
+  // Start microphone capture
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
+    });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+    mediaRecorder.ondataavailable = (ev) => {
+      if (ev.data.size > 0) audioChunks.push(ev.data);
+    };
+    mediaRecorder.start(100); // collect every 100ms
+  } catch (err) {
+    console.error('[arc-reactor] Microphone error:', err);
+    isListening = false;
+    reactor.classList.remove('listening');
+    // Fallback: notify Python to use native mic
+    try { pywebview.api.push_to_talk_native(); } catch(e) {}
+  }
+}
+
+function cancelListening() {
+  isListening = false;
+  reactor.classList.remove('listening');
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  }
+  audioChunks = [];
+}
+
+async function stopListening() {
+  if (!isListening) return;
+  isListening = false;
+  reactor.classList.remove('listening');
+
+  // Set processing state
+  isProcessing = true;
+  reactor.classList.add('processing');
+  listenLabel.textContent = 'PROCESSING';
+
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+
+    // Wait for final data
+    await new Promise(resolve => {
+      mediaRecorder.onstop = resolve;
+    });
+    mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  }
+
+  if (audioChunks.length === 0) {
+    isProcessing = false;
+    reactor.classList.remove('processing');
+    return;
+  }
+
+  // Encode audio to base64
+  const blob = new Blob(audioChunks, { type: 'audio/webm' });
+  const reader = new FileReader();
+  reader.onloadend = () => {
+    const b64 = reader.result.split(',')[1];
+    try {
+      pywebview.api.push_to_talk_stop(b64);
+    } catch(e) {
+      console.error('[arc-reactor] Failed to send audio to backend:', e);
+      isProcessing = false;
+      reactor.classList.remove('processing');
+    }
+  };
+  reader.readAsDataURL(blob);
+  audioChunks = [];
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RESPONSE HANDLING (called from Python via evaluate_js)
+// ═══════════════════════════════════════════════════════════════
+
+function showResponse(text) {
+  isProcessing = false;
+  reactor.classList.remove('processing');
+  reactor.classList.add('speaking');
+
+  bubbleText.textContent = text;
+  bubble.classList.add('visible');
+
+  // Position bubble relative to reactor
+  positionBubble();
+
+  // Auto-dismiss
+  clearTimeout(bubbleDismissTimer);
+  bubbleDismissTimer = setTimeout(dismissBubble, BUBBLE_AUTO_DISMISS_MS);
+}
+
+function onSpeakingDone() {
+  reactor.classList.remove('speaking');
+}
+
+function positionBubble() {
+  const pad = 12;
+  switch (currentEdge) {
+    case 'right':
+      bubble.style.right  = (window.innerWidth - reactorX + pad) + 'px';
+      bubble.style.left   = 'auto';
+      bubble.style.top    = reactorY + 'px';
+      bubble.style.bottom = 'auto';
+      break;
+    case 'left':
+      bubble.style.left   = (reactorX + REACTOR_SIZE + pad) + 'px';
+      bubble.style.right  = 'auto';
+      bubble.style.top    = reactorY + 'px';
+      bubble.style.bottom = 'auto';
+      break;
+    case 'top':
+      bubble.style.left   = reactorX + 'px';
+      bubble.style.right  = 'auto';
+      bubble.style.top    = (reactorY + REACTOR_SIZE + pad) + 'px';
+      bubble.style.bottom = 'auto';
+      break;
+    case 'bottom':
+      bubble.style.left   = reactorX + 'px';
+      bubble.style.right  = 'auto';
+      bubble.style.top    = 'auto';
+      bubble.style.bottom = (window.innerHeight - reactorY + pad) + 'px';
+      break;
+  }
+}
+
+function dismissBubble() {
+  bubble.classList.remove('visible');
+  clearTimeout(bubbleDismissTimer);
+}
+
+function showError(text) {
+  isProcessing = false;
+  reactor.classList.remove('processing');
+  bubbleText.textContent = text;
+  bubble.classList.add('visible');
+  positionBubble();
+  clearTimeout(bubbleDismissTimer);
+  bubbleDismissTimer = setTimeout(dismissBubble, 6000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PYTHON → JS BRIDGE
+// ═══════════════════════════════════════════════════════════════
+
+// Global receiver for Python evaluate_js calls
+window.arcReactor = {
+  showResponse:   showResponse,
+  showError:      showError,
+  onSpeakingDone: onSpeakingDone,
+  collapse:       collapse,
+  expand:         expand,
+  setState: function(state) {
+    reactor.classList.remove('listening', 'processing', 'speaking');
+    if (state && state !== 'idle') {
+      reactor.classList.add(state);
+    }
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+
+window.addEventListener('load', () => {
+  initPosition();
+
+  // Let Python know we're ready
+  if (window.pywebview) {
+    pywebview.api.on_ready();
+  } else {
+    window.addEventListener('pywebviewready', () => {
+      pywebview.api.on_ready();
+    });
+  }
+});
+
+// Handle window resize
+window.addEventListener('resize', () => {
+  snapToEdge();
+});
+</script>
+</body>
+</html>
