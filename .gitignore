@@ -76,7 +76,6 @@ config.yaml
 .env
 .env.*
 *.env
-gods_eye/.env
 config.yaml
 *_secret*
 *_key*
@@ -96,5 +95,4 @@ scripts/
 !README.md
 
 node_modules/
-gods_eye/node_modules/
 frontend/app.html.bak

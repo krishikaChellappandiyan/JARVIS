@@ -65,8 +65,6 @@ from memory.lessons_store import LessonsStore
 
 ROOT = Path(__file__).parent
 HTML_PATH = ROOT / "app.html"
-GEV_DIR = ROOT.parent / "gods_eye"
-GEV_PORT = 4173
 
 def _bootstrap_environment():
     """Load config.yaml and root .env into os.environ at startup."""
@@ -120,31 +118,6 @@ _CONTEXT_SIGNALS = re.compile(
     re.IGNORECASE,
 )
 
-class GEVServer:
-    """God's Eye View is natively embedded within the JARVIS desktop interface."""
-    _instance = None
-
-    def __init__(self, gev_dir=None, port=None):
-        self.port = port or 46068
-        self._started = True
-
-    @classmethod
-    def get_instance(cls):
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
-
-    def start(self):
-        return True
-
-    def stop(self):
-        pass
-
-    def is_running(self):
-        return True
-
-    def get_url(self):
-        return "/"
 
 
 class _StreamingPrefixFilter:
@@ -580,12 +553,6 @@ class JarvisAPI:
             pass
         return {}
 
-    def get_gev_url(self) -> str:
-        """Return God's Eye View server URL, auto-starting the server if not already running."""
-        gev = GEVServer.get_instance()
-        if not gev.is_running():
-            gev.start()
-        return gev.get_url()
 
     def _on_shared_audio_chunk(self, chunk: bytes):
         """Unified audio capture callback fed directly from WakeWordEngine's active PyAudio stream."""
