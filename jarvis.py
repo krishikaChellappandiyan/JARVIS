@@ -34,7 +34,7 @@ def boot_checks():
     import socket
     ollama_online = False
     try:
-        with socket.create_connection(("127.0.0.1", 11434), timeout=0.05):
+        with socket.create_connection(("127.0.0.1", 11434), timeout=0.5):
             ollama_online = True
     except Exception:
         ollama_online = False
@@ -42,11 +42,13 @@ def boot_checks():
     if ollama_online:
         try:
             import httpx
-            r = httpx.get("http://localhost:11434/api/tags", timeout=1.0)
+            r = httpx.get("http://localhost:11434/api/tags", timeout=2.0)
             if r.status_code == 200:
                 models = [m["name"] for m in r.json().get("models", [])]
                 if not models:
                     issues.append("No local Ollama models pulled.\n  Run: ollama pull <model> (e.g., llama3.2:3b, qwen2.5:3b, gemma2:2b)")
+        except ImportError:
+            issues.append("HTTP client dependency 'httpx' is missing from active environment.")
         except Exception:
             issues.append("Ollama not responding properly.")
     else:
