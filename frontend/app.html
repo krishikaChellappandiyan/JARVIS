@@ -2232,6 +2232,14 @@ body {
   border-color: #FF9D2E;
 }
 
+.globe-hud-btn.active,
+#patrol-toggle-btn.active {
+  background: rgba(255, 157, 46, 0.32) !important;
+  border-color: #FF9D2E !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 0 10px rgba(255, 157, 46, 0.6) !important;
+}
+
 /* Scrollable Container for OSINT HUD Rail */
 .globe-hud-scroll-body {
   display: flex;
@@ -2563,7 +2571,7 @@ body {
   border-radius: 8px;
   padding: 4px 14px 4px 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.25s ease;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.85), 0 0 10px rgba(255, 157, 46, 0.15);
   user-select: none;
   touch-action: none;
@@ -2577,6 +2585,42 @@ body {
   border-color: #FF9D2E;
   box-shadow: 0 0 24px rgba(255, 157, 46, 0.6);
 }
+
+/* Faded / Turned Off State: subtle dimming so operator knows it is off */
+#dock-voice-widget.mic-off,
+#dock-voice-widget.mic-muted {
+  opacity: 0.45;
+  filter: grayscale(40%);
+  border-color: rgba(255, 157, 46, 0.22);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+}
+#dock-voice-widget.mic-off:hover,
+#dock-voice-widget.mic-muted:hover {
+  opacity: 0.85;
+  filter: grayscale(0%);
+  border-color: rgba(255, 157, 46, 0.6);
+}
+#dock-voice-widget.mic-off #dock-mic-btn,
+#dock-voice-widget.mic-muted #dock-mic-btn {
+  background: rgba(255, 157, 46, 0.05);
+  border-color: rgba(255, 157, 46, 0.25);
+  color: rgba(255, 157, 46, 0.45);
+  box-shadow: none;
+  animation: none;
+}
+#dock-voice-widget.mic-off #dock-voice-status,
+#dock-voice-widget.mic-muted #dock-voice-status {
+  color: rgba(255, 184, 77, 0.45);
+  text-shadow: none;
+}
+#dock-voice-widget.mic-off .voice-eq-bars span,
+#dock-voice-widget.mic-muted .voice-eq-bars span {
+  height: 2px !important;
+  background: rgba(255, 157, 46, 0.22) !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+
 #dock-mic-btn {
   width: 32px;
   height: 32px;
@@ -2588,14 +2632,22 @@ body {
   align-items: center;
   justify-content: center;
   color: #FF9D2E;
-  transition: all 0.2s ease;
+  transition: all 0.25s ease;
+}
+
+/* Turned On / Active Listening State */
+#dock-voice-widget.listening {
+  opacity: 1.0 !important;
+  filter: none !important;
+  border-color: #FF9D2E !important;
+  box-shadow: 0 0 24px rgba(255, 157, 46, 0.65), 0 8px 24px rgba(0, 0, 0, 0.85) !important;
 }
 #dock-voice-widget.listening #dock-mic-btn {
-  background: rgba(255, 157, 46, 0.25);
-  border-color: #FF9D2E;
-  color: #FF9D2E;
-  box-shadow: 0 0 16px rgba(255, 157, 46, 0.7);
-  animation: micPulseOrange 1.2s infinite alternate ease-in-out;
+  background: rgba(255, 157, 46, 0.3) !important;
+  border-color: #FF9D2E !important;
+  color: #FF9D2E !important;
+  box-shadow: 0 0 18px rgba(255, 157, 46, 0.85) !important;
+  animation: micPulseOrange 1.2s infinite alternate ease-in-out !important;
 }
 @keyframes micPulseOrange {
   from { transform: scale(1.0); box-shadow: 0 0 10px rgba(255, 157, 46, 0.4); }
@@ -2815,6 +2867,19 @@ body.chat-panel-collapsed #chat-expand-launcher {
   top: 0;
   left: 0;
   background: transparent !important;
+  transition: filter 0.3s ease;
+}
+
+#cesiumContainer.optical-flir canvas {
+  filter: contrast(1.65) saturate(2.2) hue-rotate(170deg) brightness(1.12);
+}
+
+#cesiumContainer.optical-nvg canvas {
+  filter: sepia(1) hue-rotate(75deg) saturate(3.8) contrast(1.35) brightness(1.1);
+}
+
+#cesiumContainer.optical-cyber canvas {
+  filter: contrast(1.45) saturate(1.7) hue-rotate(-20deg) brightness(1.05);
 }
 
 /* Orbital Reconnaissance Aperture Lens Vignette (Image 5 God's Eye Parity) */
@@ -2885,6 +2950,181 @@ body.chat-panel-collapsed #chat-expand-launcher {
 .celestial-moon {
   color: rgba(63, 214, 255, 0.9);
   text-shadow: 0 0 8px rgba(63, 214, 255, 0.75), 0 0 20px rgba(63, 214, 255, 0.35);
+}
+
+/* ==========================================================================
+   J.A.R.V.I.S. TOP-CENTER HUD NOTCH (Minimalist Dynamic Wave Notch)
+   ========================================================================== */
+body.hud-mode,
+body.voiceos-mode {
+  background: transparent !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  width: 100vw !important;
+  height: 100vh !important;
+}
+
+body.hud-mode #starfield,
+body.hud-mode #cesium-spatial-wrapper,
+body.hud-mode #spatial-nav-dock,
+body.hud-mode .spatial-edge-strip,
+body.hud-mode #jarvis-top-bar,
+body.hud-mode #sidebar,
+body.hud-mode #jarvis-body-container,
+body.hud-mode #spatial-globe-hud,
+body.hud-mode .overlay,
+body.hud-mode #chat-expand-launcher,
+body.hud-mode #sidebar-backdrop,
+body.hud-mode #bg-layer,
+body.hud-mode #bg-overlay,
+body.voiceos-mode #starfield,
+body.voiceos-mode #cesium-spatial-wrapper,
+body.voiceos-mode #spatial-nav-dock,
+body.voiceos-mode .spatial-edge-strip,
+body.voiceos-mode #jarvis-top-bar,
+body.voiceos-mode #sidebar,
+body.voiceos-mode #jarvis-body-container,
+body.voiceos-mode #spatial-globe-hud,
+body.voiceos-mode .overlay,
+body.voiceos-mode #chat-expand-launcher,
+body.voiceos-mode #sidebar-backdrop,
+body.voiceos-mode #bg-layer,
+body.voiceos-mode #bg-overlay {
+  display: none !important;
+}
+
+#jarvis-hud-notch-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 0;
+  pointer-events: none;
+  z-index: 9999999;
+  display: flex !important;
+  justify-content: center;
+  align-items: flex-start;
+  overflow: visible;
+}
+
+body.hud-mode #jarvis-hud-notch-wrapper,
+body.voiceos-mode #jarvis-hud-notch-wrapper {
+  display: flex !important;
+}
+
+.jarvis-hud-notch {
+  pointer-events: auto;
+  position: relative;
+  width: 380px;
+  min-width: 340px;
+  max-width: 440px;
+  height: 48px;
+  background: #000000;
+  border-radius: 0 0 20px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.95), 0 0 20px rgba(0, 240, 255, 0.2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 14px 6px;
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-app-region: drag;
+  cursor: pointer;
+
+  /* Notification Bar Drop Animation: tucks offscreen above top bezel */
+  transform: translateY(-100%);
+  opacity: 0;
+  visibility: hidden;
+  transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.25s ease,
+              height 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.3s ease,
+              border-color 0.3s ease;
+}
+
+.jarvis-hud-notch:hover {
+  border-bottom-color: rgba(0, 240, 255, 0.4);
+}
+
+.jarvis-hud-notch:active {
+  cursor: grabbing;
+}
+
+/* When dropped down (active listening, speaking, thinking, or alert) */
+.jarvis-hud-notch.dropped {
+  transform: translateY(0);
+  opacity: 1;
+  visibility: visible;
+}
+
+/* When active (holding space, listening, thinking, speaking) */
+.jarvis-hud-notch.active {
+  height: 60px;
+  border-bottom-color: rgba(0, 240, 255, 0.5);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.98), 0 0 28px rgba(0, 240, 255, 0.28);
+}
+
+/* Fluid Ethereal Wave Container */
+.hud-wave-container {
+  position: relative;
+  width: 100%;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scaleY(0.3);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  margin-bottom: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.jarvis-hud-notch.active .hud-wave-container {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+#hud-wave-canvas {
+  width: 100%;
+  height: 22px;
+  display: block;
+  filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.6));
+}
+
+/* Text Container */
+.hud-text-container {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 18px;
+}
+
+.hud-notch-text {
+  color: #E2E8F0;
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  transition: color 0.2s ease, opacity 0.2s ease;
+}
+
+.jarvis-hud-notch.active .hud-notch-text {
+  color: #FFFFFF;
+  font-weight: 600;
+  letter-spacing: 0.4px;
 }
 </style>
 </head>
@@ -2984,6 +3224,7 @@ body.chat-panel-collapsed #chat-expand-launcher {
       </div>
       <div class="globe-hud-btn-row">
         <button class="globe-hud-btn" style="border-color:rgba(0,240,255,0.4); color:#00F0FF;" onclick="window.resetGlobeOrbitView()">ORBIT VIEW</button>
+        <button class="globe-hud-btn" id="patrol-toggle-btn" style="border-color:rgba(255,157,46,0.55); color:#FFB84D; font-weight:700;" onclick="window.JarvisPatrol.toggle()">🛰️ RECON PATROL</button>
         <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(19.0760, 72.8777, 'Mumbai')">MUMBAI</button>
         <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(28.6139, 77.2090, 'Delhi')">DELHI</button>
         <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(12.9716, 77.5946, 'Bengaluru')">BENGALURU</button>
@@ -3275,7 +3516,7 @@ body.chat-panel-collapsed #chat-expand-launcher {
 
 <!-- Real God's Eye Bottom Voice HUD Dock (Image 5 Parity) -->
 <div id="gods-eye-bottom-dock">
-  <div id="dock-voice-widget" onclick="window.triggerVoiceMicCommand()" title="Click to Speak / Stop (or hold Space to speak)">
+  <div id="dock-voice-widget" class="mic-off" onclick="window.triggerVoiceMicCommand()" title="Click to Speak / Stop (or hold Space to speak)">
     <div id="dock-mic-btn">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
         <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
@@ -3415,6 +3656,9 @@ body.chat-panel-collapsed #chat-expand-launcher {
       </div>
     </div>
     <div class="top-bar-right" style="display:flex; align-items:center;">
+      <button id="top-bar-hud-btn" class="hud-color-btn" onclick="window.toggleHudMode()" title="Toggle Top HUD Notch (Alt+V)" style="display:inline-flex; align-items:center; gap:6px; margin-right:8px; padding:5px 12px; border-radius:6px; font-family:'Inter', sans-serif; font-size:11px; font-weight:700; letter-spacing:0.4px; border:1px solid rgba(0,240,255,0.35); background:rgba(0,240,255,0.08); color:#00F0FF; cursor:pointer; transition:all 0.25s ease;">
+        <span style="font-size:11px; color:#00F0FF;">✦</span> <span id="top-bar-hud-label">HUD</span>
+      </button>
       <button id="top-bar-settings-btn" class="hud-color-btn" onclick="window.openSettingsOverlay()" title="Configure Models & God's Eye API Keys" style="display:inline-flex; align-items:center; gap:6px; margin-right:8px; padding:5px 12px; border-radius:6px; font-family:'Inter', sans-serif; font-size:11px; font-weight:700; letter-spacing:0.4px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.06); color:#E6E6E6; cursor:pointer; transition:all 0.25s ease;">
         ⚙ SETTINGS
       </button>
@@ -3521,6 +3765,21 @@ body.chat-panel-collapsed #chat-expand-launcher {
 
   </div>
 </div> <!-- /#shell -->
+
+<!-- TOP-CENTER J.A.R.V.I.S. HUD NOTCH (Frameless Dynamic Wave Notch) -->
+<div id="jarvis-hud-notch-wrapper">
+  <div id="jarvis-hud-notch" class="jarvis-hud-notch idle" ondblclick="window.toggleHudMode('full')" title="J.A.R.V.I.S. HUD • Hold Space to speak (Double-click to expand)">
+    <!-- Fluid Siri / Apple Intelligence Ethereal Wave Ribbon -->
+    <div class="hud-wave-container" id="hud-wave-container">
+      <canvas id="hud-wave-canvas" width="360" height="24"></canvas>
+    </div>
+
+    <!-- Pure Minimalist Text -->
+    <div class="hud-text-container">
+      <span id="hud-notch-text" class="hud-notch-text">Hold Space to speak</span>
+    </div>
+  </div>
+</div>
 
 <!-- Floating Reopen Pill when Chat Panel is Collapsed -->
 <button id="chat-expand-launcher" onclick="window.toggleChatPanel()" title="Expand J.A.R.V.I.S. Chat & Input">
@@ -4304,6 +4563,17 @@ function updateStreamingChunk(chunkText) {
     } else {
       currentStreamingElem.textContent = display;
     }
+    const ticker = document.getElementById('voiceos-ticker');
+    if (ticker) {
+      ticker.textContent = display.replace(/\s+/g, ' ');
+      ticker.title = display;
+    }
+    const hudText = document.getElementById('hud-notch-text');
+    if (hudText) {
+      hudText.dataset.customText = '1';
+      hudText.textContent = display.replace(/\s+/g, ' ');
+      if (typeof window.dropHudNotch === 'function') window.dropHudNotch();
+    }
   } else if (!currentStreamingElem.querySelector('.dot-spinner')) {
     currentStreamingElem.innerHTML = SPINNER_HTML;
   }
@@ -4323,8 +4593,37 @@ function finalizeStreamingAnswer(finalText) {
     appendCopyButton(currentStreamingElem);
     currentStreamingElem = null;
     setHudState('idle');
+    const ticker = document.getElementById('voiceos-ticker');
+    if (ticker && text) {
+      ticker.textContent = text.replace(/\s+/g, ' ');
+      ticker.title = text;
+    }
+    const hudText = document.getElementById('hud-notch-text');
+    if (hudText && text) {
+      hudText.dataset.customText = '1';
+      hudText.textContent = text.replace(/\s+/g, ' ');
+    }
+    if (typeof window.appendVoiceOsLogEntry === 'function' && text) {
+      window.appendVoiceOsLogEntry('J.A.R.V.I.S.', text);
+    }
   } else if (finalText) {
     streamTextToThread(finalText);
+    const ticker = document.getElementById('voiceos-ticker');
+    if (ticker && finalText) {
+      ticker.textContent = finalText.replace(/\s+/g, ' ');
+      ticker.title = finalText;
+    }
+    const hudText = document.getElementById('hud-notch-text');
+    if (hudText && finalText) {
+      hudText.dataset.customText = '1';
+      hudText.textContent = finalText.replace(/\s+/g, ' ');
+    }
+    if (typeof window.appendVoiceOsLogEntry === 'function' && finalText) {
+      window.appendVoiceOsLogEntry('J.A.R.V.I.S.', finalText);
+    }
+  }
+  if (typeof window.scheduleHudDismiss === 'function') {
+    window.scheduleHudDismiss(4000);
   }
   scrollThreadToBottom();
 }
@@ -5340,6 +5639,16 @@ function handleSend() {
     clearAttachmentChip();
   } else {
     addUserMessage(text);
+    const ticker = document.getElementById('voiceos-ticker');
+    if (ticker && text) ticker.textContent = `Sir: ${text}`;
+    const hudText = document.getElementById('hud-notch-text');
+    if (hudText && text) {
+      hudText.dataset.customText = '1';
+      hudText.textContent = `Sir: ${text}`;
+    }
+    if (typeof window.appendVoiceOsLogEntry === 'function' && text) {
+      window.appendVoiceOsLogEntry('Sir', text);
+    }
     startStreamingAnswer();
 
     try {
@@ -6504,6 +6813,9 @@ function setHudState(state) {
   if (typeof window.updateGodsEyeVoiceWidget === 'function') {
     window.updateGodsEyeVoiceWidget(state);
   }
+  if (typeof window.updateVoiceOsState === 'function') {
+    window.updateVoiceOsState(state);
+  }
   const floatingStatus = document.getElementById('jarvis-hud-floating-status') || document.getElementById('joe-hud-floating-status');
   if (floatingStatus) {
     floatingStatus.className = state;
@@ -6751,11 +7063,135 @@ let audioChunks = [];
 let isMicListening = false;
 let isNativeMicActive = false;
 let autoSendTimeout = null;
+let activeMicStream = null;
+
+// God's Eye Streaming VAD State (Speech End-pointing & Silence Hangover)
+let vadMonitoringInterval = null;
+let vadSpeechDetected = false;
+let vadLastSpeechTime = 0;
+let vadSpeechStartTime = 0;
+let vadAmbientFloor = 0.02;
+const VAD_SILENCE_HANGOVER_MS = 1000;      // 1.0s silence hangover after speech
+const VAD_MAX_SPEECH_DURATION_MS = 15000;  // 15s max safety ceiling
+const VAD_SILENCE_ABORT_MS = 6000;         // 6s timeout if no speech detected
+
+function startVadMonitor(stream) {
+  if (vadMonitoringInterval) {
+    clearInterval(vadMonitoringInterval);
+    vadMonitoringInterval = null;
+  }
+  vadSpeechDetected = false;
+  vadLastSpeechTime = 0;
+  vadSpeechStartTime = Date.now();
+  vadAmbientFloor = 0.02;
+
+  try {
+    if (stream) {
+      if (!audioContext || audioContext.state === 'closed') {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+      const source = audioContext.createMediaStreamSource(stream);
+      audioAnalyser = audioContext.createAnalyser();
+      audioAnalyser.fftSize = 64;
+      audioAnalyser.smoothingTimeConstant = 0.25;
+      source.connect(audioAnalyser);
+      audioDataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+    }
+  } catch(e) {
+    console.warn('[VAD] AudioAnalyser setup warning:', e);
+  }
+
+  vadMonitoringInterval = setInterval(() => {
+    if (!isMicListening) {
+      clearInterval(vadMonitoringInterval);
+      vadMonitoringInterval = null;
+      return;
+    }
+
+    let rms = 0;
+    if (audioAnalyser && audioDataArray) {
+      audioAnalyser.getByteFrequencyData(audioDataArray);
+      let sum = 0;
+      for (let i = 0; i < audioDataArray.length; i++) {
+        sum += audioDataArray[i] * audioDataArray[i];
+      }
+      rms = Math.sqrt(sum / audioDataArray.length) / 255.0;
+    }
+
+    // Dynamic equalizer visualizer on bottom dock
+    if (typeof window.updateGodsEyeVoiceWidget === 'function') {
+      window.updateGodsEyeVoiceWidget(true, Math.max(12, rms * 100));
+    }
+
+    const now = Date.now();
+    const speechThreshold = Math.max(0.045, vadAmbientFloor * 2.2 + 0.025);
+
+    if (rms > speechThreshold) {
+      if (!vadSpeechDetected) {
+        vadSpeechDetected = true;
+        console.log(`[VAD] Voice detected! RMS: ${rms.toFixed(3)} >= ${speechThreshold.toFixed(3)}`);
+      }
+      vadLastSpeechTime = now;
+      setHudState('listening');
+    } else {
+      if (!vadSpeechDetected) {
+        // Track ambient room floor
+        vadAmbientFloor = 0.94 * vadAmbientFloor + 0.06 * rms;
+        // Safety timeout: abort if mic was clicked but user remained silent for 6s
+        if (now - vadSpeechStartTime > VAD_SILENCE_ABORT_MS) {
+          console.log('[VAD] Silence timeout without speech. Auto-aborting to standby.');
+          stopMicListening(true);
+          return;
+        }
+      } else {
+        // User has spoken! Check silence hangover
+        const silenceDuration = now - vadLastSpeechTime;
+        if (silenceDuration >= VAD_SILENCE_HANGOVER_MS) {
+          console.log(`[VAD] Post-speech silence reached (${silenceDuration}ms >= ${VAD_SILENCE_HANGOVER_MS}ms). Auto-endpointing speech!`);
+          stopMicListening(false);
+          return;
+        }
+      }
+    }
+
+    // Safety duration ceiling
+    if (vadSpeechDetected && (now - vadSpeechStartTime > VAD_MAX_SPEECH_DURATION_MS)) {
+      console.log('[VAD] Maximum speech duration reached. Auto-endpointing.');
+      stopMicListening(false);
+    }
+  }, 40);
+}
 
 async function startMicListening() {
   if (isMicListening) {
     stopMicListening();
     return;
+  }
+
+  // Instant Barge-In: Halt running TTS immediately when mic starts
+  if (isPlayingJarvisQueue || currentJarvisAudioElement || Date.now() < ttsPlaybackEndTime) {
+    console.log('[JarvisVoice] Barge-in triggered! Halting TTS playback.');
+    resetJarvisAudioQueue();
+    if (currentJarvisAudioElement) {
+      try { currentJarvisAudioElement.pause(); } catch(e){}
+      currentJarvisAudioElement = null;
+    }
+    ttsPlaybackEndTime = 0;
+    if (api() && api().cancel_playback) {
+      try { api().cancel_playback(); } catch(e){}
+    }
+  }
+
+  // Acquire audio stream for VAD & equalizer if available
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && !activeMicStream) {
+    try {
+      activeMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch(e) {
+      console.warn('[JarvisSTT] MediaStream acquisition notice:', e);
+    }
   }
 
   // 1. Try Native Python Mic Recording via PyWebView Bridge (bypasses browser sandbox permission restrictions)
@@ -6768,8 +7204,9 @@ async function startMicListening() {
         setHudState('listening');
         const micBtnEl = $('#mic-btn');
         if (micBtnEl) micBtnEl.classList.add('mic-recording');
-        $('#chat-input').placeholder = "[RECORDING] Listening via mic... speak now... click mic again to finish.";
-        addStatusLine("Microphone recording started...");
+        $('#chat-input').placeholder = "[RECORDING] Listening to Sir... speak directive...";
+        addStatusLine("Microphone recording started (speak naturally)...");
+        startVadMonitor(activeMicStream);
         return;
       } else if (res && res.error) {
         console.warn('[JarvisSTT] Native mic start error:', res.error);
@@ -6821,20 +7258,18 @@ async function startMicListening() {
 
           if (fullText) $('#chat-input').value = fullText;
 
-          if (wasWake) {
-            if (autoSendTimeout) clearTimeout(autoSendTimeout);
-            autoSendTimeout = setTimeout(() => {
-              stopMicListening();
-              handleSend();
-            }, 2500);
-          }
+          // Auto-endpointing on speech pause
+          if (autoSendTimeout) clearTimeout(autoSendTimeout);
+          autoSendTimeout = setTimeout(() => {
+            stopMicListening(false);
+          }, wasWake ? 1800 : 1200);
         };
         speechRecognizer.onerror = (e) => {
           console.warn('[JarvisSTT] WebSpeech error:', e);
-          stopMicListening();
+          stopMicListening(true);
         };
         speechRecognizer.onend = () => {
-          if (isMicListening) { try { speechRecognizer.start(); } catch(e) { stopMicListening(); } }
+          if (isMicListening) { try { speechRecognizer.start(); } catch(e) { stopMicListening(true); } }
         };
       }
 
@@ -6843,7 +7278,8 @@ async function startMicListening() {
       setHudState('listening');
       const micBtnEl = $('#mic-btn');
       if (micBtnEl) micBtnEl.classList.add('mic-recording');
-      $('#chat-input').placeholder = "Listening... say 'Hey JARVIS...' or speak directive...";
+      $('#chat-input').placeholder = "Listening... say directive or command...";
+      startVadMonitor(activeMicStream);
       return;
     } catch(err) {
       console.warn('[JarvisSTT] WebSpeech start failed:', err);
@@ -6852,23 +7288,12 @@ async function startMicListening() {
 
   // 3. Fallback: HTML5 MediaRecorder
   try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const stream = activeMicStream || (navigator.mediaDevices && await navigator.mediaDevices.getUserMedia({ audio: true }));
+    if (!stream) {
       addStatusLine("Microphone input restricted in this environment.");
       return;
     }
-
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-    try {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const source = audioContext.createMediaStreamSource(stream);
-      audioAnalyser = audioContext.createAnalyser();
-      audioAnalyser.fftSize = 64;
-      source.connect(audioAnalyser);
-      audioDataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
-    } catch(e) {
-      console.warn('[JarvisSTT] AudioContext setup warning:', e);
-    }
+    activeMicStream = stream;
 
     audioChunks = [];
     mediaRecorder = new MediaRecorder(stream);
@@ -6903,9 +7328,6 @@ async function startMicListening() {
         setHudState('idle');
       };
       reader.readAsDataURL(audioBlob);
-
-      stream.getTracks().forEach(t => t.stop());
-      if (audioContext) { try { audioContext.close(); } catch(e){} }
     };
 
     mediaRecorder.start();
@@ -6914,6 +7336,7 @@ async function startMicListening() {
     const micBtnEl = $('#mic-btn');
     if (micBtnEl) micBtnEl.classList.add('mic-recording');
     $('#chat-input').placeholder = "Listening... speak now...";
+    startVadMonitor(stream);
   } catch (err) {
     console.error('[JarvisSTT] Mic access error:', err);
     addStatusLine("Microphone input restricted or unavailable.");
@@ -6922,25 +7345,56 @@ async function startMicListening() {
   }
 }
 
-async function stopMicListening() {
+async function stopMicListening(aborted = false) {
   if (!isMicListening) return;
 
-  const wasNative = isNativeMicActive;
-  isMicListening = false;
-  isNativeMicActive = false;
-  setHudState('thinking');
-
+  if (vadMonitoringInterval) {
+    clearInterval(vadMonitoringInterval);
+    vadMonitoringInterval = null;
+  }
   if (autoSendTimeout) {
     clearTimeout(autoSendTimeout);
     autoSendTimeout = null;
   }
+
+  const wasNative = isNativeMicActive;
+  isMicListening = false;
+  isNativeMicActive = false;
+
   const micBtnEl = $('#mic-btn');
   if (micBtnEl) micBtnEl.classList.remove('mic-recording');
   $('#chat-input').placeholder = "Ask J.A.R.V.I.S. anything... (or hold Space to speak)";
 
+  if (aborted) {
+    console.log('[JarvisSTT] Voice listening cancelled/aborted.');
+    setHudState('idle');
+    if (typeof window.updateGodsEyeVoiceWidget === 'function') {
+      window.updateGodsEyeVoiceWidget('mic_off');
+    }
+    if (wasNative && api() && api().cancel_native_mic) {
+      try { api().cancel_native_mic(); } catch(e){}
+    }
+    if (speechRecognizer) {
+      try { speechRecognizer.stop(); } catch(e){}
+    }
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.onstop = null; // Prevent onstop from triggering transcription
+      try { mediaRecorder.stop(); } catch(e){}
+    }
+    audioChunks = [];
+    return;
+  }
+
+  // Normal speech completion: play affirmative acknowledgment sound ("ready to speak")
+  if (window.JarvisSFX && window.JarvisSFX.speechReady) {
+    window.JarvisSFX.speechReady();
+  }
+
+  setHudState('thinking');
+
   if (wasNative && api() && api().stop_native_mic) {
     try {
-      addStatusLine("Transcribing audio...");
+      addStatusLine("Transcribing Sir's speech...");
       const res = await api().stop_native_mic();
       if (res && res.success && res.text) {
         let text = res.text.trim();
@@ -6963,7 +7417,9 @@ async function stopMicListening() {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
     try { mediaRecorder.stop(); } catch(e){}
   }
-  setHudState('idle');
+  if (!currentStreamingElem && jarvisHudState === 'listening') {
+    setHudState('idle');
+  }
 }
 
 let lastMicToggleTime = 0;
@@ -6973,11 +7429,13 @@ if (micBtn) {
   micBtn.addEventListener('click', (e) => {
     e.preventDefault();
     const now = Date.now();
-    if (now - lastMicToggleTime < 500) return; // Debounce rapid double-clicks
+    if (now - lastMicToggleTime < 400) return; // Debounce rapid clicks
     lastMicToggleTime = now;
 
-    if (isMicListening) {
-      stopMicListening();
+    if (typeof window.triggerVoiceMicCommand === 'function') {
+      window.triggerVoiceMicCommand();
+    } else if (isMicListening) {
+      stopMicListening(true);
     } else {
       startMicListening();
     }
@@ -7009,9 +7467,17 @@ window.addEventListener('keydown', (e) => {
       if (!isEditingOther && !chatHasText) {
         e.preventDefault();
         isSpacebarPushToTalk = true;
+        if (typeof window.dropHudNotch === 'function') {
+          window.dropHudNotch();
+        }
         if (chatInput) {
           chatInput.value = ''; // Clean any stray whitespace
           chatInput.placeholder = "🎙️ [HOLDING SPACE] Listening to Sir... release Space to send...";
+        }
+        const hudText = document.getElementById('hud-notch-text');
+        if (hudText) {
+          delete hudText.dataset.customText;
+          hudText.textContent = 'Listening...';
         }
         if (!isMicListening) {
           startMicListening();
@@ -7025,10 +7491,18 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'Space' && isSpacebarPushToTalk) {
     e.preventDefault();
     isSpacebarPushToTalk = false;
+    if (typeof window.dropHudNotch === 'function') {
+      window.dropHudNotch();
+    }
     const inputEl = $('#chat-input');
     if (inputEl) {
       inputEl.value = ''; // ensure clean input for transcription
       inputEl.placeholder = "Ask J.A.R.V.I.S. anything... (or hold Space to speak)";
+    }
+    const hudText = document.getElementById('hud-notch-text');
+    if (hudText) {
+      delete hudText.dataset.customText;
+      hudText.textContent = 'Thinking...';
     }
     stopMicListening();
   }
@@ -7245,6 +7719,79 @@ const JarvisSFX = {
         osc.start(now + i * 0.05);
         osc.stop(now + i * 0.05 + 0.16);
       });
+    } catch(e) {}
+  },
+
+  speechReady() {
+    if (!this.enabled) return;
+    const ctx = ensureJarvisPcmContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      // High-tech holographic affirmative chime: G5 (784Hz) -> C6 (1046.5Hz)
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(784, now);
+      osc1.frequency.setValueAtTime(1046.5, now + 0.06);
+
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(392, now);
+      osc2.frequency.setValueAtTime(523.25, now + 0.06);
+
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 0.24);
+      osc2.stop(now + 0.24);
+    } catch(e) {}
+  },
+
+  micStart() {
+    if (!this.enabled) return;
+    const ctx = ensureJarvisPcmContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
+      gain.gain.setValueAtTime(0.10, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.13);
+    } catch(e) {}
+  },
+
+  micCancel() {
+    if (!this.enabled) return;
+    const ctx = ensureJarvisPcmContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(580, now);
+      osc.frequency.exponentialRampToValueAtTime(290, now + 0.11);
+      gain.gain.setValueAtTime(0.10, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.15);
     } catch(e) {}
   }
 };
@@ -8939,11 +9486,27 @@ window.jarvis = window.joe = {
         break;
       case 'jarvis_stt_interim':
       case 'joe_stt_interim':
-        if (data && data.text) showSubtitles(data.text, 'VOICE STT (RECORDING)');
+        if (data && data.text) {
+          showSubtitles(data.text, 'VOICE STT (RECORDING)');
+          if (typeof window.dropHudNotch === 'function') window.dropHudNotch();
+          const hudText = document.getElementById('hud-notch-text');
+          if (hudText) {
+            hudText.dataset.customText = '1';
+            hudText.textContent = data.text;
+          }
+        }
         break;
       case 'jarvis_stt_final':
       case 'joe_stt_final':
-        if (data && data.text) showSubtitles(data.text, 'VOICE COMMAND');
+        if (data && data.text) {
+          showSubtitles(data.text, 'VOICE COMMAND');
+          if (typeof window.dropHudNotch === 'function') window.dropHudNotch();
+          const hudText = document.getElementById('hud-notch-text');
+          if (hudText) {
+            hudText.dataset.customText = '1';
+            hudText.textContent = data.text;
+          }
+        }
         break;
       case 'jarvis_stop_command':
       case 'joe_stop_command':
@@ -8988,7 +9551,10 @@ window.jarvis = window.joe = {
       case 'joe_vad_speech_end':
       case 'jarvis_speech_ended':
       case 'joe_speech_ended':
-        if (jarvisHudState === 'listening' || jarvisHudState === 'thinking') {
+        if (isMicListening) {
+          console.log('[HUD] Backend VAD detected speech end. Auto-endpointing STT.');
+          stopMicListening(false);
+        } else if (jarvisHudState === 'listening' || jarvisHudState === 'thinking') {
           if (jarvisWakeTimer) clearTimeout(jarvisWakeTimer);
           if (joeWakeTimer) clearTimeout(joeWakeTimer);
           setHudState('idle');
@@ -9063,6 +9629,9 @@ window.jarvis = window.joe = {
         if ('speechSynthesis' in window) { try { window.speechSynthesis.cancel(); } catch(e) {} }
         hasReceivedAudioChunk = false;
         activeJarvisTtsTurn = Number(data?.turn_id || (activeJarvisTtsTurn + 1));
+        if (window.JarvisSFX && window.JarvisSFX.speechReady) {
+          window.JarvisSFX.speechReady();
+        }
         setHudState('speaking');
         startStreamingAnswer();
         break;
@@ -9099,6 +9668,12 @@ window.jarvis = window.joe = {
           } else if (typeof window.toggleTacticalLayer === 'function') {
             window.toggleTacticalLayer(data.layer, data.state);
           }
+        }
+        break;
+
+      case 'set_earth_visual_style':
+        if (data && data.style && typeof window.setEarthVisualStyle === 'function') {
+          window.setEarthVisualStyle(data.style);
         }
         break;
 
@@ -9149,6 +9724,12 @@ window.jarvis = window.joe = {
       case 'control_cockpit':
         if (window.JarvisCockpit && data) {
           window.JarvisCockpit.handle(data);
+        }
+        break;
+
+      case 'control_patrol':
+        if (window.JarvisPatrol && data) {
+          window.JarvisPatrol.handle(data);
         }
         break;
 
@@ -9249,6 +9830,17 @@ window.jarvis = window.joe = {
 
       case 'config_saved':
         addStatusLine(`Config saved — engine: ${data.engine}`);
+        break;
+
+      case 'set_hud_mode':
+      case 'set_voiceos_mode':
+        if (data) {
+          if (typeof window.setHudMode === 'function') {
+            window.setHudMode(data.active, data.mode);
+          } else if (typeof window.setVoiceOsMode === 'function') {
+            window.setVoiceOsMode(data.active, data.mode);
+          }
+        }
         break;
 
       default:
@@ -10204,6 +10796,9 @@ window.addEventListener('unhandledrejection', function(event) {
 
 // Global helpers accessible to buttons, voice, and HUD
 window.glideToSpatial = function(x) {
+  if (x < 450 && window.JarvisPatrol && window.JarvisPatrol.active) {
+    window.JarvisPatrol.stop();
+  }
   if (x < 450 && window.JarvisCockpit && window.JarvisCockpit.active) {
     window.JarvisCockpit.exit();
   }
@@ -10211,6 +10806,9 @@ window.glideToSpatial = function(x) {
 };
 
 window.focusGlobeCoordinates = function(lat, lon, label) {
+  if (window.JarvisPatrol && window.JarvisPatrol.active && !window.JarvisPatrol._isPatrolling) {
+    window.JarvisPatrol.stop();
+  }
   if (window.JarvisCockpit && window.JarvisCockpit.active) {
     window.JarvisCockpit.exit();
   }
@@ -11013,11 +11611,206 @@ const JarvisCockpit = {
 window.JarvisCockpit = JarvisCockpit;
 window.startCockpitChase = (callsign) => JarvisCockpit.enter(callsign);
 
-// Keyboard controls for tactical cockpit & chase view
+// ── Autonomous Global Recon Patrol Engine ──
+const JarvisPatrol = {
+  active: false,
+  _isPatrolling: false,
+  currentIndex: 0,
+  timer: null,
+  sectors: [
+    {
+      name: 'Austin, Texas (IH-35 Corridor)',
+      lat: 30.2672,
+      lon: -97.7431,
+      alt: 750,
+      pitch: -30,
+      heading: 25,
+      label: 'AUSTIN IH-35',
+      report: '🛰️ RECON PATROL: Monitoring Austin IH-35 logistics corridor and tactical ground transit.'
+    },
+    {
+      name: 'Tokyo, Japan (Shibuya Crossing)',
+      lat: 35.6595,
+      lon: 139.7005,
+      alt: 600,
+      pitch: -35,
+      heading: 45,
+      label: 'TOKYO SHIBUYA',
+      report: '🛰️ RECON PATROL: Sweeping Tokyo Shibuya high-density metropolitan airspace.'
+    },
+    {
+      name: 'Delhi, India (Rajpath & Central Vista)',
+      lat: 28.6129,
+      lon: 77.2295,
+      alt: 800,
+      pitch: -35,
+      heading: 90,
+      label: 'DELHI RAJPATH',
+      report: '🛰️ RECON PATROL: Scanning Delhi Rajpath and National Capital diplomatic corridor.'
+    },
+    {
+      name: 'London, UK (City Financial Core)',
+      lat: 51.5155,
+      lon: -0.0922,
+      alt: 750,
+      pitch: -32,
+      heading: 15,
+      label: 'LONDON CITY',
+      report: '🛰️ RECON PATROL: Surveilling London Financial Core and River Thames maritime approach.'
+    },
+    {
+      name: 'Pacific Ring of Fire (Tectonic Arc)',
+      lat: -17.7134,
+      lon: 178.0650,
+      alt: 1800000,
+      pitch: -65,
+      heading: 0,
+      label: 'PACIFIC FAULT ARC',
+      report: '🛰️ RECON PATROL: High-altitude synoptic sweep of Pacific Tectonic Subduction Faults.'
+    },
+    {
+      name: 'Low Earth Orbit (Synoptic Orbital)',
+      lat: 20.0,
+      lon: 0.0,
+      alt: 14000000,
+      pitch: -89,
+      heading: 0,
+      label: 'GLOBAL SYNOPTIC VIEW',
+      report: '🛰️ RECON PATROL: Planetary synoptic vantage established. Low Earth Orbit coverage nominal.'
+    }
+  ],
+
+  start() {
+    if (this.active) return;
+    if (window.JarvisCockpit && window.JarvisCockpit.active) {
+      window.JarvisCockpit.exit();
+    }
+    if (typeof window.unlockTarget === 'function') {
+      window.unlockTarget();
+    }
+    this.active = true;
+    const btn = document.getElementById('patrol-toggle-btn');
+    if (btn) {
+      btn.classList.add('active');
+      btn.innerHTML = '🛰️ PATROL ACTIVE';
+    }
+    if (window.JarvisSFX && window.JarvisSFX.layerToggle) {
+      window.JarvisSFX.layerToggle(true);
+    }
+    if (typeof showSubtitles === 'function') {
+      showSubtitles('🛰️ Autonomous Planetary Recon Patrol initiated. Commencing orbital survey.', 'RECON PATROL');
+    }
+    this.flyToCurrentSector();
+  },
+
+  stop() {
+    if (!this.active) return;
+    this.active = false;
+    this._isPatrolling = false;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    const btn = document.getElementById('patrol-toggle-btn');
+    if (btn) {
+      btn.classList.remove('active');
+      btn.innerHTML = '🛰️ RECON PATROL';
+    }
+    if (window.JarvisSFX && window.JarvisSFX.layerToggle) {
+      window.JarvisSFX.layerToggle(false);
+    }
+    if (typeof showSubtitles === 'function') {
+      showSubtitles('🛰️ Planetary Recon Patrol disengaged. Manual tactical control restored.', 'RECON PATROL');
+    }
+  },
+
+  toggle() {
+    if (this.active) this.stop();
+    else this.start();
+  },
+
+  handle(data) {
+    if (!data || !data.action) {
+      this.toggle();
+      return;
+    }
+    const act = String(data.action).toLowerCase();
+    if (act === 'start' || act === 'on' || act === 'begin') this.start();
+    else if (act === 'stop' || act === 'off' || act === 'end' || act === 'cancel') this.stop();
+    else this.toggle();
+  },
+
+  flyToCurrentSector() {
+    if (!this.active) return;
+    const sec = this.sectors[this.currentIndex];
+    this._isPatrolling = true;
+
+    // Update coordinates label & weather HUD
+    const lbl = document.getElementById('globe-coords-label');
+    if (lbl) {
+      lbl.innerHTML = `PATROL [${this.currentIndex + 1}/${this.sectors.length}]: <span style="color:#FFB84D;">${sec.label}</span> • ${sec.lat.toFixed(4)}°, ${sec.lon.toFixed(4)}°`;
+    }
+    if (typeof window.updateSectorWeather === 'function') {
+      window.updateSectorWeather(sec.lat, sec.lon, sec.name);
+    }
+
+    // Glide Cesium 3D camera
+    const cesViewer = window.cesiumViewer;
+    if (cesViewer && !cesViewer.isDestroyed()) {
+      cesViewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(sec.lon, sec.lat, sec.alt),
+        orientation: {
+          heading: Cesium.Math.toRadians(sec.heading),
+          pitch: Cesium.Math.toRadians(sec.pitch),
+          roll: 0.0
+        },
+        duration: 2.8,
+        complete: () => {
+          this._isPatrolling = false;
+        },
+        cancel: () => {
+          this._isPatrolling = false;
+        }
+      });
+
+      if (window.cesiumBeacon) {
+        window.cesiumBeacon.position = Cesium.Cartesian3.fromDegrees(sec.lon, sec.lat, Math.min(sec.alt * 0.1, 500));
+        if (window.cesiumBeacon.label) {
+          window.cesiumBeacon.label.text = `PATROL: ${sec.label}`;
+        }
+      }
+    } else {
+      this._isPatrolling = false;
+    }
+
+    // Audible tactical ping and subtitle report
+    if (window.JarvisSFX && window.JarvisSFX.targetLock) {
+      window.JarvisSFX.targetLock();
+    }
+    if (typeof showSubtitles === 'function') {
+      showSubtitles(sec.report, `RECON [${this.currentIndex + 1}/${this.sectors.length}]`);
+    }
+
+    // Advance sector and schedule next transition (9-second dwell time)
+    this.currentIndex = (this.currentIndex + 1) % this.sectors.length;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      if (this.active) {
+        this.flyToCurrentSector();
+      }
+    }, 9000);
+  }
+};
+window.JarvisPatrol = JarvisPatrol;
+
+// Keyboard controls for tactical cockpit, chase view & patrol mode
 window.addEventListener('keydown', (e) => {
   if (e.target && ['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
   if (e.key === 'Escape') {
-    if (window.JarvisCockpit && window.JarvisCockpit.active) {
+    if (window.JarvisPatrol && window.JarvisPatrol.active) {
+      e.preventDefault();
+      window.JarvisPatrol.stop();
+    } else if (window.JarvisCockpit && window.JarvisCockpit.active) {
       e.preventDefault();
       window.JarvisCockpit.exit();
     } else if (window.lockedTargetEntity) {
@@ -11032,6 +11825,10 @@ window.addEventListener('keydown', (e) => {
   } else if ((e.key === 'v' || e.key === 'V') && !e.ctrlKey && !e.metaKey && !e.altKey) {
     if (window.JarvisCockpit && window.JarvisCockpit.active) {
       window.JarvisCockpit.toggleViewMode();
+    }
+  } else if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (window.JarvisPatrol) {
+      window.JarvisPatrol.toggle();
     }
   }
 });
@@ -11548,8 +12345,18 @@ function initCesiumGlobe() {
       }
     }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
 
+    // Disengage autonomous patrol on manual operator canvas interaction
+    scene.canvas.addEventListener('pointerdown', (e) => {
+      if (window.JarvisPatrol && window.JarvisPatrol.active && !window.JarvisPatrol._isPatrolling) {
+        window.JarvisPatrol.stop();
+      }
+    });
+
     // Single-click on Cesium entities (aircraft, CCTV cameras, radio pins) opens target inspection
     handler.setInputAction((click) => {
+      if (window.JarvisPatrol && window.JarvisPatrol.active) {
+        window.JarvisPatrol.stop();
+      }
       if (typeof _measureActive !== 'undefined' && _measureActive) {
         const ray = scene.camera.getPickRay(click.position);
         const position = scene.globe.pick(ray, scene);
@@ -11976,9 +12783,13 @@ window.setEarthVisualStyle = function(styleName) {
     }
   }
 
-  // God's Eye Celestial Ring: active for Day & Night Terminator view
-  if (window._celestialRing) {
-    window._celestialRing.setEnabled(styleName === 'terminator');
+  // Toggle Tactical Optical Canvas Filters (FLIR, NVG, Cyber HUD)
+  const cesiumCont = document.getElementById('cesiumContainer');
+  if (cesiumCont) {
+    cesiumCont.classList.remove('optical-flir', 'optical-nvg', 'optical-cyber');
+    if (styleName === 'flir') cesiumCont.classList.add('optical-flir');
+    else if (styleName === 'nvg' || styleName === 'nightvision') cesiumCont.classList.add('optical-nvg');
+    else if (styleName === 'cyber') cesiumCont.classList.add('optical-cyber');
   }
 
   scene.requestRender();
@@ -12176,7 +12987,10 @@ window.inspectTarget = function(data) {
     `;
     if (actBtn) {
       actBtn.textContent = 'LOCK AIRCRAFT';
-      actBtn.onclick = () => window.focusGlobeCoordinates(data.lat, data.lon, data.callsign);
+      actBtn.onclick = () => {
+        if (data._entity) window.lockTarget(data._entity, data);
+        else window.focusGlobeCoordinates(data.lat, data.lon, data.callsign);
+      };
     }
     if (chaseBtn) {
       chaseBtn.style.display = 'block';
@@ -12196,7 +13010,10 @@ window.inspectTarget = function(data) {
     `;
     if (actBtn) {
       actBtn.textContent = 'LOCK VESSEL';
-      actBtn.onclick = () => window.focusGlobeCoordinates(data.lat, data.lon, data.name);
+      actBtn.onclick = () => {
+        if (data._entity) window.lockTarget(data._entity, data);
+        else window.focusGlobeCoordinates(data.lat, data.lon, data.name);
+      };
     }
   } else if (data.type === 'CCTV') {
     // Open authentic God's Eye CCTV Right Rail Dock and frame neat tactical camera POV
@@ -12216,7 +13033,10 @@ window.inspectTarget = function(data) {
     `;
     if (actBtn) {
       actBtn.textContent = 'TRACK SATELLITE';
-      actBtn.onclick = () => window.focusGlobeCoordinates(data.lat, data.lon, data.name);
+      actBtn.onclick = () => {
+        if (data._entity) window.lockTarget(data._entity, data);
+        else window.focusGlobeCoordinates(data.lat, data.lon, data.name);
+      };
     }
     if (chaseBtn && data._entity) {
       chaseBtn.style.display = 'block';
@@ -13430,40 +14250,80 @@ function initGlobeIntelligence(viewer) {
   window.generateTrafficCorridors();
 
   // God's Eye Bottom Voice HUD Dock Controllers (Image 5 Parity)
-  window.updateGodsEyeVoiceWidget = function(state) {
+  window.updateGodsEyeVoiceWidget = function(state, energy) {
     const dock = document.getElementById('dock-voice-widget');
     const statusEl = document.getElementById('dock-voice-status');
     if (!dock) return;
 
-    dock.classList.remove('listening', 'speaking', 'thinking');
+    if (typeof state === 'string') {
+      dock.classList.remove('listening', 'speaking', 'thinking', 'mic-off', 'mic-muted');
 
-    if (state === 'listening' || state === 'followup_listening') {
-      dock.classList.add('listening');
-      if (statusEl) statusEl.textContent = 'AI ACTIVE • LISTENING';
-    } else if (state === 'speaking') {
-      dock.classList.add('speaking');
-      if (statusEl) statusEl.textContent = 'AI ACTIVE • SPEAKING';
-    } else if (state === 'thinking' || state === 'processing') {
-      dock.classList.add('thinking');
-      if (statusEl) statusEl.textContent = 'AI ACTIVE • PROCESSING';
-    } else {
-      if (statusEl) statusEl.textContent = 'AI ACTIVE • STANDBY';
+      if (state === 'listening' || state === 'followup_listening') {
+        dock.classList.add('listening');
+        if (statusEl) statusEl.textContent = 'AI ACTIVE • LISTENING';
+      } else if (state === 'speaking') {
+        dock.classList.add('speaking');
+        if (statusEl) statusEl.textContent = 'AI ACTIVE • SPEAKING';
+      } else if (state === 'thinking' || state === 'processing') {
+        dock.classList.add('thinking');
+        if (statusEl) statusEl.textContent = 'AI ACTIVE • PROCESSING';
+      } else if (state === 'mic_off' || state === 'muted') {
+        dock.classList.add('mic-off');
+        if (statusEl) statusEl.textContent = 'MIC OFF • STANDBY';
+      } else {
+        // standby/idle: visibly faded to indicate mic is dormant/turned off
+        dock.classList.add('mic-off');
+        if (statusEl) statusEl.textContent = 'AI ACTIVE • STANDBY';
+      }
+    }
+
+    // Dynamic equalizer modulation during live listening
+    if (typeof energy === 'number' && dock.classList.contains('listening')) {
+      const bars = dock.querySelectorAll('.voice-eq-bars span');
+      bars.forEach((bar, idx) => {
+        const factor = Math.sin((idx + 1) * 0.7) * 0.4 + 0.6;
+        const h = Math.min(16, Math.max(3, energy * 0.16 * factor));
+        bar.style.height = `${h.toFixed(1)}px`;
+      });
     }
   };
 
   // God's Eye Voice Mic Click-to-Toggle System (Spacebar handles Push-to-Talk)
   window.triggerVoiceMicCommand = function() {
     if (isMicListening) {
-      if (typeof stopMicListening === 'function') stopMicListening();
+      // 1. One-click Stop & Abort: Discards unwanted speech immediately without sending
+      if (typeof stopMicListening === 'function') {
+        stopMicListening(true);
+      }
+      // 2. Visually fade widget to clearly confirm mic is turned off
+      if (typeof window.updateGodsEyeVoiceWidget === 'function') {
+        window.updateGodsEyeVoiceWidget('mic_off');
+      }
+      // 3. Play subtle descending audio confirmation
+      if (window.JarvisSFX && window.JarvisSFX.micCancel) {
+        window.JarvisSFX.micCancel();
+      }
     } else {
-      if (typeof startMicListening === 'function') startMicListening();
-      else if (window.api && window.api().start_manual_recording) {
-        window.api().start_manual_recording();
+      // 1. Turn ON: Bright amber active theme with intense glow
+      if (window.JarvisSFX && window.JarvisSFX.micStart) {
+        window.JarvisSFX.micStart();
+      }
+      if (typeof window.updateGodsEyeVoiceWidget === 'function') {
+        window.updateGodsEyeVoiceWidget('listening');
+      }
+      // 2. Begin speech capture
+      if (typeof startMicListening === 'function') {
+        startMicListening();
+      } else if (window.api && window.api().start_native_mic) {
+        window.api().start_native_mic();
         setHudState('listening');
       }
     }
   };
   window.toggleVoiceMicCommand = window.triggerVoiceMicCommand;
+
+  // Initialize dock voice widget in faded/standby state on boot
+  window.updateGodsEyeVoiceWidget('mic_off');
 
   window.openLocationHopModal = function() {
     const cities = [
@@ -14760,6 +15620,278 @@ if (document.readyState === 'complete' || document.readyState === 'interactive')
   window.addEventListener('load', bootVisuals);
 }
 window.addEventListener('pywebviewready', bootVisuals);
+
+/* =====================================================================
+   J.A.R.V.I.S. TOP-CENTER HUD NOTCH CONTROLLER
+   Pure Minimalist Notch, Fluid Multi-Color Wave & Push-to-Talk
+   ===================================================================== */
+
+let isHudActive = false;
+let hudWaveAnimationId = null;
+let hudWaveActive = false;
+let hudWavePhase = 0;
+
+function startHudWave() {
+  if (hudWaveActive) return;
+  hudWaveActive = true;
+  const canvas = document.getElementById('hud-wave-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  function renderWave() {
+    if (!hudWaveActive) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+    hudWavePhase += 0.05;
+    const w = canvas.width;
+    const h = canvas.height;
+    const centerY = h / 2;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Dynamic vocal energy modulation
+    const energyNorm = Math.min(1.0, (typeof jarvisAudioEnergy !== 'undefined' ? jarvisAudioEnergy : 40) / 200);
+    const baseAmp = 3.5 + (energyNorm * 6.5);
+
+    // 5 multi-color iridescent layers matching Siri / Apple Intelligence wave ribbon
+    const waves = [
+      { color: 'rgba(0, 240, 255, 0.8)', freq: 0.026, speed: 1.0, amp: baseAmp * 1.1, offset: 0 },
+      { color: 'rgba(236, 72, 153, 0.85)', freq: 0.034, speed: -1.2, amp: baseAmp * 0.95, offset: Math.PI / 3 },
+      { color: 'rgba(59, 130, 246, 0.8)', freq: 0.022, speed: 0.75, amp: baseAmp * 0.85, offset: Math.PI / 2 },
+      { color: 'rgba(245, 158, 11, 0.75)', freq: 0.031, speed: -0.9, amp: baseAmp * 0.7, offset: Math.PI * 0.75 },
+      { color: 'rgba(255, 255, 255, 0.95)', freq: 0.028, speed: 1.1, amp: baseAmp * 0.5, offset: Math.PI / 4, isCore: true }
+    ];
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+
+    waves.forEach(wave => {
+      ctx.beginPath();
+      ctx.strokeStyle = wave.color;
+      ctx.lineWidth = wave.isCore ? 2.2 : 2.0;
+
+      for (let x = 0; x < w; x += 2) {
+        // Tapered Tukey sinusoidal envelope so wave flattens perfectly at ends
+        const t = x / w;
+        const env = Math.sin(t * Math.PI);
+        const y = centerY + Math.sin(x * wave.freq + hudWavePhase * wave.speed + wave.offset) * wave.amp * env;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    });
+
+    ctx.restore();
+    hudWaveAnimationId = requestAnimationFrame(renderWave);
+  }
+
+  renderWave();
+}
+
+function stopHudWave() {
+  hudWaveActive = false;
+  if (hudWaveAnimationId) {
+    cancelAnimationFrame(hudWaveAnimationId);
+    hudWaveAnimationId = null;
+  }
+  const canvas = document.getElementById('hud-wave-canvas');
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+window.setHudMode = function(active, mode) {
+  isHudActive = !!active;
+  document.body.classList.toggle('hud-mode', isHudActive);
+  document.body.classList.toggle('voiceos-mode', isHudActive);
+
+  // Update top-bar button state in full console mode
+  const btnLabel = document.getElementById('top-bar-hud-label');
+  if (btnLabel) {
+    btnLabel.textContent = isHudActive ? "CONSOLE" : "HUD";
+  }
+  const topBtn = document.getElementById('top-bar-hud-btn');
+  if (topBtn) {
+    topBtn.style.borderColor = isHudActive ? "rgba(255, 157, 46, 0.4)" : "rgba(0, 240, 255, 0.35)";
+    topBtn.style.color = isHudActive ? "#FFB84D" : "#00F0FF";
+    topBtn.style.background = isHudActive ? "rgba(255, 157, 46, 0.1)" : "rgba(0, 240, 255, 0.08)";
+  }
+
+  // Suspend heavy Cesium WebGL render loop when entering HUD mode
+  if (typeof cesiumViewer !== 'undefined' && cesiumViewer && cesiumViewer.scene) {
+    try {
+      if (isHudActive) {
+        cesiumViewer.scene.requestRenderMode = true;
+      } else {
+        cesiumViewer.scene.requestRenderMode = false;
+        cesiumViewer.scene.requestRender();
+      }
+    } catch(e) {}
+  }
+
+  // When HUD mode is activated, drop down to notify operator, then retract after 3.5s
+  if (isHudActive && typeof window.dropHudNotch === 'function') {
+    window.dropHudNotch(3500);
+  } else if (!isHudActive && typeof window.retractHudNotch === 'function') {
+    window.retractHudNotch();
+  }
+
+  // Play acoustic feedback chime
+  if (window.JarvisSFX && typeof window.JarvisSFX.speechReady === 'function') {
+    window.JarvisSFX.speechReady();
+  }
+};
+
+window.setVoiceOsMode = window.setHudMode;
+
+window.toggleHudMode = function(explicitMode) {
+  const isCurrentlyHud = document.body.classList.contains('hud-mode') || document.body.classList.contains('voiceos-mode');
+  const targetMode = explicitMode || (isCurrentlyHud ? 'full' : 'hud');
+
+  if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.set_window_mode === 'function') {
+    window.pywebview.api.set_window_mode(targetMode).then(res => {
+      window.setHudMode(res.is_hud || res.is_voiceos, res.mode);
+    }).catch(err => {
+      console.warn('[HUD] Bridge set_window_mode error:', err);
+      window.setHudMode(targetMode === 'hud', targetMode);
+    });
+  } else {
+    window.setHudMode(targetMode === 'hud', targetMode);
+  }
+};
+
+window.toggleVoiceOsMode = window.toggleHudMode;
+
+let hudDismissTimer = null;
+
+window.dropHudNotch = function(autoDismissDelay = null) {
+  const notch = document.getElementById('jarvis-hud-notch');
+  if (!notch) return;
+
+  if (hudDismissTimer) {
+    clearTimeout(hudDismissTimer);
+    hudDismissTimer = null;
+  }
+
+  notch.classList.add('dropped');
+
+  // Trigger X11 top-center window snapping if running in pywebview
+  if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.snap_hud_to_top === 'function') {
+    try { window.pywebview.api.snap_hud_to_top(); } catch(e){}
+  }
+
+  if (autoDismissDelay && autoDismissDelay > 0) {
+    window.scheduleHudDismiss(autoDismissDelay);
+  }
+};
+
+window.scheduleHudDismiss = function(delayMs = 4000) {
+  if (hudDismissTimer) clearTimeout(hudDismissTimer);
+  hudDismissTimer = setTimeout(() => {
+    window.retractHudNotch();
+  }, delayMs);
+};
+
+window.retractHudNotch = function() {
+  const notch = document.getElementById('jarvis-hud-notch');
+  if (!notch) return;
+
+  if (hudDismissTimer) {
+    clearTimeout(hudDismissTimer);
+    hudDismissTimer = null;
+  }
+
+  // Never retract while operator is actively holding space or recording speech
+  if (isSpacebarPushToTalk || isMicListening) return;
+
+  notch.classList.remove('active');
+  notch.classList.remove('dropped');
+  stopHudWave();
+  const textEl = document.getElementById('hud-notch-text');
+  if (textEl) {
+    delete textEl.dataset.customText;
+    textEl.textContent = 'Hold Space to speak';
+  }
+};
+
+window.updateVoiceOsState = function(state) {
+  const notch = document.getElementById('jarvis-hud-notch');
+  const textEl = document.getElementById('hud-notch-text');
+
+  if (state === 'listening' || state === 'followup_listening') {
+    window.dropHudNotch();
+    if (notch) notch.classList.add('active');
+    if (textEl && !textEl.dataset.customText) {
+      textEl.textContent = 'Listening...';
+    }
+    startHudWave();
+  } else if (state === 'thinking') {
+    window.dropHudNotch();
+    if (notch) notch.classList.add('active');
+    if (textEl && !textEl.dataset.customText) {
+      textEl.textContent = 'Thinking...';
+    }
+    startHudWave();
+  } else if (state === 'speaking') {
+    window.dropHudNotch();
+    if (notch) notch.classList.add('active');
+    startHudWave();
+  } else {
+    if (notch) notch.classList.remove('active');
+    stopHudWave();
+    if (textEl) {
+      delete textEl.dataset.customText;
+      textEl.textContent = 'Hold Space to speak';
+    }
+    // "go once nothing said or cliked": auto-retract after 4s of idle silence
+    window.scheduleHudDismiss(4000);
+  }
+};
+
+// Dismiss notch immediately when clicked ("or cliked")
+const notchNode = document.getElementById('jarvis-hud-notch');
+if (notchNode) {
+  notchNode.addEventListener('click', (e) => {
+    if (!isSpacebarPushToTalk && !isMicListening) {
+      window.retractHudNotch();
+    }
+  });
+}
+
+// Global click outside or Escape key dismisses immediately
+document.addEventListener('click', (e) => {
+  const notch = document.getElementById('jarvis-hud-notch');
+  if (notch && notch.classList.contains('dropped') && !isSpacebarPushToTalk && !isMicListening) {
+    if (!notch.contains(e.target)) {
+      window.retractHudNotch();
+    }
+  }
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    window.retractHudNotch();
+  }
+});
+
+// Global Hotkey Listener: Alt+V or F9 toggles Top-Center HUD notch
+window.addEventListener('keydown', (e) => {
+  if ((e.altKey && (e.key === 'v' || e.key === 'V')) || e.key === 'F9') {
+    e.preventDefault();
+    window.toggleHudMode();
+  }
+});
+
+// Detect ?mode=hud or ?mode=voiceos from URL parameter (e.g. jarvis.py --hud)
+try {
+  const _urlParams = new URLSearchParams(window.location.search);
+  const m = _urlParams.get('mode');
+  if (m === 'hud' || m === 'voiceos') {
+    window.setHudMode(true, 'hud');
+  }
+} catch(e) {}
 </script>
 </body>
 </html>

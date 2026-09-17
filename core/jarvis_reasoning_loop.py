@@ -128,6 +128,70 @@ class JarvisCognitiveLoop:
         intel_summary, raw_results = skills.perform_live_search(query)
         return {"success": bool(raw_results), "summary": intel_summary[:1200], "results_count": len(raw_results)}
 
+    def tool_diagnostics(self) -> Dict[str, Any]:
+        """Runs live hardware diagnostics."""
+        from modules.system_diagnostics import SystemDiagnosticsEngine
+        diag = SystemDiagnosticsEngine()
+        metrics = diag.get_metrics()
+        debrief = diag.format_tactical_debrief(metrics)
+        return {"success": True, "metrics": metrics, "debrief": debrief}
+
+    def tool_top_processes(self, limit: int = 5, by: str = "cpu") -> Dict[str, Any]:
+        """Inspects top active processes."""
+        from modules.system_controller import SystemController
+        sc = SystemController()
+        procs = sc.get_top_processes(limit=limit, by=by)
+        summary = ", ".join([f"{p['name']} ({p['cpu_percent']}% CPU, {p['memory_percent']}% RAM)" for p in procs[:3]])
+        return {"success": True, "processes": procs, "debrief": f"Top resource processes: {summary}."}
+
+    def tool_git_intel(self) -> Dict[str, Any]:
+        """Inspects Git repository and version control telemetry."""
+        from modules.system_controller import SystemController
+        sc = SystemController()
+        stat = sc.get_git_status()
+        debrief = sc.format_git_debrief(stat)
+        return {"success": stat.get("is_git", False), "status": stat, "debrief": debrief}
+
+    def tool_situational_briefing(self, location: str = "") -> Dict[str, Any]:
+        """Synthesizes comprehensive situational briefing."""
+        from modules.situational_briefing import SituationalBriefingEngine
+        sb = SituationalBriefingEngine()
+        res = sb.generate_briefing(location)
+        return {"success": True, "briefing": res, "debrief": res["spoken_text"]}
+
+    def tool_clipboard(self) -> Dict[str, Any]:
+        """Inspects and summarizes active system clipboard."""
+        from modules.system_controller import SystemController
+        sc = SystemController()
+        debrief = sc.summarize_clipboard()
+        return {"success": True, "debrief": debrief}
+
+    def tool_calendar(self) -> Dict[str, Any]:
+        """Queries calendar schedule and conflicts."""
+        from modules.calendar_intel import CalendarIntelManager
+        cal = CalendarIntelManager()
+        debrief = cal.format_jarvis_reminders()
+        return {"success": True, "debrief": debrief}
+
+    def tool_inbox(self) -> Dict[str, Any]:
+        """Queries unread messages and urgent inbox alerts."""
+        from modules.inbox_intel import InboxIntelManager
+        inbox = InboxIntelManager()
+        debrief = inbox.get_tldr_summary()
+        return {"success": True, "debrief": debrief}
+
+    def tool_media_control(self, action: str) -> Dict[str, Any]:
+        """Controls system media playback."""
+        from modules.system_controller import SystemController
+        sc = SystemController()
+        return sc.media_control(action)
+
+    def tool_volume(self, percent: int) -> Dict[str, Any]:
+        """Adjusts system volume."""
+        from modules.system_controller import SystemController
+        sc = SystemController()
+        return sc.set_volume(percent)
+
     # ── 2. Intent & Plan Synthesis ────────────────────────────────────
 
     def analyze_goal(self, user_text: str) -> List[Dict[str, Any]]:
@@ -151,6 +215,15 @@ class JarvisCognitiveLoop:
         has_weather = any(w in text_lower for w in ["weather", "forecast", "rain", "temperature", "storm", "wind"])
         has_cockpit = any(w in text_lower for w in ["cockpit", "chase cam", "lock on", "track plane", "lock onto"])
         has_search = bool(re.search(r'\b(?:google\s+search|web\s+search|search\s+(?:the\s+web|google|online))\b', text_lower))
+        has_briefing = any(w in text_lower for w in ["good morning", "briefing", "situational briefing", "status report", "morning protocol", "executive briefing", "how is the day looking", "how does the day look"])
+        has_diag = any(w in text_lower for w in ["diagnostic", "system resource", "hardware stat", "cpu load", "thermals", "system status", "hardware status", "system telemetry", "resource monitor"])
+        has_proc = any(w in text_lower for w in ["top process", "highest cpu", "highest memory", "what's using", "whats using", "memory hog", "cpu hog", "kill process", "terminate process", "running processes"])
+        has_git = any(w in text_lower for w in ["git status", "repo status", "git branch", "uncommitted", "repository status", "git diff"])
+        has_calendar = any(w in text_lower for w in ["calendar", "schedule", "my meetings", "upcoming event", "agenda", "double booking"])
+        has_inbox = any(w in text_lower for w in ["scan email", "inbox", "urgent mail", "unread message", "check mail", "panic text"])
+        has_clip = any(w in text_lower for w in ["clipboard", "what's on my clipboard", "whats on my clipboard", "read clipboard", "copied"])
+        has_vol = any(w in text_lower for w in ["volume up", "volume down", "mute", "unmute", "set volume"])
+        has_media = any(w in text_lower for w in ["pause music", "resume music", "play music", "next track", "previous track", "stop music"])
 
         if loc_candidate:
             plan_steps.append({
@@ -213,6 +286,57 @@ class JarvisCognitiveLoop:
                 "action": "cockpit",
                 "target": loc_candidate or "",
                 "progress_phrase": "Acquiring kinematic lock and initializing 3D tactical cockpit chase camera..."
+            })
+
+        if has_briefing:
+            plan_steps.append({
+                "action": "briefing",
+                "location": loc_candidate,
+                "progress_phrase": "Compiling multi-source executive situational briefing, Sir..."
+            })
+
+        if has_diag:
+            plan_steps.append({
+                "action": "diagnostics",
+                "progress_phrase": "Querying live hardware diagnostic sensors and CPU telemetry, Sir..."
+            })
+
+        if has_proc:
+            plan_steps.append({
+                "action": "top_processes",
+                "query": user_text,
+                "progress_phrase": "Auditing active processes and resource allocation, Sir..."
+            })
+
+        if has_git:
+            plan_steps.append({
+                "action": "git_intel",
+                "progress_phrase": "Inspecting repository branch and working directory state, Sir..."
+            })
+
+        if has_calendar:
+            plan_steps.append({
+                "action": "calendar",
+                "progress_phrase": "Scanning your agenda and scheduling buffers, Sir..."
+            })
+
+        if has_inbox:
+            plan_steps.append({
+                "action": "inbox",
+                "progress_phrase": "Scanning inbox dispatches and priority communications, Sir..."
+            })
+
+        if has_clip:
+            plan_steps.append({
+                "action": "clipboard",
+                "progress_phrase": "Reading active system clipboard buffers, Sir..."
+            })
+
+        if has_vol or has_media:
+            plan_steps.append({
+                "action": "media_control",
+                "command": user_text,
+                "progress_phrase": "Dispatching audio/media command to system controller, Sir..."
             })
 
         if not plan_steps and has_search:
@@ -331,6 +455,48 @@ class JarvisCognitiveLoop:
                 elif action == "search":
                     res = self.tool_web_search(step["query"])
                     obs["result"] = res.get("summary", "Live search complete.")
+
+                elif action == "diagnostics":
+                    res = self.tool_diagnostics()
+                    obs["result"] = res.get("debrief", "Hardware diagnostics completed.")
+
+                elif action == "top_processes":
+                    q = step.get("query", "").lower()
+                    by = "memory" if any(w in q for w in ["memory", "ram"]) else "cpu"
+                    res = self.tool_top_processes(limit=4, by=by)
+                    obs["result"] = res.get("debrief", "Top process audit completed.")
+
+                elif action == "git_intel":
+                    res = self.tool_git_intel()
+                    obs["result"] = res.get("debrief", "Git repository telemetry acquired.")
+
+                elif action == "briefing":
+                    res = self.tool_situational_briefing(step.get("location", ""))
+                    obs["result"] = res.get("debrief", "Executive situational briefing generated.")
+
+                elif action == "clipboard":
+                    res = self.tool_clipboard()
+                    obs["result"] = res.get("debrief", "Clipboard inspect complete.")
+
+                elif action == "calendar":
+                    res = self.tool_calendar()
+                    obs["result"] = res.get("debrief", "Calendar agenda synchronized.")
+
+                elif action == "inbox":
+                    res = self.tool_inbox()
+                    obs["result"] = res.get("debrief", "Communications buffer scanned.")
+
+                elif action == "media_control":
+                    cmd_text = step.get("command", "").lower()
+                    if "mute" in cmd_text:
+                        res = self.tool_volume(0) if "unmute" not in cmd_text else self.tool_volume(65)
+                    elif "pause" in cmd_text:
+                        res = self.tool_media_control("pause")
+                    elif "play" in cmd_text or "resume" in cmd_text:
+                        res = self.tool_media_control("play")
+                    else:
+                        res = self.tool_media_control("toggle")
+                    obs["result"] = res.get("debrief", "Audio command dispatched.")
 
             except Exception as tool_err:
                 obs["result"] = f"Tool encounter: {tool_err}"

@@ -422,6 +422,230 @@ class SystemSkillEngine:
                     task_mgr.complete_task(task.task_id, summary=f"CCTV optical layers online")
                     return False, debrief_msg, False, "", {}
 
+                elif task.type == TaskType.SITUATIONAL_BRIEFING.value:
+                    task_mgr.update_progress(task.task_id, 30, "Compiling multi-source situational briefing...")
+                    from modules.situational_briefing import SituationalBriefingEngine
+                    sb = SituationalBriefingEngine()
+                    briefing = sb.generate_briefing()
+                    debrief_msg = briefing["spoken_text"]
+                    raw_results = briefing.get("structured_findings", [])
+                    for item in raw_results:
+                        task_mgr.add_finding(task.task_id, TaskFinding(
+                            title=item["title"],
+                            url=item["url"],
+                            snippet=item["snippet"],
+                            source="situational_telemetry"
+                        ))
+                    task_mgr.complete_task(task.task_id, summary="Situational briefing compiled", extra_data=briefing)
+                    payload = self.hud_engine.build_structured_payload("Situational Briefing", "BRIEFING", raw_results, debrief_msg)
+                    try:
+                        from frontend.hud_panel import HUDPanelManager
+                        HUDPanelManager().show_action_hud(title="Executive Situational Briefing", action_type="BRIEFING", details=debrief_msg)
+                    except Exception:
+                        pass
+                    return True, debrief_msg, False, "", payload
+
+                elif task.type == TaskType.SYSTEM_CONTROL.value:
+                    act_type = task.data.get("action_type", "volume")
+                    cmd_str = task.data.get("command", "").lower()
+                    from modules.system_controller import SystemController
+                    sc = SystemController()
+
+                    if act_type == "clipboard":
+                        task_mgr.update_progress(task.task_id, 40, "Reading active clipboard buffers...")
+                        debrief_msg = sc.summarize_clipboard()
+                        raw_results = [{"title": "System Clipboard", "snippet": debrief_msg, "url": "system://clipboard"}]
+                        task_mgr.add_finding(task.task_id, TaskFinding(title="System Clipboard", url="system://clipboard", snippet=debrief_msg, source="clipboard"))
+                        task_mgr.complete_task(task.task_id, summary="Clipboard inspected")
+                        payload = self.hud_engine.build_structured_payload("System Clipboard", "CLIPBOARD", raw_results, debrief_msg)
+                        return True, debrief_msg, False, "", payload
+
+                    elif act_type == "process":
+                        task_mgr.update_progress(task.task_id, 40, "Auditing process telemetry...")
+                        if any(w in cmd_str for w in ["kill", "terminate"]):
+                            m_target = re.search(r'(?:kill|terminate)\s+(?:process\s+)?([a-zA-Z0-9_\-\.]+)', cmd_str)
+                            target_proc = m_target.group(1).strip() if m_target else ""
+                            res = sc.kill_process(target_proc)
+                            debrief_msg = res["debrief"]
+                            raw_results = [{"title": f"Process Termination: {target_proc}", "snippet": debrief_msg, "url": "system://processes"}]
+                        else:
+                            by_metric = "memory" if any(w in cmd_str for w in ["memory", "ram"]) else "cpu"
+                            top_procs = sc.get_top_processes(limit=5, by=by_metric)
+                            summary_procs = ", ".join([f"{p['name']} ({p['cpu_percent']}% CPU, {p['memory_percent']}% RAM)" for p in top_procs[:3]])
+                            debrief_msg = f"Top resource processes on your machine, Sir: {summary_procs}."
+                            raw_results = [{
+                                "title": f"Process: {p['name']} (PID {p['pid']})",
+                                "snippet": f"CPU: {p['cpu_percent']}% | RAM: {p['memory_percent']}% | Status: {p['status']}",
+                                "url": f"system://process/{p['pid']}"
+                            } for p in top_procs]
+
+                        for r in raw_results:
+                            task_mgr.add_finding(task.task_id, TaskFinding(title=r["title"], url=r["url"], snippet=r["snippet"], source="process_monitor"))
+                        task_mgr.complete_task(task.task_id, summary="Process audit completed")
+                        payload = self.hud_engine.build_structured_payload("Process Telemetry", "PROCESS", raw_results, debrief_msg)
+                        return True, debrief_msg, False, "", payload
+
+                    elif act_type == "lock":
+                        task_mgr.update_progress(task.task_id, 50, "Locking workstation...")
+                        res = sc.lock_workstation()
+                        debrief_msg = res["debrief"]
+                        task_mgr.complete_task(task.task_id, summary="Workstation locked")
+                        payload = self.hud_engine.build_structured_payload("Workstation Lock", "SYSTEM", [{"title": "Workstation Security", "snippet": debrief_msg, "url": "system://lock"}], debrief_msg)
+                        return True, debrief_msg, False, "", payload
+
+                    elif act_type == "media":
+                        task_mgr.update_progress(task.task_id, 50, "Dispatching media control...")
+                        if "pause" in cmd_str:
+                            res = sc.media_control("pause")
+                        elif "resume" in cmd_str or "play" in cmd_str:
+                            res = sc.media_control("play")
+                        elif "next" in cmd_str:
+                            res = sc.media_control("next")
+                        elif "prev" in cmd_str:
+                            res = sc.media_control("prev")
+                        else:
+                            res = sc.media_control("toggle")
+                        debrief_msg = res["debrief"]
+                        task_mgr.complete_task(task.task_id, summary="Media command executed")
+                        payload = self.hud_engine.build_structured_payload("Media Playback", "MEDIA", [{"title": "Media Playback", "snippet": debrief_msg, "url": "system://media"}], debrief_msg)
+                        return True, debrief_msg, False, "", payload
+
+                    else:  # volume
+                        task_mgr.update_progress(task.task_id, 50, "Adjusting audio volume...")
+                        if "mute" in cmd_str and "unmute" not in cmd_str:
+                            res = sc.mute(True)
+                        elif "unmute" in cmd_str:
+                            res = sc.mute(False)
+                        elif "up" in cmd_str:
+                            res = sc.adjust_volume(10)
+                        elif "down" in cmd_str:
+                            res = sc.adjust_volume(-10)
+                        else:
+                            m_pct = re.search(r'(\d+)', cmd_str)
+                            pct_val = int(m_pct.group(1)) if m_pct else 70
+                            res = sc.set_volume(pct_val)
+                        debrief_msg = res["debrief"]
+                        task_mgr.complete_task(task.task_id, summary=f"Volume adjusted: {res.get('volume', '')}%")
+                        payload = self.hud_engine.build_structured_payload("Audio Control", "AUDIO", [{"title": "Audio Control", "snippet": debrief_msg, "url": "system://audio"}], debrief_msg)
+                        return True, debrief_msg, False, "", payload
+
+                elif task.type == TaskType.GIT_INTEL.value:
+                    task_mgr.update_progress(task.task_id, 30, "Auditing repository working directory...")
+                    from modules.system_controller import SystemController
+                    sc = SystemController()
+                    stat = sc.get_git_status()
+                    debrief_msg = sc.format_git_debrief(stat)
+                    raw_results = [{
+                        "title": f"Git Branch: {stat.get('branch', 'unknown')}",
+                        "snippet": debrief_msg,
+                        "url": "git://status",
+                        "extra": stat
+                    }]
+                    task_mgr.add_finding(task.task_id, TaskFinding(
+                        title=raw_results[0]["title"],
+                        url=raw_results[0]["url"],
+                        snippet=raw_results[0]["snippet"],
+                        source="git_telemetry",
+                        extra=stat
+                    ))
+                    task_mgr.complete_task(task.task_id, summary=f"Git: {stat.get('branch')}, {len(stat.get('modified', []))} modified")
+                    payload = self.hud_engine.build_structured_payload("Git Repository Status", "GIT", raw_results, debrief_msg)
+                    try:
+                        from frontend.hud_panel import HUDPanelManager
+                        HUDPanelManager().show_action_hud(title="Git Repository Telemetry", action_type="GIT", details=debrief_msg)
+                    except Exception:
+                        pass
+                    return True, debrief_msg, False, "", payload
+
+                elif task.type == TaskType.VISION_INSPECT.value:
+                    task_mgr.update_progress(task.task_id, 30, "Deploying Stark Vision Eye...")
+                    from modules.desktop_vision import DesktopVisionEngine
+                    v_engine = DesktopVisionEngine()
+                    vis_res = v_engine.inspect_screen_at_cursor()
+                    debrief_msg = vis_res["debrief"]
+                    raw_results = [{
+                        "title": f"Vision: {vis_res['window'].get('title', 'Active Window')}",
+                        "snippet": debrief_msg,
+                        "url": vis_res.get("crop_path") or vis_res.get("screenshot_path") or "vision://display",
+                        "extra": vis_res
+                    }]
+                    task_mgr.add_finding(task.task_id, TaskFinding(
+                        title=raw_results[0]["title"],
+                        url=raw_results[0]["url"],
+                        snippet=raw_results[0]["snippet"],
+                        source="desktop_vision",
+                        extra=vis_res
+                    ))
+                    task_mgr.complete_task(task.task_id, summary=f"Vision: {vis_res['window'].get('wm_class', 'display')}")
+                    payload = self.hud_engine.build_structured_payload("Desktop Vision Inspection", "VISION", raw_results, debrief_msg)
+                    try:
+                        from frontend.hud_panel import HUDPanelManager
+                        HUDPanelManager().show_action_hud(title="Desktop Vision & Cursor Inspection", action_type="VISION", details=debrief_msg)
+                    except Exception:
+                        pass
+                    return True, debrief_msg, False, "", payload
+
+                elif task.type == TaskType.AMBIENT_CONFIG.value:
+                    task_mgr.update_progress(task.task_id, 30, "Querying Ambient Sentinel telemetry...")
+                    from modules.ambient_sentinel import AmbientSentinel
+                    sentinel = AmbientSentinel.get_instance()
+                    cmd_q = task.data.get("query", "").lower()
+                    if "quiet mode on" in cmd_q or "enable quiet mode" in cmd_q:
+                        debrief_msg = sentinel.enable_quiet_mode(True)
+                    elif "quiet mode off" in cmd_q or "disable quiet mode" in cmd_q:
+                        debrief_msg = sentinel.enable_quiet_mode(False)
+                    else:
+                        vitals = sentinel.check_vitals()
+                        status = sentinel.get_status()
+                        debrief_msg = f"{status['debrief']} {len(vitals)} active vital notifications logged."
+
+                    raw_results = [{
+                        "title": "Ambient Sentinel Guardian",
+                        "snippet": debrief_msg,
+                        "url": "sentinel://status"
+                    }]
+                    task_mgr.add_finding(task.task_id, TaskFinding(
+                        title=raw_results[0]["title"],
+                        url=raw_results[0]["url"],
+                        snippet=raw_results[0]["snippet"],
+                        source="ambient_sentinel"
+                    ))
+                    task_mgr.complete_task(task.task_id, summary="Sentinel telemetry inspected")
+                    payload = self.hud_engine.build_structured_payload("Ambient Sentinel", "SENTINEL", raw_results, debrief_msg)
+                    return True, debrief_msg, False, "", payload
+
+                elif task.type == TaskType.ENGINEERING_SCRIPT.value:
+                    task_mgr.update_progress(task.task_id, 30, "Initializing Stark Engineering Lab...")
+                    from modules.engineering_lab import EngineeringLab
+                    lab = EngineeringLab()
+                    name = "voice_probe"
+                    lang = "python"
+                    code = "import sys, os\nprint(f'Stark Diagnostic Node: Python {sys.version.split()[0]} | Working dir: {os.getcwd()}')"
+                    
+                    res = lab.run_task(name, lang, code)
+                    debrief_msg = res["debrief"]
+                    raw_results = [{
+                        "title": f"Script: {res.get('filename', 'probe.py')}",
+                        "snippet": debrief_msg,
+                        "url": res.get("filepath", "lab://script"),
+                        "extra": res
+                    }]
+                    task_mgr.add_finding(task.task_id, TaskFinding(
+                        title=raw_results[0]["title"],
+                        url=raw_results[0]["url"],
+                        snippet=raw_results[0]["snippet"],
+                        source="engineering_lab",
+                        extra=res
+                    ))
+                    task_mgr.complete_task(task.task_id, summary=f"Script executed (exit {res.get('exit_code', 0)})")
+                    payload = self.hud_engine.build_structured_payload("Engineering Lab Execution", "ENGINEERING", raw_results, debrief_msg)
+                    try:
+                        from frontend.hud_panel import HUDPanelManager
+                        HUDPanelManager().show_action_hud(title="Stark Engineering Lab", action_type="TERMINAL", details=debrief_msg)
+                    except Exception:
+                        pass
+                    return True, debrief_msg, False, "", payload
+
         # Explicit search fallback
         query = None
         m_explicit = re.search(r'^(?:google\s+search|search\s+google|search\s+the\s+web)\s+(?:for\s+|about\s+|on\s+)?(.+)', text_lower)

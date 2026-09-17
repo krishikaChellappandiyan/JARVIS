@@ -79,11 +79,11 @@ def launch_cli(initial_target: str = None):
     run(initial_target=initial_target)
 
 
-def launch_desktop():
+def launch_desktop(mode: str = "full"):
     try:
         import webview
         from frontend.desktop import JarvisDesktop
-        JarvisDesktop().launch()
+        JarvisDesktop().launch(mode=mode)
     except ImportError as e:
         print(f"[jarvis] Desktop unavailable: {e}")
         print("      Falling back to CLI...\n")
@@ -98,7 +98,9 @@ def main():
     args = sys.argv[1:]
     boot_checks()
 
-    if "--cli" in args or "--tui" in args:
+    if "--hud" in args or "--mini" in args or "--pill" in args or "--voiceos" in args:
+        launch_desktop(mode="hud")
+    elif "--cli" in args or "--tui" in args:
         launch_cli()
     elif args and args[0] in ("investigate", "stalk") and len(args) > 1:
         launch_cli(initial_target=args[1])

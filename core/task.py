@@ -27,6 +27,12 @@ class TaskType(str, Enum):
     TRAFFIC_INTEL = "traffic_intel"
     MAPS_NAV = "maps_nav"
     SYSTEM_DIAGNOSTIC = "system_diagnostic"
+    SYSTEM_CONTROL = "system_control"
+    SITUATIONAL_BRIEFING = "situational_briefing"
+    GIT_INTEL = "git_intel"
+    VISION_INSPECT = "vision_inspect"
+    ENGINEERING_SCRIPT = "engineering_script"
+    AMBIENT_CONFIG = "ambient_config"
     GENERIC_SKILL = "generic_skill"
 
 @dataclass

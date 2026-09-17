@@ -964,8 +964,8 @@ class JarvisVoice:
         config = TTSConfig(
             format="pcm",
             sample_rate=24000,
-            latency="balanced",
-            chunk_length=100,
+            latency="low",
+            chunk_length=50,
             reference_id=self.fish_audio_voice_id,
             prosody=prosody_cfg,
         )

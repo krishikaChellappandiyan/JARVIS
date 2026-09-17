@@ -149,6 +149,94 @@ class AgentRouter:
             )
             return True, "Running full hardware and system diagnostics, Sir.", task, "system_diagnostic"
 
+        # ── 4.6 Check for Situational Briefing ────────────────────
+        if any(kw in text_lower for kw in [
+            "good morning", "situational briefing", "status report", "morning protocol",
+            "executive briefing", "how is the day looking", "how does the day look", "daily briefing"
+        ]):
+            task = self.task_manager.create_task(
+                type_=TaskType.SITUATIONAL_BRIEFING.value,
+                title="Executive Situational Briefing",
+                data={"query": text_strip}
+            )
+            return True, "Compiling executive situational briefing, Sir.", task, "situational_briefing"
+
+        # ── 4.7 Check for System Agency Controls (Volume, Media, Clipboard, Process) ──
+        if any(kw in text_lower for kw in [
+            "volume up", "volume down", "mute", "unmute", "set volume", "turn up the volume",
+            "turn down the volume", "pause music", "resume music", "play music", "next track",
+            "previous track", "stop music", "lock screen", "lock workstation", "lock computer",
+            "clipboard", "top process", "highest cpu", "highest memory", "what's eating memory",
+            "whats eating memory", "kill process", "terminate process"
+        ]):
+            action_type = "volume"
+            if any(w in text_lower for w in ["pause", "resume", "play music", "track", "stop music"]):
+                action_type = "media"
+            elif any(w in text_lower for w in ["lock"]):
+                action_type = "lock"
+            elif any(w in text_lower for w in ["clipboard"]):
+                action_type = "clipboard"
+            elif any(w in text_lower for w in ["process", "cpu", "memory"]):
+                action_type = "process"
+
+            task = self.task_manager.create_task(
+                type_=TaskType.SYSTEM_CONTROL.value,
+                title=f"System Control: {action_type.title()}",
+                data={"action_type": action_type, "command": text_strip}
+            )
+            return True, f"Executing {action_type} system directive, Sir.", task, "system_control"
+
+        # ── 4.8 Check for Git Repository Intelligence ─────────────
+        if any(kw in text_lower for kw in [
+            "git status", "repo status", "git branch", "uncommitted changes",
+            "repository status", "git diff", "git log"
+        ]):
+            task = self.task_manager.create_task(
+                type_=TaskType.GIT_INTEL.value,
+                title="Git Repository Telemetry",
+                data={"query": text_strip}
+            )
+            return True, "Auditing repository telemetry and version control status, Sir.", task, "git_intel"
+
+        # ── 4.9 Check for Desktop Vision & OCR ("Point, Speak, Act") ──
+        if any(kw in text_lower for kw in [
+            "look at my screen", "see my screen", "check my screen", "read my screen",
+            "what's on my screen", "what is on my screen", "what am i looking at",
+            "what am i pointing at", "explain this error", "read this window",
+            "read this code", "look at this", "ocr this", "extract text from screen",
+            "inspect screen", "read pointer", "look at this code", "look at this error"
+        ]):
+            task = self.task_manager.create_task(
+                type_=TaskType.VISION_INSPECT.value,
+                title="Desktop Vision & Cursor Inspection",
+                data={"query": text_strip}
+            )
+            return True, "Deploying Stark Vision Eye and analyzing text under your cursor, Sir.", task, "vision_inspect"
+
+        # ── 4.10 Check for Ambient Sentinel Telemetry ─────────────
+        if any(kw in text_lower for kw in [
+            "quiet mode", "enable quiet mode", "disable quiet mode",
+            "sentinel status", "guardian status", "check vitals", "vitals check"
+        ]):
+            task = self.task_manager.create_task(
+                type_=TaskType.AMBIENT_CONFIG.value,
+                title="Ambient Sentinel Guardian",
+                data={"query": text_strip}
+            )
+            return True, "Accessing Ambient Sentinel configuration and telemetry, Sir.", task, "ambient_config"
+
+        # ── 4.11 Check for Engineering Lab Script Authoring ───────
+        if any(kw in text_lower for kw in [
+            "create script", "write script", "write a python script",
+            "create a python script", "engineering script", "write a script"
+        ]):
+            task = self.task_manager.create_task(
+                type_=TaskType.ENGINEERING_SCRIPT.value,
+                title="Stark Engineering Lab",
+                data={"query": text_strip}
+            )
+            return True, "Initializing Stark Engineering Lab sandbox, Sir.", task, "engineering_script"
+
         # ── 5. Check for System Action (App Launch) ────────────────
         m_app = re.search(r'^(?:open|launch|run|start)\s+(?:application|app|program)?\s*([a-zA-Z0-9_\-\s]+)$', text_lower)
         if m_app:
