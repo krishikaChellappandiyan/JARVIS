@@ -149,8 +149,8 @@ class JarvisCognitiveLoop:
         has_traffic = any(w in text_lower for w in ["traffic", "congestion", "road", "roads", "flow", "jam", "commute", "highway"])
         has_flight = any(w in text_lower for w in ["flight", "flights", "aircraft", "plane", "planes", "radar", "airspace", "ads-b", "adsb", "chase"])
         has_weather = any(w in text_lower for w in ["weather", "forecast", "rain", "temperature", "storm", "wind"])
-        has_search = any(w in text_lower for w in ["search", "google", "look up", "news", "find out"])
         has_cockpit = any(w in text_lower for w in ["cockpit", "chase cam", "lock on", "track plane", "lock onto"])
+        has_search = bool(re.search(r'\b(?:google\s+search|web\s+search|search\s+(?:the\s+web|google|online))\b', text_lower))
 
         if loc_candidate:
             plan_steps.append({

@@ -154,8 +154,18 @@ CRITICAL IDENTITY & PROTOCOLS:
   - User: "check disk space" -> [CMD: df -h]
   - User: "ping cloudflare" -> [CMD: ping -c 3 1.1.1.1]
   CRITICAL: Only emit [CMD: ...] when Sir specifically asks for system/terminal actions. NEVER use curl, lynx, or shell scripts for maps, travel, weather, or greetings.
-- Tactical Intelligence & Telemetry Feeds:
-  You have direct telemetry feeds: live worldwide military airspace tracking (adsb.lol), keyless atmospheric weather (Open-Meteo), live traffic telemetry & GIS mapping (OpenStreetMap & God's Eye View), public CCTV surveillance, and system monitoring.
+- Cognitive Web Intel & Autonomous Search Directive:
+  You possess comprehensive internal knowledge across science, history, geography, technology, culture, and operational strategy.
+  Answer directly from your vast internal knowledge for general questions, explanations, concepts, and trivia without searching.
+  However, if Sir asks for:
+  - Real-time breaking news or current events (today, this week, current year)
+  - Live external data (live sports scores, stock prices, latest release versions)
+  - Obscure, specific external data that is outside your internal training data
+  You can autonomously summon real-time web intelligence by emitting:
+  [SEARCH: <concise search query>]
+  Example:
+  - User: "What is the latest score in today's football match?" -> [SEARCH: football match score today] Pulling up the live telemetry now, Sir.
+  CRITICAL: Do NOT emit [SEARCH: ...] for general knowledge, definitions, history, banter, or local system tasks.
 - Response Guidelines:
   1. Length: Keep conversational responses crisp, punchy, and articulate (1 to 3 sentences) unless an in-depth breakdown is explicitly requested.
   2. Voice & Tone: Dry British wit and understated intelligence. Zero robotic clichés, zero forced profanity.
@@ -1253,8 +1263,8 @@ class JarvisVoice:
             }
 
         # 3. Handle live web search resolution & synthesis
-        # Skip if this is a skill context prompt — search was already executed by desktop.py fast-path
-        has_search_intent = (not _is_skill_context) and (is_search or bool(re.search(r'\b(?:search|google|look\s+up|find\s+info|who\s+is|tell\s+me\s+about)\b', question, re.IGNORECASE)))
+        # Only pre-search if explicitly instructed via search skill command (no greedy regex word matching)
+        has_search_intent = (not _is_skill_context) and is_search
         resolved_search_query = ""
         live_search_intel = ""
         search_panel_payload = {}
@@ -1378,14 +1388,44 @@ class JarvisVoice:
                 tactical["cockpit"] = m_cockpit.group(1).strip()
                 cleaned = re.sub(r'\[\s*COCKPIT\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
 
+            # Detect [SEARCH: <directive>]
+            m_search_dir = re.search(r'\[\s*SEARCH\s*:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
+            if m_search_dir:
+                tactical["search"] = m_search_dir.group(1).strip()
+                cleaned = re.sub(r'\[\s*SEARCH\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
+
             # Residual cleanup to ensure zero leaked tactical directives or brackets reach TTS
-            cleaned = re.sub(r'\[\s*(?:NAV|LAYER|CMD|ZOOM|RADIO|SFX|ANNOTATE|COCKPIT)[^\]]*\]', '', cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r'\[\s*(?:NAV|LAYER|CMD|ZOOM|RADIO|SFX|ANNOTATE|COCKPIT|SEARCH)[^\]]*\]', '', cleaned, flags=re.IGNORECASE)
             cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
             return cleaned, tactical
 
         # Try cloud engines first (NVIDIA → Gemini)
         cloud = self._ask_cloud(prompt, system, max_tokens=max_tok, on_token=on_token, image_path=image_path)
+        primary_text = cloud["text"]
+
+        # Autonomous Cognitive Search Tool Resolution (ReAct turn)
+        if primary_text:
+            m_cog_search = re.search(r'\[\s*SEARCH\s*:\s*([^\]]+)\]', primary_text, re.IGNORECASE)
+            if m_cog_search and not live_search_intel:
+                tool_query = m_cog_search.group(1).strip()
+                print(f"[voice] Cognitive tool invoked by AI model: [SEARCH: '{tool_query}']")
+                intel_summary, raw_results = self.skills.perform_live_search(tool_query)
+                if raw_results:
+                    resolved_search_query = tool_query
+                    search_panel_payload = self.skills.hud_engine.build_structured_payload(
+                        tool_query, "SEARCH", raw_results, intel_summary
+                    )
+                    is_action_popup = True
+                    second_prompt = (
+                        f"{prompt}\n\n[REAL-WORLD LIVE WEB SCAN RESULTS FOR '{tool_query}']:\n{intel_summary}\n\n"
+                        f"[INSTRUCTIONS]: Ground your verbal debrief to Sir in the live search results above. "
+                        f"Deliver an articulate, accurate answer with your characteristic wit. Do NOT emit [SEARCH: ...] again."
+                    )
+                    second_cloud = self._ask_cloud(second_prompt, system, max_tokens=max_tok, on_token=on_token, image_path=image_path)
+                    if second_cloud["text"]:
+                        cloud = second_cloud
+
         if cloud["text"]:
             clean_text, tactical_directives = _process_final_text(cloud["text"])
             self.session_memory.add("user", question)
@@ -1407,10 +1447,32 @@ class JarvisVoice:
                 "sfx_action": tactical_directives.get("sfx"),
                 "annotate_action": tactical_directives.get("annotate"),
                 "cockpit_action": tactical_directives.get("cockpit"),
+                "search_action": tactical_directives.get("search") or resolved_search_query,
             }
 
         # Fall back to local SLM
         slm_res = self._ask_slm(prompt, system, max_tokens=max_tok, timeout=180, num_ctx=8192, on_token=on_token)
+        if slm_res.get("text"):
+            m_cog_search = re.search(r'\[\s*SEARCH\s*:\s*([^\]]+)\]', slm_res["text"], re.IGNORECASE)
+            if m_cog_search and not live_search_intel:
+                tool_query = m_cog_search.group(1).strip()
+                print(f"[voice] Cognitive tool invoked by SLM: [SEARCH: '{tool_query}']")
+                intel_summary, raw_results = self.skills.perform_live_search(tool_query)
+                if raw_results:
+                    resolved_search_query = tool_query
+                    search_panel_payload = self.skills.hud_engine.build_structured_payload(
+                        tool_query, "SEARCH", raw_results, intel_summary
+                    )
+                    is_action_popup = True
+                    second_prompt = (
+                        f"{prompt}\n\n[REAL-WORLD LIVE WEB SCAN RESULTS FOR '{tool_query}']:\n{intel_summary}\n\n"
+                        f"[INSTRUCTIONS]: Ground your verbal debrief to Sir in the live search results above. "
+                        f"Deliver an articulate, accurate answer with your characteristic wit. Do NOT emit [SEARCH: ...] again."
+                    )
+                    second_slm = self._ask_slm(second_prompt, system, max_tokens=max_tok, timeout=180, num_ctx=8192, on_token=on_token)
+                    if second_slm["text"]:
+                        slm_res = second_slm
+
         clean_text, tactical_directives = _process_final_text(slm_res["text"])
         if clean_text:
             self.session_memory.add("user", question)
@@ -1432,6 +1494,7 @@ class JarvisVoice:
             "sfx_action": tactical_directives.get("sfx"),
             "annotate_action": tactical_directives.get("annotate"),
             "cockpit_action": tactical_directives.get("cockpit"),
+            "search_action": tactical_directives.get("search") or resolved_search_query,
         }
 
     def classify_intent(self, text: str, current_target: Target = None) -> dict:

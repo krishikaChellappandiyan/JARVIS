@@ -122,15 +122,12 @@ class AgentRouter:
             )
             return True, f"Executing `{cmd_candidate}` on your system.", task, "terminal_command"
 
-        # ── 4. Check for Google / Web Search ───────────────────────
-        if any(kw in text_lower for kw in ["google", "search", "look up", "latest news", "find out"]):
-            if not any(t_kw in text_lower for t_kw in ["search target", "search case", "target investigation"]):
-                m_g = re.search(r'(?:google\s+search|search\s+google|search|look\s+up|find\s+out|find)\s+(?:for\s+|about\s+|on\s+)?(.+)', text_lower)
-                query = m_g.group(1).strip() if m_g else text_strip
-                query = re.sub(r'^(?:do\s+a|can\s+you|please|search|for|about)\s+', '', query, flags=re.IGNORECASE).strip()
-                if not query:
-                    query = text_strip
-
+        # ── 4. Check for Explicit Web Search Command ────────────────
+        m_explicit_search = re.search(r'^(?:google\s+search|search\s+google|search\s+the\s+web|web\s+search)\s+(?:for\s+|about\s+|on\s+)?(.+)', text_lower)
+        if m_explicit_search:
+            query = m_explicit_search.group(1).strip()
+            query = re.sub(r'^(?:do\s+a|can\s+you|please|for|about)\s+', '', query, flags=re.IGNORECASE).strip()
+            if query:
                 task = self.task_manager.create_task(
                     type_=TaskType.GOOGLE_SEARCH.value,
                     title=f"Google Search: {query}",

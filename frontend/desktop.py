@@ -2642,7 +2642,7 @@ class JarvisAPI:
 
     @staticmethod
     def normalize_wav_audio(wav_path: str, target_peak: int = 24000) -> bool:
-        """Normalize 16-bit PCM WAV to target peak volume for crystal-clear STT."""
+        """Normalize 16-bit PCM WAV with 80Hz high-pass filter and soft noise gate for crystal-clear STT."""
         try:
             if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 44:
                 return False
@@ -2652,19 +2652,45 @@ class JarvisAPI:
             if not raw:
                 return False
             count = len(raw) // 2
-            shorts = struct.unpack(f"<{count}h", raw)
-            max_val = max(abs(s) for s in shorts) if shorts else 0
-            if max_val < 650:
-                # Disregard background silence / ambient room hum (do not amplify pure noise)
+            shorts = list(struct.unpack(f"<{count}h", raw))
+            if not shorts:
                 return False
+
+            # 1. 80Hz 1st-order high-pass filter (strips AC mains 50/60Hz hum, fan rumble, and DC offset)
+            # alpha = RC / (RC + dt), for fc=80Hz at 16kHz sampling rate -> alpha ~ 0.9695
+            alpha = 0.9695
+            filtered = [0.0] * count
+            prev_x = float(shorts[0])
+            prev_y = 0.0
+            for i in range(count):
+                curr_x = float(shorts[i])
+                curr_y = alpha * (prev_y + curr_x - prev_x)
+                filtered[i] = curr_y
+                prev_x = curr_x
+                prev_y = curr_y
+
+            # 2. Reject background silence / ambient room hum (do not amplify pure noise)
+            max_val = max(abs(s) for s in filtered)
+            if max_val < 600:
+                return False
+
             gain = min(25.0, float(target_peak) / float(max_val))
             if gain > 1.05:
-                boosted = [int(max(-32768, min(32767, s * gain))) for s in shorts]
+                # 3. Soft noise gate: gently attenuate very quiet acoustic floor under 180 (pre-gain)
+                boosted = []
+                for s in filtered:
+                    abs_s = abs(s)
+                    if abs_s < 180:
+                        val = int(s * 0.25 * gain)
+                    else:
+                        val = int(s * gain)
+                    boosted.append(max(-32768, min(32767, val)))
+
                 boosted_raw = struct.pack(f"<{count}h", *boosted)
                 with wave.open(wav_path, "wb") as wf:
                     wf.setparams(params)
                     wf.writeframes(boosted_raw)
-                print(f"[audio] Normalized audio: gain {gain:.1f}x applied (peak: {max_val} -> {target_peak})")
+                print(f"[audio] Normalized audio: 80Hz HPF applied, gain {gain:.1f}x (peak: {int(max_val)} -> {target_peak})")
             return True
         except Exception as e:
             print(f"[audio] Normalization notice: {e}")
@@ -2913,10 +2939,10 @@ class JarvisAPI:
 
         # PyAudio chunk is 1280 samples (2560 bytes) = 80ms @ 16kHz
         cfg_pipeline = getattr(self, '_cfg', {}).get("audio_pipeline", {}) if hasattr(self, '_cfg') else {}
-        hangover_ms = cfg_pipeline.get("speech_hangover_ms", 800)
-        silence_hangover_chunks = max(4, hangover_ms // 80)     # ~800ms trailing pause for prompt response
-        max_turn_chunks = 125            # 10s safety ceiling
-        pre_roll_limit = 10              # 800ms preserves the first syllable
+        hangover_ms = cfg_pipeline.get("speech_hangover_ms", 1800)
+        silence_hangover_chunks = max(12, hangover_ms // 80)     # ~1800ms trailing pause for natural pauses
+        max_turn_chunks = 140            # ~11s safety ceiling
+        pre_roll_limit = 12              # ~960ms preserves the first syllable
 
         try:
             while getattr(self, '_bg_voice_active', False):
@@ -3042,6 +3068,27 @@ class JarvisAPI:
             text = self._transcribe_audio_fast(wav_path)
 
             if text:
+                # 1.5 Utterance continuity / trailing connector check
+                prev_frag = getattr(self, '_pending_speech_fragment', None)
+                prev_frag_time = getattr(self, '_pending_speech_time', 0.0)
+                if prev_frag and (time.time() - prev_frag_time < 3.5):
+                    text = f"{prev_frag} {text}".strip()
+                    self._pending_speech_fragment = None
+                    self._pending_speech_time = 0.0
+                    print(f"[voice listener] Stitched multi-part utterance: '{text}'")
+
+                # Check if the transcribed text ends with an incomplete connector or trailing thought
+                incomplete_connectors = r'\b(?:a|an|the|not|and|or|is|are|to|about|like|for|with|in|at|of|actually|not\s+a)\s*$'
+                if re.search(incomplete_connectors, text, re.IGNORECASE) and len(text.split()) < 15:
+                    print(f"[voice listener] Trailing connector detected in '{text}'. Holding window for continuation...")
+                    self._pending_speech_fragment = text
+                    self._pending_speech_time = time.time()
+                    self._emit("jarvis_speech_ended", {})
+                    return
+                else:
+                    self._pending_speech_fragment = None
+                    self._pending_speech_time = 0.0
+
                 print(f"[voice listener] Recognized text in {time.time()-start_stt:.2f}s: '{text}'")
 
                 # 2. Filter out self-echo (mic picking up J.A.R.V.I.S.'s own voice)

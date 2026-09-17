@@ -422,19 +422,11 @@ class SystemSkillEngine:
                     task_mgr.complete_task(task.task_id, summary=f"CCTV optical layers online")
                     return False, debrief_msg, False, "", {}
 
-        # Fallback to existing skill branches
+        # Explicit search fallback
         query = None
-        if any(kw in text_lower for kw in ["google search", "search google", "google", "search", "latest news", "look up"]):
-            if not any(t_kw in text_lower for t_kw in ["search target", "search case", "target investigation"]):
-                if "latest news" in text_lower or "top news" in text_lower or "news" in text_lower:
-                    m_topic = re.search(r'(?:news\s+(?:about|on|for)|latest\s+news\s+on)\s+(.+)', text_lower)
-                    query = m_topic.group(1).strip() if m_topic else "latest news"
-                else:
-                    m = re.search(r'(?:google\s+search|search\s+google|search|look\s+up)\s+(?:for\s+|about\s+|on\s+|and\s+see\s+)?(.+)', text_lower)
-                    if m:
-                        query = m.group(1).strip()
-                    else:
-                        query = text.strip()
+        m_explicit = re.search(r'^(?:google\s+search|search\s+google|search\s+the\s+web)\s+(?:for\s+|about\s+|on\s+)?(.+)', text_lower)
+        if m_explicit:
+            query = m_explicit.group(1).strip()
 
         if query:
             clean_query = re.sub(r'^(?:do\s+some|can\s+you|please|for|about|is|what|doing|see|find|on)\s+', '', query, flags=re.IGNORECASE).strip()
