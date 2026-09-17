@@ -29,7 +29,7 @@
   <img src="https://img.shields.io/badge/AI--Powered-NVIDIA%20%7C%20Groq%20%7C%20Gemini%20%7C%20Ollama-red?style=flat-square" alt="AI Support"/>
   <img src="https://img.shields.io/badge/Geointel-Cesium%20%7C%20NASA%20FIRMS%20%7C%20ADS--B-orange?style=flat-square" alt="Geointel"/>
   <img src="https://img.shields.io/badge/Voice-Fish%20Audio%20%7C%20Local%20Clone-brightgreen?style=flat-square" alt="Voice Synthesis"/>
-  <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-lightgrey?style=flat-square" alt="Platform"/>
+  <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey?style=flat-square" alt="Platform"/>
   <img src="https://img.shields.io/badge/License-GPLv3-blue?style=flat-square" alt="License"/>
 </p>
 
@@ -239,7 +239,7 @@ J.A.R.V.I.S. features high-fidelity, low-latency conversational speech powered b
 ## Installation & Setup
 
 ### 1. Requirements & Prerequisites
-- **Operating System**: Linux (Ubuntu, Debian, Kali, Arch), macOS.
+- **Operating System**: Linux (Ubuntu, Debian, Kali, Arch), macOS, Windows 10/11.
 - **Python**: Version 3.10 or higher.
 - **Dependencies**: `ffmpeg`, `espeak-ng` (optional for local voice dataset generation).
 
@@ -267,6 +267,31 @@ chmod +x install.sh
 ```bash
 source ~/.bashrc   # or source ~/.zshrc
 ```
+
+#### Option C: Windows (PowerShell)
+```powershell
+git clone https://github.com/project-hellhound-org/JARVIS.git
+cd JARVIS
+
+# Create virtual environment
+python -m venv jarvis-env
+.\jarvis-env\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -e .
+pip install sherlock-project maigret holehe
+
+# Copy config template
+copy config.yaml.example config.yaml
+
+# Launch J.A.R.V.I.S.
+python jarvis.py          # Desktop GUI
+python jarvis.py --cli    # Terminal mode
+```
+
+> [!NOTE]
+> On Windows, use `python jarvis.py` instead of the `jarvis` command. The `jarvis` global command wrapper is Linux/macOS only (installed by `install.sh`).
+> For convenience, you can create a batch file or PowerShell alias to avoid typing the full command each time.
 
 The automated installer will:
 - Set up an isolated Python environment (`jarvis-env`).

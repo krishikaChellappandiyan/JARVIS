@@ -7,6 +7,7 @@ import re
 import base64
 import httpx
 import subprocess
+import threading
 from pathlib import Path
 
 try:
@@ -338,6 +339,41 @@ class JarvisVoice:
         self.investigator_prompt_template = JARVIS_INVESTIGATOR_PROMPT_TEMPLATE
         self.monologue_prompt = JARVIS_MONOLOGUE_PROMPT
         print(f"[jarvis_voice] Active Persona: J.A.R.V.I.S. — Tactical Intelligence Officer")
+
+        # Full-Duplex Instant Barge-In tracking
+        self._current_player_proc = None
+        self._interrupted = threading.Event()
+        self._playback_lock = threading.Lock()
+
+    def interrupt(self) -> bool:
+        """
+        Instant full-duplex barge-in: immediately halts any active audio playback (<50ms)
+        and signals any streaming generators to abort.
+        """
+        self._interrupted.set()
+        halted = False
+        with self._playback_lock:
+            if self._current_player_proc is not None:
+                try:
+                    self._current_player_proc.terminate()
+                    try:
+                        self._current_player_proc.wait(timeout=0.03)
+                    except Exception:
+                        self._current_player_proc.kill()
+                    halted = True
+                except Exception as e:
+                    print(f"[jarvis_voice] Process termination notice: {e}")
+                finally:
+                    self._current_player_proc = None
+
+        return halted
+
+    def is_speaking(self) -> bool:
+        """Check whether audio is currently playing."""
+        with self._playback_lock:
+            if self._current_player_proc is not None:
+                return self._current_player_proc.poll() is None
+        return False
 
     def _load_config(self) -> dict:
         """Load full config.yaml as dict."""
@@ -986,6 +1022,8 @@ class JarvisVoice:
 
                 audio_stream = self._fish_stream_client.tts.stream_websocket(text_stream(), **kwargs)
                 for chunk in audio_stream:
+                    if self._interrupted.is_set():
+                        break
                     if chunk:
                         yield chunk, 24000
                 return  # success
@@ -1118,12 +1156,15 @@ class JarvisVoice:
         return f"data:{mime};base64,{b64}"
 
     def speak(self, text: str) -> None:
-        """Synthesizes and immediately plays audio on system speakers."""
+        """Synthesizes and immediately plays audio on system speakers with instant barge-in support."""
         if not text:
             return
+        self._interrupted.clear()
         audio_bytes = self.narrate(text)
-        if not audio_bytes:
+        if not audio_bytes or self._interrupted.is_set():
             return
+
+        temp_path = None
         try:
             import subprocess
             import tempfile
@@ -1132,23 +1173,52 @@ class JarvisVoice:
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
                 f.write(audio_bytes)
                 temp_path = f.name
+
             players = ["mpv", "ffplay", "paplay", "aplay"]
+            selected_cmd = None
             for player in players:
                 if shutil.which(player):
                     if player == "ffplay":
-                        cmd = [player, "-nodisp", "-autoexit", "-loglevel", "quiet", temp_path]
+                        selected_cmd = [player, "-nodisp", "-autoexit", "-loglevel", "quiet", temp_path]
                     elif player == "mpv":
-                        cmd = [player, "--no-video", "--really-quiet", temp_path]
+                        selected_cmd = [player, "--no-video", "--really-quiet", temp_path]
                     else:
-                        cmd = [player, temp_path]
-                    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        selected_cmd = [player, temp_path]
                     break
-            try:
-                os.remove(temp_path)
-            except Exception:
-                pass
+
+            if selected_cmd and not self._interrupted.is_set():
+                with self._playback_lock:
+                    self._current_player_proc = subprocess.Popen(
+                        selected_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    )
+
+                # Poll process while staying responsive to barge-in interrupt
+                while self._current_player_proc and self._current_player_proc.poll() is None:
+                    if self._interrupted.is_set():
+                        with self._playback_lock:
+                            if self._current_player_proc:
+                                try:
+                                    self._current_player_proc.terminate()
+                                    self._current_player_proc.wait(timeout=0.03)
+                                except Exception:
+                                    try:
+                                        self._current_player_proc.kill()
+                                    except Exception:
+                                        pass
+                                self._current_player_proc = None
+                        break
+                    time.sleep(0.02)
+
+                with self._playback_lock:
+                    self._current_player_proc = None
         except Exception as e:
             print(f"[jarvis_voice] speak error: {e}")
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
 
     # ── Public interface ──────────────────────────────────────
 

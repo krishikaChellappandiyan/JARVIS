@@ -78,21 +78,21 @@ config.yaml
 *.env
 config.yaml
 *_secret*
-*_key*
 api_keys*
 
 # Backup files & temporary local data
 *.zip
 data/
-memory/
 scratch/
 
-# Development, testing & internal training scripts
+# Memory store data (not source code)
+memory/chroma_db/
+memory/*.json
+
+# Internal development & testing
 tests/
 test/
 scripts/
-*.md
-!README.md
 
 node_modules/
 frontend/app.html.bak
