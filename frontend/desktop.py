@@ -621,6 +621,14 @@ class JarvisAPI:
         self._follow_up_active = False
         self._follow_up_expires = 0.0
 
+        # Proactive Reminder & Timer Service
+        try:
+            from modules.reminder_service import ReminderService
+            self._reminder_service = ReminderService.get_instance()
+            self._reminder_service.voice_notifier = lambda msg: self._speak_and_suppress_echo(msg)
+        except Exception as e:
+            print(f"[desktop] Notice initializing reminder service: {e}")
+
         # Async Background Initialization for Instant App Launch (<0.2s)
         self._wake_engine = None
         threading.Thread(target=self._async_init_wake_engine, daemon=True).start()
@@ -689,11 +697,11 @@ class JarvisAPI:
         self._emit("jarvis_followup_listening_ended", {})
 
     def _on_wake_word_detected(self, phrase: str):
-        if time.time() < getattr(self, '_tts_playback_until', 0.0):
-            print(f"[desktop] openWakeWord triggered ('{phrase}') during active TTS playback — suppressed to prevent acoustic echo loop.")
-            return
-        print(f"[desktop] openWakeWord triggered ('{phrase}'). Opening STT command capture window.")
         now = time.time()
+        if now < getattr(self, '_tts_playback_until', 0.0) or getattr(self, '_current_tts_proc', None) is not None:
+            print(f"[desktop] Conversational Barge-In! Wake word '{phrase}' triggered during active speech. Halting playback immediately.")
+            self.cancel_playback()
+        print(f"[desktop] openWakeWord triggered ('{phrase}'). Opening STT command capture window.")
         self._wake_window_expires = now + 20.0
         self._emit("jarvis_wake_word_detected", {"raw": phrase, "clean": ""})
 
@@ -1245,11 +1253,31 @@ class JarvisAPI:
                 self._emit("jarvis_play_sfx", {"effect": "speech_ready"})
                 self._run_ask(f"[DIRECTIVE: Sir commanded to switch to the top-center HUD notch. Address Sir directly as J.A.R.V.I.S., confirming the transition with understated elegance.]\nUser: {text}")
                 return
-            elif any(p in t_lower for p in ("switch to god's eye", "switch to gods eye", "expand to god's eye", "expand to gods eye", "full console", "expand console", "full screen", "tactical console", "restore console", "expand window")):
-                print("[desktop] Switching window mode to full God's Eye console via voice command.")
+            elif any(p in t_lower for p in ("switch to full console", "expand console", "full screen", "tactical console", "restore console", "expand window", "full mode", "switch to full")):
+                print("[desktop] Switching window mode to full tactical console via voice command.")
                 self.set_window_mode("full")
                 self._emit("jarvis_play_sfx", {"effect": "speech_ready"})
-                self._run_ask(f"[DIRECTIVE: Sir commanded to expand to the full God's Eye tactical console. Address Sir directly as J.A.R.V.I.S., confirming the globe and telemetry restoration with crisp wit.]\nUser: {text}")
+                self._run_ask(f"[DIRECTIVE: Sir commanded to expand to the full tactical console. Address Sir directly as J.A.R.V.I.S., confirming the console expansion with crisp wit.]\nUser: {text}")
+                return
+
+            # Spatial Stage Screen Navigation Commands (Screen 1: Cold Room, Screen 2: Tactical HUD, Screen 3: World Telemetry)
+            if any(p in t_lower for p in ("switch to cold room", "go to cold room", "open cold room", "show cold room", "cold room screen", "the cold room", "glance cold room")):
+                print("[desktop] Navigating spatial camera to The Cold Room (Screen 1).")
+                self._emit("glide_to_coldroom", {})
+                self._emit("jarvis_play_sfx", {"effect": "target_lock"})
+                self._run_ask(f"[DIRECTIVE: Sir requested to glide to The Cold Room (Screen 1). Confirm with crisp J.A.R.V.I.S. wit that the OSINT investigation chamber and correlation graph are in focus.]\nUser: {text}")
+                return
+            elif any(p in t_lower for p in ("switch to tactical hud", "tactical hud", "main hud", "return to hud", "center hud", "hud screen", "switch to main screen")):
+                print("[desktop] Navigating spatial camera to Tactical HUD (Screen 2).")
+                self._emit("glide_to_hud", {})
+                self._emit("jarvis_play_sfx", {"effect": "speech_ready"})
+                self._run_ask(f"[DIRECTIVE: Sir requested to return to the Tactical HUD (Screen 2). Confirm with calm elegance that the primary HUD core is centered.]\nUser: {text}")
+                return
+            elif any(p in t_lower for p in ("switch to world telemetry", "world telemetry", "switch to telemetry", "show telemetry", "telemetry screen", "globe screen", "switch to globe", "show 3d earth", "switch to god's eye", "switch to gods eye", "expand to god's eye")):
+                print("[desktop] Navigating spatial camera to World Telemetry (Screen 3).")
+                self._emit("glide_to_telemetry", {})
+                self._emit("jarvis_play_sfx", {"effect": "target_lock"})
+                self._run_ask(f"[DIRECTIVE: Sir requested to glide to World Telemetry (Screen 3). Confirm with crisp J.A.R.V.I.S. cadence that 3D planetary telemetry and multi-domain surveillance are active.]\nUser: {text}")
                 return
 
             # Fast-path check: location and navigation commands trigger 3D Globe camera glide
@@ -1550,7 +1578,19 @@ class JarvisAPI:
                 # Filter out placeholder values so the form shows empty instead
                 def clean(key, default=""):
                     val = config.get(key, default)
-                    return "" if self._is_placeholder(val) else val
+                    if not val or not isinstance(val, str):
+                        return default
+                    val = val.strip()
+                    if self._is_placeholder(val):
+                        return ""
+                    if key == "cesium_ion_token":
+                        if len(val) < 25 or any(bad in val for bad in ("JTR", "Heedf2", "Heekf2", "eeedf8c4", "JDplkKPW", "7ae64e45")):
+                            return ""
+                    return val
+
+                cesium_env = os.environ.get("CESIUM_ION_TOKEN", "").strip()
+                if any(bad in cesium_env for bad in ("JTR", "Heedf2", "Heekf2", "eeedf8c4", "JDplkKPW", "7ae64e45")):
+                    cesium_env = ""
 
                 return {
                     "model": config.get("model", ""),
@@ -1560,7 +1600,7 @@ class JarvisAPI:
                     "nvidia_model": config.get("nvidia_model", "nvidia/nemotron-3-super-120b-a12b"),
                     "fish_audio_api_key": clean("fish_audio_api_key") or os.environ.get("FISH_AUDIO_API_KEY", ""),
                     "fish_audio_voice_id": config.get("fish_audio_voice_id", "05b36da8574341d0803391491850db20"),
-                    "cesium_ion_token": clean("cesium_ion_token") or os.environ.get("CESIUM_ION_TOKEN", ""),
+                    "cesium_ion_token": clean("cesium_ion_token") or cesium_env,
                     "nasa_firms_key": clean("nasa_firms_key") or os.environ.get("NASA_FIRMS_MAP_KEY", "") or os.environ.get("FIRMS_MAP_KEY", ""),
                     "groq_api_key": clean("groq_api_key") or os.environ.get("GROQ_API_KEY", ""),
                     "tools": config.get("tools", {}),
@@ -1637,31 +1677,86 @@ class JarvisAPI:
         return "Cache cleared."
 
     def get_adsb_flights(self, feed: str = "mil") -> dict:
-        """Fetch real-time ADS-B flight radar contacts via Python backend to eliminate browser CORS blocks."""
-        feed_clean = "mil" if feed == "mil" else "all"
-        urls = [
-            f"https://api.adsb.lol/v2/{feed_clean}",
-            f"https://api.airplanes.live/v2/{feed_clean}",
-        ]
-        for u in urls:
-            try:
-                req = urllib.request.Request(
-                    u,
-                    headers={
-                        "User-Agent": "JARVIS-Defense-Radar/2.0 (Tactical Recon)",
-                        "Accept": "application/json",
-                    }
-                )
-                with urllib.request.urlopen(req, timeout=6) as resp:
-                    if resp.status == 200:
-                        data = json.loads(resp.read().decode("utf-8"))
-                        if "ac" in data and len(data["ac"]) > 0:
-                            return data
-            except Exception:
-                continue
+        """Fetch real-time ADS-B flight radar contacts via Python backend to eliminate browser CORS blocks.
+        Supports:
+          - 'mil': Military registered aircraft (/v2/mil)
+          - 'pia': Privacy ICAO Address aircraft (/v2/pia)
+          - 'ladd': FAA Limiting Aircraft Data Displayed (/v2/ladd)
+          - 'emergency': Squawk 7700 general emergencies (/v2/sqk/7700)
+          - 'all': Unified multi-category reconnaissance aggregating mil, pia, ladd & emergency
+        """
+        feed_type = (feed or "mil").strip().lower()
 
+        def _fetch_endpoint(ep_path: str, cat_tag: str) -> list:
+            urls = [
+                f"https://api.airplanes.live/v2/{ep_path}",
+                f"https://api.adsb.lol/v2/{ep_path}",
+            ]
+            for u in urls:
+                try:
+                    req = urllib.request.Request(
+                        u,
+                        headers={
+                            "User-Agent": "JARVIS-Airspace-Radar/2.0 (Tactical God's Eye)",
+                            "Accept": "application/json",
+                        }
+                    )
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        if resp.status == 200:
+                            data = json.loads(resp.read().decode("utf-8"))
+                            contacts = data.get("ac") or []
+                            if contacts:
+                                for c in contacts:
+                                    if "feed_category" not in c:
+                                        c["feed_category"] = cat_tag
+                                return contacts
+                except Exception:
+                    continue
+            return []
+
+        all_ac = []
+        if feed_type == "all":
+            endpoints = [("mil", "mil"), ("pia", "pia"), ("ladd", "ladd"), ("sqk/7700", "emergency")]
+            for ep, cat in endpoints:
+                res = _fetch_endpoint(ep, cat)
+                if res:
+                    all_ac.extend(res)
+        elif feed_type in ("pia", "ladd"):
+            all_ac = _fetch_endpoint(feed_type, feed_type)
+        elif feed_type in ("emergency", "7700", "sqk"):
+            all_ac = _fetch_endpoint("sqk/7700", "emergency")
+        else:
+            all_ac = _fetch_endpoint("mil", "mil")
+
+        if all_ac:
+            seen = set()
+            unique_ac = []
+            for ac in all_ac:
+                h = ac.get("hex")
+                if h and h in seen:
+                    continue
+                if h:
+                    seen.add(h)
+                unique_ac.append(ac)
+            return {"ac": unique_ac}
+
+        # Offline contingency fixtures per feed type
         try:
-            from modules.flight_intel import OFFLINE_MIL_FIXTURES
+            from modules.flight_intel import (
+                OFFLINE_ALL_FIXTURES,
+                OFFLINE_MIL_FIXTURES,
+                OFFLINE_PIA_FIXTURES,
+                OFFLINE_LADD_FIXTURES,
+                OFFLINE_EMERGENCY_FIXTURES,
+            )
+            if feed_type == "all":
+                return {"ac": OFFLINE_ALL_FIXTURES}
+            if feed_type == "pia":
+                return {"ac": OFFLINE_PIA_FIXTURES}
+            if feed_type == "ladd":
+                return {"ac": OFFLINE_LADD_FIXTURES}
+            if feed_type in ("emergency", "7700", "sqk"):
+                return {"ac": OFFLINE_EMERGENCY_FIXTURES}
             return {"ac": OFFLINE_MIL_FIXTURES}
         except Exception:
             return {"ac": []}
@@ -2032,13 +2127,7 @@ class JarvisAPI:
 
     def interrupt_speech(self):
         """Barge-in: invalidate all older TTS turns immediately and kill active native audio."""
-        self._tts_playback_until = 0.0
-        if hasattr(self, '_current_tts_proc') and self._current_tts_proc:
-            try:
-                self._current_tts_proc.terminate()
-            except Exception:
-                pass
-            self._current_tts_proc = None
+        return self.cancel_playback()
 
     def _speak_and_suppress_echo(self, text: str):
         """Speak text via voice engine while registering it for self-echo suppression and setting TTS playback mute."""
@@ -2296,7 +2385,7 @@ class JarvisAPI:
             self._emit("error", {"message": "Who do you want me to look into? I need a clear target."})
             return
 
-        self._emit("scan_status", {"message": f"Target locked: {target_str}"})
+        self._emit("scan_status", {"message": f"Target locked: {target_str}", "target": target_str})
 
         # Extract brief from context beyond the target
         # If the user typed "investigate johndoe — they worked at Acme Corp"
@@ -3213,9 +3302,16 @@ class JarvisAPI:
         """Immediately abort active TTS audio playback (instant barge-in)."""
         self._tts_playback_until = 0.0
         self._emit("jarvis_stop_pcm", {})
+        self._emit("jarvis_interrupt_speech", {})
+        if hasattr(self, '_voice') and self._voice:
+            try:
+                self._voice.interrupt()
+            except Exception:
+                pass
         if getattr(self, '_current_tts_proc', None) is not None:
             try:
                 self._current_tts_proc.terminate()
+                self._current_tts_proc.kill()
             except Exception:
                 pass
             self._current_tts_proc = None
@@ -3242,7 +3338,7 @@ class JarvisAPI:
                 cmd = ["mpg123", "-q", tmp_wav]
 
             if cmd:
-                subprocess.Popen(cmd)
+                self._current_tts_proc = subprocess.Popen(cmd)
                 approx_dur = max(1.0, len(raw_pcm) / (sample_rate * 2))
                 self._tts_playback_until = time.time() + approx_dur
         except Exception as e:

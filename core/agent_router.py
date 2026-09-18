@@ -237,6 +237,22 @@ class AgentRouter:
             )
             return True, "Initializing Stark Engineering Lab sandbox, Sir.", task, "engineering_script"
 
+        # ── 4.12 Check for Proactive Reminders & Timers ───────────
+        if any(kw in text_lower for kw in [
+            "set a timer", "set timer", "start a timer", "start timer",
+            "countdown", "remind me", "set a reminder", "set reminder",
+            "list reminders", "show reminders", "my reminders", "what are my reminders",
+            "list timers", "show timers", "my timers", "what are my timers",
+            "active timers", "active reminders", "any timers", "any reminders",
+            "cancel timer", "cancel reminder", "clear timers", "stop timer"
+        ]) or re.search(r'^(?:timer|reminder)\b', text_lower):
+            task = self.task_manager.create_task(
+                type_=TaskType.REMINDER_TIMER.value,
+                title="Proactive Reminder & Timer",
+                data={"query": text_strip}
+            )
+            return True, "Configuring tactical reminder protocol, Sir.", task, "reminder_timer"
+
         # ── 5. Check for System Action (App Launch) ────────────────
         m_app = re.search(r'^(?:open|launch|run|start)\s+(?:application|app|program)?\s*([a-zA-Z0-9_\-\s]+)$', text_lower)
         if m_app:

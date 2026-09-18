@@ -83,9 +83,169 @@ OFFLINE_MIL_FIXTURES = [
         'track': 88.0,
         'squawk': '7001',
         'category': 'Electronic Reconnaissance',
+        'feed_category': 'mil',
+        'mil': 1,
         'source': 'offline_contingency'
     }
 ]
+
+# Privacy ICAO Address (PIA) fixtures (Brown / Dark Amber tactical visualization)
+OFFLINE_PIA_FIXTURES = [
+    {
+        'hex': 'a209b1',
+        'flight': 'PRIV-44',
+        'r': 'N128PA',
+        't': 'GLF6',
+        'desc': 'GULFSTREAM G650ER (PIA ENCRYPTED)',
+        'lat': 41.2510,
+        'lon': -73.6520,
+        'alt_baro': 43000,
+        'gs': 488.0,
+        'track': 240.0,
+        'squawk': '4102',
+        'feed_category': 'pia',
+        'pia': 1,
+        'category': 'PIA Privacy Transponder',
+        'source': 'offline_contingency'
+    },
+    {
+        'hex': 'a5582f',
+        'flight': 'STEALTH-9',
+        'r': 'N552PX',
+        't': 'GLEX',
+        'desc': 'BOMBARDIER GLOBAL 7500 (PIA PRIVACY)',
+        'lat': 34.0200,
+        'lon': -118.4500,
+        'alt_baro': 47000,
+        'gs': 512.0,
+        'track': 310.0,
+        'squawk': '5120',
+        'feed_category': 'pia',
+        'pia': 1,
+        'category': 'PIA Privacy Transponder',
+        'source': 'offline_contingency'
+    },
+    {
+        'hex': '40781a',
+        'flight': 'GHOST-01',
+        'r': 'G-OPRA',
+        't': 'F900',
+        'desc': 'DASSAULT FALCON 900LX (PIA ANONYMOUS)',
+        'lat': 51.1537,
+        'lon': -0.1821,
+        'alt_baro': 39000,
+        'gs': 465.0,
+        'track': 125.0,
+        'squawk': '6211',
+        'feed_category': 'pia',
+        'pia': 1,
+        'category': 'PIA Privacy Transponder',
+        'source': 'offline_contingency'
+    }
+]
+
+# FAA Limiting Aircraft Data Displayed (LADD) fixtures (Deep Amber / Leather Brown visualization)
+OFFLINE_LADD_FIXTURES = [
+    {
+        'hex': 'a9103c',
+        'flight': 'LADD-82',
+        'r': 'N882BL',
+        't': 'C750',
+        'desc': 'CESSNA CITATION X+ (FAA LADD BLOCKED)',
+        'lat': 39.8561,
+        'lon': -104.6737,
+        'alt_baro': 45000,
+        'gs': 525.0,
+        'track': 175.0,
+        'squawk': '3200',
+        'feed_category': 'ladd',
+        'ladd': 1,
+        'category': 'FAA LADD Restricted',
+        'source': 'offline_contingency'
+    },
+    {
+        'hex': 'a7719d',
+        'flight': 'EXECUTIVE-1',
+        'r': 'N701EX',
+        't': 'CL60',
+        'desc': 'CHALLENGER 650 (LADD PROTECTED)',
+        'lat': 25.7959,
+        'lon': -80.2870,
+        'alt_baro': 37000,
+        'gs': 470.0,
+        'track': 45.0,
+        'squawk': '2214',
+        'feed_category': 'ladd',
+        'ladd': 1,
+        'category': 'FAA LADD Restricted',
+        'source': 'offline_contingency'
+    }
+]
+
+# Emergency Squawk fixtures (Pulsing Alert Red visualization)
+OFFLINE_EMERGENCY_FIXTURES = [
+    {
+        'hex': '4ca218',
+        'flight': 'MAYDAY77',
+        'r': 'EI-EMG',
+        't': 'B738',
+        'desc': 'BOEING 737-800 [GENERAL EMERGENCY SQUAWK 7700]',
+        'lat': 53.4264,
+        'lon': -6.2499,
+        'alt_baro': 9800,
+        'gs': 280.0,
+        'track': 90.0,
+        'squawk': '7700',
+        'feed_category': 'emergency',
+        'category': 'EMERGENCY SQUAWK 7700',
+        'source': 'offline_contingency'
+    }
+]
+
+# Commercial Airliner fixtures (Cyan / Sky Blue visualization)
+OFFLINE_COMMERCIAL_FIXTURES = [
+    {
+        'hex': '80041a',
+        'flight': 'AIC101',
+        'r': 'VT-EXG',
+        't': 'B77W',
+        'desc': 'AIR INDIA BOEING 777-300ER',
+        'lat': 28.5562,
+        'lon': 77.1000,
+        'alt_baro': 36000,
+        'gs': 490.0,
+        'track': 280.0,
+        'squawk': '1410',
+        'feed_category': 'commercial',
+        'category': 'Commercial Air Transport',
+        'source': 'offline_contingency'
+    },
+    {
+        'hex': 'a194bc',
+        'flight': 'UAL882',
+        'r': 'N27901',
+        't': 'B789',
+        'desc': 'UNITED AIRLINES BOEING 787-9 DREAMLINER',
+        'lat': 37.6188,
+        'lon': -122.3750,
+        'alt_baro': 38000,
+        'gs': 505.0,
+        'track': 250.0,
+        'squawk': '4231',
+        'feed_category': 'commercial',
+        'category': 'Commercial Air Transport',
+        'source': 'offline_contingency'
+    }
+]
+
+OFFLINE_ALL_FIXTURES = (
+    OFFLINE_MIL_FIXTURES +
+    OFFLINE_PIA_FIXTURES +
+    OFFLINE_LADD_FIXTURES +
+    OFFLINE_EMERGENCY_FIXTURES +
+    OFFLINE_COMMERCIAL_FIXTURES
+)
+
 
 class FlightIntelEngine:
     """

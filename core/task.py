@@ -33,6 +33,7 @@ class TaskType(str, Enum):
     VISION_INSPECT = "vision_inspect"
     ENGINEERING_SCRIPT = "engineering_script"
     AMBIENT_CONFIG = "ambient_config"
+    REMINDER_TIMER = "reminder_timer"
     GENERIC_SKILL = "generic_skill"
 
 @dataclass

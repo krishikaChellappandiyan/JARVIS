@@ -646,6 +646,84 @@ class SystemSkillEngine:
                         pass
                     return True, debrief_msg, False, "", payload
 
+                elif task.type == TaskType.REMINDER_TIMER.value:
+                    task_mgr.update_progress(task.task_id, 30, "Configuring tactical reminder...")
+                    import time
+                    from datetime import datetime
+                    from modules.reminder_service import ReminderService
+                    rem_svc = ReminderService.get_instance()
+                    cmd_q = task.data.get("query", text).strip()
+                    cmd_lower = cmd_q.lower()
+
+                    if any(w in cmd_lower for w in ["cancel", "clear", "stop", "dismiss"]):
+                        cancelled = rem_svc.cancel()
+                        if cancelled:
+                            debrief_msg = "Tactical timer cancelled successfully, Sir."
+                        else:
+                            debrief_msg = "No active countdown timers found to cancel, Sir."
+                        raw_results = [{"title": "Timer Cancelled", "snippet": debrief_msg, "url": "timer://cancel"}]
+                    elif any(w in cmd_lower for w in ["list", "show", "my reminders", "what are my", "status"]):
+                        active = rem_svc.get_active()
+                        if active:
+                            items_summary = "; ".join([f"'{r.get('label')}' ({r.get('remaining_sec', 0)}s remaining)" for r in active])
+                            debrief_msg = f"You have {len(active)} active countdown timer{'s' if len(active) > 1 else ''}, Sir: {items_summary}."
+                            raw_results = [{
+                                "title": f"Active Timer: {r.get('label')}",
+                                "snippet": f"Remaining: {r.get('remaining_sec', 0)} seconds | Status: active",
+                                "url": f"timer://{r.get('id')}",
+                                "extra": r
+                            } for r in active]
+                        else:
+                            debrief_msg = "You have no active countdown timers or scheduled reminders at present, Sir."
+                            raw_results = [{"title": "No Active Timers", "snippet": debrief_msg, "url": "timer://status"}]
+                    else:
+                        target_epoch, label, is_timer = rem_svc.parse_time_and_label(cmd_q)
+                        if target_epoch is not None:
+                            now = time.time()
+                            duration = max(1, int(target_epoch - now))
+                            if is_timer:
+                                item = rem_svc.add_timer(duration, label=label or "Timer")
+                                mins = duration // 60
+                                secs = duration % 60
+                                time_str = f"{mins} minute{'s' if mins != 1 else ''}" if mins > 0 else f"{secs} seconds"
+                                debrief_msg = f"Timer initialized for {time_str} ({label}), Sir. Counting down."
+                            else:
+                                item = rem_svc.add_reminder(target_epoch, label=label or "Reminder")
+                                rem_dt = datetime.fromtimestamp(target_epoch).strftime("%I:%M %p").lstrip("0")
+                                debrief_msg = f"Reminder logged for {rem_dt} regarding '{label}', Sir. I will notify you promptly."
+                            
+                            raw_results = [{
+                                "title": f"{'Timer' if is_timer else 'Reminder'}: {label}",
+                                "snippet": debrief_msg,
+                                "url": f"timer://{item.get('id')}",
+                                "extra": item
+                            }]
+                        else:
+                            item = rem_svc.add_timer(300, label="5-minute timer")
+                            debrief_msg = "Timer set for 5 minutes, Sir."
+                            raw_results = [{
+                                "title": "5-Minute Timer",
+                                "snippet": debrief_msg,
+                                "url": f"timer://{item.get('id')}",
+                                "extra": item
+                            }]
+
+                    for r in raw_results:
+                        task_mgr.add_finding(task.task_id, TaskFinding(
+                            title=r["title"],
+                            url=r["url"],
+                            snippet=r["snippet"],
+                            source="reminder_service"
+                        ))
+                    task_mgr.complete_task(task.task_id, summary=debrief_msg)
+                    payload = self.hud_engine.build_structured_payload("Tactical Timers & Reminders", "TIMER", raw_results, debrief_msg)
+                    try:
+                        from frontend.hud_panel import HUDPanelManager
+                        HUDPanelManager().show_action_hud(title="Tactical Timers & Reminders", action_type="TIMER", details=debrief_msg)
+                    except Exception:
+                        pass
+                    return True, debrief_msg, False, "", payload
+
         # Explicit search fallback
         query = None
         m_explicit = re.search(r'^(?:google\s+search|search\s+google|search\s+the\s+web)\s+(?:for\s+|about\s+|on\s+)?(.+)', text_lower)

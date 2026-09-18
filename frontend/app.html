@@ -29,6 +29,11 @@
   })();
 </script>
 <script src="cesium/Cesium.js"></script>
+<script>
+  if (typeof Cesium !== 'undefined' && Cesium.Ion) {
+    Cesium.Ion.defaultAccessToken = '';
+  }
+</script>
 <script src="three.min.js"></script>
 <script>
   if (typeof THREE === 'undefined') {
@@ -1876,6 +1881,29 @@
 :root {
   --spatial-x: 0px;
   --spatial-ratio: 0;
+  --spatial-abs-ratio: 0;
+}
+
+.corner-gear-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #D1D5DB;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 0;
+}
+.corner-gear-btn:hover {
+  background: rgba(255, 157, 46, 0.20);
+  border-color: rgba(255, 157, 46, 0.70);
+  color: #FFB84D;
+  box-shadow: 0 0 14px rgba(255, 157, 46, 0.40);
+  transform: rotate(45deg);
 }
 
 #starfield {
@@ -1904,9 +1932,11 @@ body {
 
 /* 3D Spatial Holographic Navigation & HUD */
 #shell {
-  transform: translate3d(calc(-105vw * var(--spatial-ratio, 0)), 0, calc(-360px * var(--spatial-ratio, 0))) rotateY(calc(15deg * var(--spatial-ratio, 0)));
-  transform-origin: left center;
-  opacity: calc(1.0 - (var(--spatial-ratio, 0) * 1.05));
+  display: flex !important;
+  visibility: visible;
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transform-origin: center center;
   will-change: transform, opacity;
   transition: opacity 0.08s linear;
 }
@@ -1919,15 +1949,13 @@ body {
   z-index: 215;
   cursor: pointer;
   user-select: none;
-  transition: opacity 0.22s ease, transform 0.22s ease;
+  transition: opacity 0.22s ease, transform 0.22s ease, visibility 0.22s ease;
 }
 #spatial-edge-right {
   right: 0;
-  opacity: calc(1.0 - var(--spatial-ratio, 0) * 2.2);
 }
 #spatial-edge-left {
   left: 0;
-  opacity: calc((var(--spatial-ratio, 0) - 0.45) * 2.2);
 }
 .spatial-edge-pill {
   display: flex;
@@ -2029,12 +2057,13 @@ body {
 }
 
 .spatial-dock-track {
-  width: 60px;
+  width: 72px;
   height: 4px;
   background: rgba(255, 255, 255, 0.08);
   border-radius: 2px;
   position: relative;
   overflow: hidden;
+  cursor: pointer;
 }
 
 .spatial-dock-thumb {
@@ -2042,11 +2071,470 @@ body {
   top: 0;
   left: 0;
   height: 100%;
-  width: 50%;
+  width: 33.33%;
   background: #FF9D2E;
   border-radius: 2px;
   box-shadow: 0 0 8px rgba(255, 157, 46, 0.8);
-  transform: translateX(calc(var(--spatial-ratio, 0) * 100%));
+  transform: translateX(calc((var(--spatial-ratio, 0) + 1.0) * 100%));
+}
+
+/* ─── SCREEN 1: THE COLD ROOM (OSINT CHAMBER) ────────────────────────── */
+#cold-room-wrapper {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 15;
+  pointer-events: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: transparent !important;
+  transform: translate3d(calc((-1 - var(--spatial-ratio, 0)) * 105vw), 0, 0);
+  opacity: calc(max(0, -1 * var(--spatial-ratio, 0)));
+  transition: opacity 0.18s ease;
+  will-change: transform, opacity;
+}
+
+.cold-room-header {
+  height: 50px;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(4, 6, 12, 0.25);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: none;
+  z-index: 20;
+}
+
+.cr-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.cr-tag-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.cr-snowflake { color: #00F0FF; font-size: 13px; text-shadow: 0 0 8px rgba(0, 240, 255, 0.6); }
+.cr-title {
+  color: #00F0FF;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
+}
+.cr-sub {
+  color: #94A3B8;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.cr-target-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 4px 12px;
+  border-radius: 6px;
+  box-shadow: none;
+}
+.cr-target-label {
+  color: #94A3B8;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.cr-target-value {
+  color: #F8FAFC;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.cr-header-center {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cr-metric-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cr-chip-label {
+  color: #94A3B8;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.cr-chip-val {
+  color: #FFB84D;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+}
+.cr-status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(34, 197, 94, 0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+.cr-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22C55E;
+  box-shadow: 0 0 8px #22C55E;
+}
+.cr-status-text {
+  color: #4ADE80;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.cr-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cr-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #E2E8F0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.cr-action-btn:hover {
+  background: rgba(0, 240, 255, 0.15);
+  border-color: rgba(0, 240, 255, 0.50);
+  color: #00F0FF;
+}
+.cr-return-btn {
+  background: rgba(255, 157, 46, 0.12);
+  border-color: rgba(255, 157, 46, 0.35);
+  color: #FFB84D;
+}
+.cr-return-btn:hover {
+  background: rgba(255, 157, 46, 0.22);
+  border-color: #FF9D2E;
+  color: #FFFFFF;
+}
+
+.cold-room-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 370px 1fr 350px;
+  gap: 14px;
+  padding: 14px 20px 20px 20px;
+  overflow: hidden;
+  height: calc(100vh - 50px);
+}
+
+.cr-pane {
+  background: rgba(4, 6, 12, 0.18);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.cr-pane:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+/* Center Correlation Topology Graph: 100% borderless & transparent so it floats directly in deep space */
+.cr-pane.cr-pane-graph {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.cr-pane-graph .cr-pane-title {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 6px;
+}
+
+.cr-pane-title {
+  height: 36px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #94A3B8;
+  letter-spacing: 0.08em;
+.cr-count-badge {
+  background: rgba(0, 240, 255, 0.12);
+  border: 1px solid rgba(0, 240, 255, 0.30);
+  color: #00F0FF;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.cr-mini-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #94A3B8;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.cr-mini-btn:hover {
+  border-color: #00F0FF;
+  color: #00F0FF;
+  background: rgba(0, 240, 255, 0.10);
+}
+
+.cr-feed-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cr-feed-scroll::-webkit-scrollbar { width: 5px; }
+.cr-feed-scroll::-webkit-scrollbar-thumb { background: rgba(0, 240, 255, 0.22); border-radius: 3px; }
+
+.cr-finding-card {
+  background: rgba(6, 10, 18, 0.28);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 2px solid #00F0FF;
+  border-radius: 6px;
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  transition: all 0.18s ease;
+  cursor: pointer;
+}
+.cr-finding-card:hover {
+  background: rgba(0, 240, 255, 0.08);
+  border-color: rgba(0, 240, 255, 0.35);
+  transform: translateY(-1px);
+}
+.cr-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cr-card-platform {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #00F0FF;
+  text-transform: uppercase;
+}
+.cr-card-val {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #F1F5F9;
+  font-weight: 600;
+  word-break: break-all;
+}
+.cr-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 10px;
+}
+
+.cr-graph-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+#cr-graph-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.cr-inspector-content {
+  flex: 1;
+  padding: 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.cr-placeholder-msg, .cr-empty-inspector {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: #64748B;
+  font-size: 11px;
+  font-family: var(--mono);
+  padding: 24px;
+  line-height: 1.6;
+}
+.cr-placeholder-icon { font-size: 32px; margin-bottom: 10px; opacity: 0.6; }
+
+.cr-inspect-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.cr-type-badge {
+  background: rgba(0, 240, 255, 0.12);
+  border: 1px solid rgba(0, 240, 255, 0.35);
+  color: #00F0FF;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.cr-conf-badge {
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #4ADE80;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.cr-ins-value {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: #FFFFFF;
+  font-weight: 700;
+  word-break: break-all;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+.cr-ins-section {
+  margin-bottom: 10px;
+  background: rgba(0, 240, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.cr-sec-title {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: #94A3B8;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+.cr-sec-val {
+  font-size: 11px;
+  color: #E2E8F0;
+  font-family: var(--mono);
+}
+.cr-ins-link {
+  color: #00F0FF;
+  text-decoration: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+.cr-ins-link:hover { text-decoration: underline; }
+.cr-ins-thumb {
+  width: 100%;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 240, 255, 0.30);
+  cursor: pointer;
+}
+.cr-pivot-trigger-btn {
+  margin-top: 14px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.15);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(239, 68, 68, 0.50);
+  color: #FCA5A5;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.cr-pivot-trigger-btn:hover {
+  background: rgba(239, 68, 68, 0.28);
+  border-color: #EF4444;
+  color: #FFFFFF;
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.35);
 }
 
 /* Hanging Globe Telemetry Panel (Collapsible Right Rail) */
@@ -2069,12 +2557,16 @@ body {
 }
 
 #spatial-globe-hud.visible {
-  visibility: visible;
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: translate3d(0, 0, 0) !important;
+  pointer-events: auto !important;
 }
 
 #spatial-globe-hud.collapsed {
   transform: translate3d(calc(100% + 40px), 0, 0) !important;
   opacity: 0 !important;
+  visibility: hidden !important;
   pointer-events: none !important;
 }
 
@@ -2343,6 +2835,22 @@ body {
 }
 .globe-layer-toggle.active .toggle-pill::after {
   transform: translateX(12px);
+}
+
+/* Airspace Multi-Feed Category Filters */
+.flight-cat-btn {
+  transition: all 0.15s ease;
+  user-select: none;
+  outline: none;
+}
+.flight-cat-btn:hover {
+  filter: brightness(1.25);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.2);
+}
+.flight-cat-btn.active {
+  box-shadow: 0 0 8px currentColor;
+  filter: brightness(1.35);
+  font-weight: 800 !important;
 }
 
 /* Live Sector Weather Grid */
@@ -2851,9 +3359,10 @@ body.chat-panel-collapsed #chat-expand-launcher {
   z-index: 2;
   pointer-events: none;
   overflow: hidden;
-  opacity: calc((var(--spatial-ratio, 0) - 0.25) * 1.33);
-  transform: translate3d(calc((1 - var(--spatial-ratio, 0)) * 400px), 0, 0);
-  transition: opacity 0.25s ease;
+  visibility: hidden;
+  opacity: 0;
+  transform: translate3d(200vw, 0, 0);
+  transition: opacity 0.18s ease;
   background: transparent !important;
 }
 
@@ -3150,32 +3659,32 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
     </svg>
     <span>MENU</span>
   </button>
+  <div class="spatial-dock-item" id="dock-btn-coldroom" onclick="window.glideToSpatial(-950)" title="Glide to The Cold Room (OSINT Investigation Chamber)">
+    <span style="color:#38BDF8;">❄</span> THE COLD ROOM
+  </div>
   <div class="spatial-dock-item active" id="dock-btn-hud" onclick="window.glideToSpatial(0)" title="Glide to Tactical HUD">
     <span style="color:#FF9D2E;">✦</span> TACTICAL HUD
   </div>
-  <div class="spatial-dock-track" id="dock-track" onclick="SpatialNav.onTrackClick(event)" title="Scrub Continuous 3D Space">
+  <div class="spatial-dock-track" id="dock-track" onclick="SpatialNav.onTrackClick(event)" title="Scrub Continuous 3-Screen Spatial Stage">
     <div class="spatial-dock-thumb" id="dock-thumb"></div>
   </div>
-  <div class="spatial-dock-item" id="dock-btn-globe" onclick="window.glideToSpatial(950)" title="Glide to God's Eye 3D Earth">
-    <span style="color:#00F0FF;">◉</span> GOD'S EYE VIEW
+  <div class="spatial-dock-item" id="dock-btn-globe" onclick="window.glideToSpatial(950)" title="Glide to World Telemetry 3D Earth">
+    <span style="color:#00F0FF;">◉</span> WORLD TELEMETRY
   </div>
-  <button class="spatial-dock-btn" id="spatial-dock-settings-btn" onclick="window.openSettingsOverlay()" title="Configure Models & God's Eye API Keys">
-    <span>⚙ SETTINGS</span>
-  </button>
 </div>
 
 <!-- Floating Tactile Spatial Drag / Switch Handles -->
-<div id="spatial-edge-right" class="spatial-edge-strip" onclick="window.glideToGlobe()" title="Drag or Click to God's Eye 3D Earth">
+<div id="spatial-edge-right" class="spatial-edge-strip" onclick="SpatialNav.onRightEdgeClick()" title="Navigate to next screen">
   <div class="spatial-edge-pill">
-    <span class="spatial-edge-label">GOD'S EYE 3D</span>
+    <span class="spatial-edge-label" id="spatial-edge-right-label">TELEMETRY</span>
     <span class="spatial-edge-icon">❯</span>
   </div>
 </div>
 
-<div id="spatial-edge-left" class="spatial-edge-strip" onclick="window.glideToSpatial(0)" title="Drag or Click to Tactical HUD">
+<div id="spatial-edge-left" class="spatial-edge-strip" onclick="SpatialNav.onLeftEdgeClick()" title="Navigate to previous screen">
   <div class="spatial-edge-pill">
     <span class="spatial-edge-icon">❮</span>
-    <span class="spatial-edge-label">TAC HUD</span>
+    <span class="spatial-edge-label" id="spatial-edge-left-label">COLD ROOM</span>
   </div>
 </div>
 
@@ -3229,7 +3738,7 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
         <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(28.6139, 77.2090, 'Delhi')">DELHI</button>
         <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(12.9716, 77.5946, 'Bengaluru')">BENGALURU</button>
         <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(37.7749, -122.4194, 'San Francisco')">SF</button>
-        <button class="globe-hud-btn" style="border-color:rgba(255,157,46,0.45); color:#FFB84D;" onclick="window.openSettingsOverlay()">⚙ SETTINGS</button>
+        <button class="globe-hud-btn" onclick="window.focusGlobeCoordinates(51.5074, -0.1278, 'London')">LONDON</button>
       </div>
     </div>
 
@@ -3286,6 +3795,15 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
             <div class="toggle-pill"></div>
           </div>
           <button onclick="window.JarvisCockpit.enter()" style="background:rgba(255,157,46,0.18); border:1px solid rgba(255,157,46,0.6); color:#FFB84D; font-family:var(--mono); font-size:9.5px; font-weight:700; padding:0 8px; border-radius:4px; cursor:pointer; display:flex; align-items:center; gap:4px; transition:all 0.15s ease;" title="Enter Cockpit Chase Camera on Airborne Flight" onmouseenter="this.style.background='rgba(255,157,46,0.3)'" onmouseleave="this.style.background='rgba(255,157,46,0.18)'">🎮 COCKPIT</button>
+        </div>
+        <!-- Airspace Multi-Feed Tactical Category Filters -->
+        <div id="flight-category-filters" style="display:flex; gap:4px; flex-wrap:wrap; margin-top:-2px; padding:4px 6px; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.08); border-radius:4px;">
+          <button id="fcat-all" class="flight-cat-btn active" onclick="window.setFlightCategoryFilter('all')" title="All Airspace Telemetry" style="background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25); color:#FFF; font-family:var(--mono); font-size:8px; font-weight:700; padding:2px 6px; border-radius:3px; cursor:pointer;">ALL</button>
+          <button id="fcat-mil" class="flight-cat-btn" onclick="window.setFlightCategoryFilter('mil')" title="Military & Defense Airspace (/v2/mil)" style="background:rgba(34,197,94,0.15); border:1px solid rgba(34,197,94,0.45); color:#4ADE80; font-family:var(--mono); font-size:8px; font-weight:700; padding:2px 6px; border-radius:3px; cursor:pointer;">🟢 MIL</button>
+          <button id="fcat-pia" class="flight-cat-btn" onclick="window.setFlightCategoryFilter('pia')" title="PIA Privacy Encrypted Transponders (/v2/pia)" style="background:rgba(180,83,9,0.18); border:1px solid rgba(180,83,9,0.5); color:#FBBF24; font-family:var(--mono); font-size:8px; font-weight:700; padding:2px 6px; border-radius:3px; cursor:pointer;">🟤 PIA</button>
+          <button id="fcat-ladd" class="flight-cat-btn" onclick="window.setFlightCategoryFilter('ladd')" title="FAA LADD Restricted Data Displayed (/v2/ladd)" style="background:rgba(217,119,6,0.18); border:1px solid rgba(217,119,6,0.5); color:#F59E0B; font-family:var(--mono); font-size:8px; font-weight:700; padding:2px 6px; border-radius:3px; cursor:pointer;">🟠 LADD</button>
+          <button id="fcat-emergency" class="flight-cat-btn" onclick="window.setFlightCategoryFilter('emergency')" title="Emergency Squawks (7700 / 7600 / 7500)" style="background:rgba(239,68,68,0.18); border:1px solid rgba(239,68,68,0.5); color:#F87171; font-family:var(--mono); font-size:8px; font-weight:700; padding:2px 6px; border-radius:3px; cursor:pointer;">🔴 7700</button>
+          <button id="fcat-commercial" class="flight-cat-btn" onclick="window.setFlightCategoryFilter('commercial')" title="Commercial Airlines & Civil Flight" style="background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.45); color:#38BDF8; font-family:var(--mono); font-size:8px; font-weight:700; padding:2px 6px; border-radius:3px; cursor:pointer;">🔵 AIR</button>
         </div>
         <div class="globe-layer-toggle" id="layer-toggle-vessels" onclick="window.toggleTacticalLayer('vessels')">
           <span>🚢 MARITIME VESSELS (AIS)</span>
@@ -3413,9 +3931,6 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
       <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
         <button class="globe-hud-btn" style="background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.15); color:#E6E6E6;" onclick="toggleGlobeHudCollapsed()">
           COLLAPSE ❯
-        </button>
-        <button class="globe-hud-btn" style="background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.2); color:#FFB84D;" onclick="window.openSettingsOverlay()">
-          ⚙ SETTINGS
         </button>
         <button class="globe-hud-btn" style="background:rgba(255,157,46,0.18); border-color:rgba(255,157,46,0.45); color:#FFB84D;" onclick="window.glideToSpatial(0)">
           ◄ RETURN TO HUD
@@ -3587,8 +4102,8 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
     <button class="nav-btn" id="graph-nav">
       <span class="ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></span>View Case Graph
     </button>
-    <button class="nav-btn" id="globe-nav">
-      <span class="ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>God's Eye View
+    <button class="nav-btn" id="globe-nav" onclick="window.glideToSpatial(950)">
+      <span class="ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>World Telemetry
     </button>
     <button class="nav-btn" id="evidence-nav">
       <span class="ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span>Evidence Gallery
@@ -3617,6 +4132,114 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
     </div>
   </div>
 </nav>
+
+<!-- SCREEN 1: THE COLD ROOM (OSINT INVESTIGATION CHAMBER) -->
+<div id="cold-room-wrapper">
+  <!-- Top Chamber Bar -->
+  <div class="cold-room-header">
+    <div class="cr-header-left">
+      <div class="cr-tag-badge">
+        <span class="cr-snowflake">❄</span>
+        <span class="cr-title">THE COLD ROOM</span>
+        <span class="cr-sub">// TACTICAL OSINT CHAMBER</span>
+      </div>
+      <div class="cr-target-pill" id="cr-target-pill">
+        <span class="cr-target-label">TARGET:</span>
+        <span class="cr-target-value" id="cr-target-display">STANDBY (NO ACTIVE CASE)</span>
+      </div>
+    </div>
+    <div class="cr-header-center">
+      <div class="cr-metric-chip" id="cr-risk-chip">
+        <span class="cr-chip-label">THREAT SCORE</span>
+        <span class="cr-chip-val" id="cr-risk-score">0.00</span>
+      </div>
+      <div class="cr-metric-chip">
+        <span class="cr-chip-label">ENTITIES</span>
+        <span class="cr-chip-val" id="cr-entities-count">0</span>
+      </div>
+      <div class="cr-status-indicator">
+        <span class="cr-pulse-dot" id="cr-status-dot"></span>
+        <span class="cr-status-text" id="cr-status-text">STANDBY</span>
+      </div>
+    </div>
+    <div class="cr-header-right">
+      <button class="cr-action-btn" onclick="openEvidenceOverlay()" title="View Screenshots">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        <span>EVIDENCE</span>
+      </button>
+      <button class="cr-action-btn" onclick="if(api()&&api().export_report)api().export_report();" title="Export HTML Dossier">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <span>DOSSIER</span>
+      </button>
+      <button class="cr-action-btn cr-return-btn" onclick="window.glideToSpatial(0)" title="Return to Tactical HUD">
+        <span>RETURN TO HUD</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Chamber Tri-Pane Grid -->
+  <div class="cold-room-body">
+    <!-- Pane 1: Live Intelligence Ledger -->
+    <div class="cr-pane cr-pane-feed">
+      <div class="cr-pane-title">
+        <span>⚡ LIVE RECON FEED & DISCOVERIES</span>
+        <span class="cr-count-badge" id="cr-feed-badge">0 ITEMS</span>
+      </div>
+      <div class="cr-feed-scroll" id="cr-feed-scroll">
+        <div class="cr-placeholder-msg" id="cr-feed-placeholder">
+          <div class="cr-placeholder-icon">🛡️</div>
+          <div class="cr-placeholder-text">Cold Room standing by. Launch an investigation or enter a target to initiate multi-source reconnaissance.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pane 2: Real-time Entity Correlation Topology Graph -->
+    <div class="cr-pane cr-pane-graph">
+      <div class="cr-pane-title">
+        <span>◆ CORRELATION TOPOLOGY GRAPH</span>
+        <button class="cr-mini-btn" onclick="if(window.ColdRoomGraph)window.ColdRoomGraph.recenter();" title="Recenter Graph">⟲ RECENTER</button>
+      </div>
+      <div class="cr-graph-container" id="cr-graph-container">
+        <canvas id="cr-graph-canvas"></canvas>
+      </div>
+    </div>
+
+    <!-- Pane 3: Entity Deep Inspector & Pivot Rail -->
+    <div class="cr-pane cr-pane-inspector">
+      <div class="cr-pane-title">
+        <span>🔍 ENTITY INSPECTOR & PIVOT CONTROL</span>
+      </div>
+      <div class="cr-inspector-content" id="cr-inspector-content">
+        <div class="cr-empty-inspector" id="cr-inspector-placeholder">
+          Select any node in the topology network or card from the feed to inspect credentials, metadata, and initiate pivots.
+        </div>
+        <div class="cr-inspector-active" id="cr-inspector-active" style="display:none;">
+          <div class="cr-inspect-badge-row">
+            <span class="cr-type-badge" id="cr-ins-type">HANDLE</span>
+            <span class="cr-conf-badge" id="cr-ins-conf">95% CONF</span>
+          </div>
+          <div class="cr-ins-value" id="cr-ins-value">username_value</div>
+          <div class="cr-ins-section">
+            <div class="cr-sec-title">SOURCE VERIFICATION</div>
+            <div class="cr-sec-val" id="cr-ins-sources">github, social_enum</div>
+          </div>
+          <div class="cr-ins-section" id="cr-ins-url-section" style="display:none;">
+            <div class="cr-sec-title">PROFILE LINK</div>
+            <a id="cr-ins-url" target="_blank" href="#" class="cr-ins-link">Open Profile Link ↗</a>
+          </div>
+          <div class="cr-ins-section" id="cr-ins-screen-section" style="display:none;">
+            <div class="cr-sec-title">VERIFIED SCREENSHOT</div>
+            <img id="cr-ins-screenshot" src="" class="cr-ins-thumb" onclick="openEvidenceOverlay()" />
+          </div>
+          <button class="cr-pivot-trigger-btn" id="cr-ins-pivot-btn" onclick="window.pivotFromColdRoom()">
+            PIVOT INVESTIGATION ⟲
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div id="shell">
 
@@ -3655,23 +4278,23 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
         <span class="telemetry-val" id="top-bar-status-val" style="color:#F1F5F9; font-family:'Inter', sans-serif; font-size:11px; font-weight:600; letter-spacing:0.5px; transition:color 0.3s ease;">IDLE / READY</span>
       </div>
     </div>
-    <div class="top-bar-right" style="display:flex; align-items:center;">
-      <button id="top-bar-hud-btn" class="hud-color-btn" onclick="window.toggleHudMode()" title="Toggle Top HUD Notch (Alt+V)" style="display:inline-flex; align-items:center; gap:6px; margin-right:8px; padding:5px 12px; border-radius:6px; font-family:'Inter', sans-serif; font-size:11px; font-weight:700; letter-spacing:0.4px; border:1px solid rgba(0,240,255,0.35); background:rgba(0,240,255,0.08); color:#00F0FF; cursor:pointer; transition:all 0.25s ease;">
+    <div class="top-bar-right" style="display:flex; align-items:center; gap:8px;">
+      <button id="top-bar-hud-btn" class="hud-color-btn" onclick="window.toggleHudMode()" title="Toggle Top HUD Notch (Alt+V)" style="display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:6px; font-family:'Inter', sans-serif; font-size:11px; font-weight:700; letter-spacing:0.4px; border:1px solid rgba(0,240,255,0.35); background:rgba(0,240,255,0.08); color:#00F0FF; cursor:pointer; transition:all 0.25s ease;">
         <span style="font-size:11px; color:#00F0FF;">✦</span> <span id="top-bar-hud-label">HUD</span>
       </button>
-      <button id="top-bar-settings-btn" class="hud-color-btn" onclick="window.openSettingsOverlay()" title="Configure Models & God's Eye API Keys" style="display:inline-flex; align-items:center; gap:6px; margin-right:8px; padding:5px 12px; border-radius:6px; font-family:'Inter', sans-serif; font-size:11px; font-weight:700; letter-spacing:0.4px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.06); color:#E6E6E6; cursor:pointer; transition:all 0.25s ease;">
-        ⚙ SETTINGS
-      </button>
-      <button id="mode-toggle-btn" class="hud-color-btn" onclick="toggleAppMode()" title="Toggle Assistant vs OSINT War Room Mode" style="display:inline-flex; align-items:center; gap:6px; margin-right:8px; padding:5px 12px; border-radius:6px; font-family:'Inter', sans-serif; font-size:11px; font-weight:700; letter-spacing:0.4px; border:1px solid rgba(255,157,46,0.35); background:rgba(255,157,46,0.1); color:#FFB84D; cursor:pointer; transition:all 0.25s ease;">
-        <span id="mode-label">PARTNER MODE</span>
-      </button>
-      <button id="export-report-btn" class="hud-color-btn" title="Export HTML Investigation Report" style="display:none; margin-right: 8px;">
+      <button id="export-report-btn" class="hud-color-btn" title="Export HTML Investigation Report" style="display:none; padding:5px 12px; border-radius:6px; font-family:'Inter', sans-serif; font-size:11px; font-weight:700; border:1px solid rgba(255,157,46,0.35); background:rgba(255,157,46,0.1); color:#FFB84D; cursor:pointer;">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px; vertical-align: middle;">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
         </svg>
         EXPORT REPORT
+      </button>
+      <button id="corner-settings-btn" class="corner-gear-btn" onclick="window.openSettingsOverlay()" title="Settings & Free API Keys" aria-label="Settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
       </button>
     </div>
   </header>
@@ -3862,7 +4485,7 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
 <div class="overlay" id="globe-overlay">
   <div class="overlay-panel" style="width:95vw; height:90vh; max-width:none;">
     <div class="overlay-head">
-      <span class="t">GOD'S EYE VIEW — OSINT INTELLIGENCE</span>
+      <span class="t">WORLD TELEMETRY — GLOBAL INTELLIGENCE</span>
       <div style="display:flex; align-items:center; gap:10px;">
         <span id="gev-status" style="font-size:10px; font-family:var(--mono); color:#8A8D91; letter-spacing:0.05em;">INITIALIZING</span>
         <button class="overlay-close" id="globe-overlay-close">
@@ -3879,7 +4502,7 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
       </iframe>
       <div id="gev-loading" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:16px; background:#000005; z-index:5;">
         <div style="width:40px; height:40px; border:2px solid rgba(255,157,46,0.2); border-top-color:#FF9D2E; border-radius:50%; animation:spin 1s linear infinite;"></div>
-        <div style="font-family:var(--mono); font-size:11px; color:#FF9D2E; letter-spacing:0.1em;">LOADING GOD'S EYE VIEW</div>
+        <div style="font-family:var(--mono); font-size:11px; color:#FF9D2E; letter-spacing:0.1em;">LOADING WORLD TELEMETRY</div>
         <div style="font-family:var(--mono); font-size:10px; color:#8A8D91;">Cesium 3D Globe • Live OSINT Feeds</div>
       </div>
     </div>
@@ -4054,7 +4677,7 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
         <div class="collapsible-card-header" onclick="toggleCardCollapse(this)">
           <div class="collapsible-card-title">
             <span style="opacity:0.6; font-family:var(--mono); font-size:11px; margin-right:4px;">[GEO]</span>
-            <span>God's Eye Geointel & Acceleration</span>
+            <span>World Telemetry Geointel & Acceleration</span>
           </div>
           <div class="collapsible-card-badge">Cesium / NASA / Groq</div>
           <div class="collapsible-card-chevron">▼</div>
@@ -4250,6 +4873,32 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
 // after the first call, including HUD init and every button click handler.
 const $ = (selector) => document.querySelector(selector);
 const api = () => window.pywebview && window.pywebview.api;
+
+window.isRevokedOrDummyCesiumToken = function(tok) {
+  if (!tok || typeof tok !== 'string') return true;
+  const t = tok.trim();
+  if (t.length < 25) return true;
+  if (t.startsWith('YOUR_') || t.includes('cesium-token') || t.endsWith('_HERE')) return true;
+  if (t.includes('JTR') || t.includes('uJTR-pSh-JwPCONfcq') || t.includes('Heedf2') || t.includes('Heekf2') || t.includes('eeedf8c4') || t.includes('JDplkKPW') || t.includes('7ae64e45')) return true;
+  return false;
+};
+
+// Immediately sanitize localStorage on script evaluation to eliminate stale revoked tokens
+try {
+  const cachedStr = localStorage.getItem('jarvis_config');
+  if (cachedStr) {
+    const cachedCfg = JSON.parse(cachedStr);
+    if (cachedCfg && cachedCfg.cesium_ion_token && window.isRevokedOrDummyCesiumToken(cachedCfg.cesium_ion_token)) {
+      delete cachedCfg.cesium_ion_token;
+      localStorage.setItem('jarvis_config', JSON.stringify(cachedCfg));
+    }
+  }
+} catch(e) {}
+
+// Ensure Cesium.Ion.defaultAccessToken is empty by default in keyless mode
+if (typeof Cesium !== 'undefined' && Cesium.Ion) {
+  Cesium.Ion.defaultAccessToken = '';
+}
 
 if (typeof marked !== 'undefined' && marked.setOptions) {
   marked.setOptions({ gfm: true, breaks: true });
@@ -4689,7 +5338,7 @@ function renderSummaryCard(rt) {
     </table>
     <div class="summary-actions">
       <button class="summary-btn" onclick="openGraphOverlay()"><span>◆</span>View 3D Case Graph</button>
-      <button class="summary-btn" onclick="openGlobeOverlay()"><span>◎</span>God's Eye View</button>
+      <button class="summary-btn" onclick="openGlobeOverlay()"><span>◉</span>World Telemetry</button>
     </div>
   `;
 
@@ -5132,6 +5781,14 @@ function submitTargetDialog() {
   const val = input ? input.value.trim() : '';
   if (val) {
     closeTargetDialog();
+    if (window.ColdRoom) {
+      ColdRoom.reset();
+      ColdRoom.setTarget(val);
+      ColdRoom.setStatus('INITIALIZING INVESTIGATION...', true);
+    }
+    if (window.glideToSpatial) {
+      window.glideToSpatial(-950);
+    }
     const query = `investigate ${val}`;
     $('#chat-input').value = query;
     handleSend();
@@ -5396,6 +6053,15 @@ document.querySelectorAll('.voice-toggle').forEach((t) => {
   t.addEventListener('click', () => t.classList.toggle('on'));
 });
 
+window.isRevokedOrDummyCesiumToken = function(tok) {
+  if (!tok || typeof tok !== 'string') return true;
+  const t = tok.trim();
+  if (t.length < 25) return true;
+  if (t.startsWith('YOUR_') || t.includes('cesium-token') || t.endsWith('_HERE')) return true;
+  if (t.includes('JTR') || t.includes('uJTR-pSh-JwPCONfcq') || t.includes('Heedf2') || t.includes('Heekf2') || t.includes('eeedf8c4') || t.includes('JDplkKPW') || t.includes('7ae64e45')) return true;
+  return false;
+};
+
 function applyConfigToForm(cfg) {
   if (!cfg || typeof cfg !== 'object') return;
   function clean(val) {
@@ -5415,17 +6081,24 @@ function applyConfigToForm(cfg) {
   if (cfg.nvidia_model !== undefined) setVal('#cfg-nvidia-model', cfg.nvidia_model);
   setVal('#cfg-fish-key', clean(cfg.fish_audio_api_key));
   setVal('#cfg-fish-voice', cfg.fish_audio_voice_id || '05b36da8574341d0803391491850db20');
+  
+  if (cfg.cesium_ion_token && window.isRevokedOrDummyCesiumToken(cfg.cesium_ion_token)) {
+    cfg.cesium_ion_token = '';
+  }
   setVal('#cfg-cesium-token', clean(cfg.cesium_ion_token));
   setVal('#cfg-nasa-firms-key', clean(cfg.nasa_firms_key));
   setVal('#cfg-groq-key', clean(cfg.groq_api_key));
 
-  if (typeof Cesium !== 'undefined' && cfg.cesium_ion_token) {
+  if (typeof Cesium !== 'undefined') {
     const cToken = clean(cfg.cesium_ion_token);
-    if (cToken && cToken.length > 20) {
+    if (cToken && !window.isRevokedOrDummyCesiumToken(cToken)) {
       Cesium.Ion.defaultAccessToken = cToken;
       window._userConfiguredCesium = true;
       if (typeof window.loadCesiumTerrain === 'function') window.loadCesiumTerrain();
       if (typeof window.loadCesiumBuildings === 'function') window.loadCesiumBuildings();
+    } else {
+      Cesium.Ion.defaultAccessToken = '';
+      window._userConfiguredCesium = false;
     }
   }
   if (cfg.tools && typeof cfg.tools === 'object') {
@@ -5480,12 +6153,18 @@ if (settingsSaveBtn) {
             statusEl.style.color = '#22C55E';
             statusEl.textContent = '✓ Saved to config.yaml & .env';
           }
-          if (typeof Cesium !== 'undefined' && cfg.cesium_ion_token) {
-            Cesium.Ion.defaultAccessToken = cfg.cesium_ion_token;
-            window._userConfiguredCesium = true;
-            window._cesiumOsmBuildingsAdded = false;
-            if (typeof window.loadCesiumTerrain === 'function') window.loadCesiumTerrain();
-            if (typeof window.loadCesiumBuildings === 'function') window.loadCesiumBuildings();
+          if (typeof Cesium !== 'undefined') {
+            const savedTok = (cfg.cesium_ion_token || '').trim();
+            if (savedTok && !window.isRevokedOrDummyCesiumToken(savedTok)) {
+              Cesium.Ion.defaultAccessToken = savedTok;
+              window._userConfiguredCesium = true;
+              window._cesiumOsmBuildingsAdded = false;
+              if (typeof window.loadCesiumTerrain === 'function') window.loadCesiumTerrain();
+              if (typeof window.loadCesiumBuildings === 'function') window.loadCesiumBuildings();
+            } else {
+              Cesium.Ion.defaultAccessToken = '';
+              window._userConfiguredCesium = false;
+            }
           }
         } else {
           if (statusEl) {
@@ -5626,6 +6305,19 @@ function handleSend() {
       input.value = '';
       input.focus();
       return;
+    }
+  }
+
+  const lowerText = text.toLowerCase().trim();
+  if (lowerText.startsWith('investigate ') || lowerText.startsWith('stalk ') || lowerText.startsWith('recon ') || lowerText.startsWith('osint ')) {
+    const targetMatch = text.replace(/^(investigate|stalk|recon|osint)\s+/i, '').trim();
+    if (window.ColdRoom) {
+      ColdRoom.reset();
+      if (targetMatch) ColdRoom.setTarget(targetMatch);
+      ColdRoom.setStatus('INITIALIZING INVESTIGATION...', true);
+    }
+    if (window.glideToSpatial) {
+      window.glideToSpatial(-950);
     }
   }
 
@@ -5819,8 +6511,8 @@ const HudGalaxy = {
   basePanY: 0,
   dragMode: 'pan',
   autoAngle: 0,
-  zoom: 1,
-  targetZoom: 1,
+  zoom: 1.40,
+  targetZoom: 1.40,
   fov: 340,
   isDragging: false,
   dragStartX: 0,
@@ -6119,14 +6811,14 @@ const HudGalaxy = {
     this.targetPanY = 0;
     this.targetRotX = 0;
     this.targetRotY = 0;
-    this.targetZoom = 1;
+    this.targetZoom = 1.40;
     this.updateRecenterButtonVisibility();
   },
 
   updateRecenterButtonVisibility() {
     const btn = document.getElementById('hud-recenter-btn');
     if (!btn) return;
-    const isMoved = Math.hypot(this.targetPanX, this.targetPanY) > 50 || Math.abs(this.targetZoom - 1) > 0.15;
+    const isMoved = Math.hypot(this.targetPanX, this.targetPanY) > 50 || Math.abs(this.targetZoom - 1.40) > 0.18;
     btn.style.opacity = isMoved ? '1' : '0';
     btn.style.pointerEvents = isMoved ? 'auto' : 'none';
   },
@@ -6135,9 +6827,21 @@ const HudGalaxy = {
     if (!this.canvas) return;
 
     const onPointerDown = (e) => {
+      const clientX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+      const clientY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+
+      // Only capture drag if pointer is directly over the HUD constellation or an interactive node
+      if (!this.isPointerOverHud(clientX, clientY)) {
+        // Outside HUD constellation: do not capture. Allow event to bubble to window for SpatialNav screen glide!
+        return;
+      }
+
       this.isDragging = true;
-      this.dragStartX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
-      this.dragStartY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+      if (typeof SpatialNav !== 'undefined') {
+        SpatialNav.isDragging = false;
+      }
+      this.dragStartX = clientX;
+      this.dragStartY = clientY;
       this.basePanX = this.targetPanX;
       this.basePanY = this.targetPanY;
       this.baseRotX = this.rotX;
@@ -6160,6 +6864,7 @@ const HudGalaxy = {
         this.canvas.style.cursor = 'grabbing';
       }
       if (e.stopPropagation) e.stopPropagation();
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
       if (e.preventDefault && e.type !== 'touchstart') e.preventDefault();
     };
 
@@ -6191,6 +6896,9 @@ const HudGalaxy = {
         }
         this.updateRecenterButtonVisibility();
       } else {
+        if (typeof SpatialNav !== 'undefined' && SpatialNav.isDragging) {
+          return;
+        }
         this.handlePointerMove(clientX, clientY);
       }
     };
@@ -6216,10 +6924,14 @@ const HudGalaxy = {
       }
     };
 
+    this.canvas.addEventListener('pointerdown', onPointerDown);
     this.canvas.addEventListener('mousedown', onPointerDown);
     this.canvas.addEventListener('touchstart', onPointerDown, { passive: true });
+    window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('mousemove', onPointerMove);
     window.addEventListener('touchmove', onPointerMove, { passive: true });
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
     window.addEventListener('mouseup', onPointerUp);
     window.addEventListener('touchend', onPointerUp);
 
@@ -6277,20 +6989,28 @@ const HudGalaxy = {
     if (typeof document !== 'undefined' && document.elementFromPoint) {
       const target = document.elementFromPoint(clientX, clientY);
       if (target) {
-        if (target.closest('#jarvis-input-bar, .jarvis-task-surface, #sidebar, #jarvis-action-panel, .msg-user, .msg-answer, .msg-bubble')) {
+        if (target.closest('#jarvis-input-bar, .jarvis-task-surface, #sidebar, #jarvis-action-panel, .msg-user, .msg-answer, .msg-bubble, #bottom-bar, #spatial-dock')) {
           return false;
         }
       }
     }
 
-    // Hovered directly over a node
+    // Hovered directly over an interactive node
     if (this.hoveredNodeId) return true;
+
+    // Transform viewport coordinates to canvas-local coordinates
+    const rect = this.canvas.getBoundingClientRect();
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
+      return false;
+    }
+    const mx = clientX - rect.left;
+    const my = clientY - rect.top;
 
     // Check distance to any visible active node
     for (const [id, node] of this.nodes) {
       if (node.screenX != null && node.screenY != null) {
-        const r = (node.screenRadius || 8) + 24;
-        if (Math.hypot(clientX - node.screenX, clientY - node.screenY) <= r) {
+        const r = (node.screenRadius || 8) + 20;
+        if (Math.hypot(mx - node.screenX, my - node.screenY) <= r) {
           return true;
         }
       }
@@ -6300,10 +7020,10 @@ const HudGalaxy = {
     const coreNode = this.nodes.get('node_core');
     const coreX = (coreNode && coreNode.screenX != null) ? coreNode.screenX : ((this.canvas.width / 2) + this.panX);
     const coreY = (coreNode && coreNode.screenY != null) ? coreNode.screenY : ((this.canvas.height / 2) + this.panY);
-    const distToCore = Math.hypot(clientX - coreX, clientY - coreY);
+    const distToCore = Math.hypot(mx - coreX, my - coreY);
 
     // Compute dynamic constellation radius from active nodes
-    let maxDist = 240;
+    let maxDist = 200;
     this.nodes.forEach(node => {
       if (node.screenX != null && node.screenY != null) {
         const d = Math.hypot(node.screenX - coreX, node.screenY - coreY);
@@ -6313,7 +7033,7 @@ const HudGalaxy = {
       }
     });
 
-    const hudEffectiveRadius = Math.max(240, maxDist + 45);
+    const hudEffectiveRadius = Math.max(220, Math.min(320, maxDist + 35));
     return distToCore <= hudEffectiveRadius;
   },
 
@@ -6452,7 +7172,7 @@ const HudGalaxy = {
     this.rotX += (this.targetRotX - this.rotX) * 0.16;
     this.rotY += (this.targetRotY - this.rotY) * 0.16;
     this.zoom += (this.targetZoom - this.zoom) * 0.15;
-    const viewScale = Math.max(0.90, Math.min(width, height) / 760) * this.zoom;
+    const viewScale = Math.max(1.15, Math.min(width, height) / 620) * this.zoom;
     const cosX = Math.cos(this.rotX), sinX = Math.sin(this.rotX);
     const cosY = Math.cos(this.rotY), sinY = Math.sin(this.rotY);
 
@@ -8937,7 +9657,7 @@ const TaskSurfaceManager = {
                     style="background:rgba(255,157,46,0.15); border:1px solid #FF9D2E; color:#FFB84D; font-size:10px; font-family:var(--mono); font-weight:700; padding:4px 10px; border-radius:4px; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all 0.15s ease;"
                     onmouseenter="this.style.background='rgba(255,157,46,0.28)'"
                     onmouseleave="this.style.background='rgba(255,157,46,0.15)'">
-              <span>◎</span> GOD'S EYE VIEW
+              <span>◉</span> WORLD TELEMETRY
             </button>
           </div>
         </div>
@@ -9124,7 +9844,14 @@ document.addEventListener('DOMContentLoaded', () => {
   TaskSurfaceManager.init();
   try {
     const cached = localStorage.getItem('jarvis_config');
-    if (cached) applyConfigToForm(JSON.parse(cached));
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed && parsed.cesium_ion_token && window.isRevokedOrDummyCesiumToken(parsed.cesium_ion_token)) {
+        delete parsed.cesium_ion_token;
+        localStorage.setItem('jarvis_config', JSON.stringify(parsed));
+      }
+      applyConfigToForm(parsed);
+    }
   } catch(e) {}
   if (window.HudGalaxy && typeof HudGalaxy.resize === 'function') HudGalaxy.resize();
   updateSpatialSystemTelemetry();
@@ -9595,6 +10322,13 @@ window.jarvis = window.joe = {
         setHudState('thinking');
         showSubtitles(data.message, 'RECON STREAM');
         $('#session-status').textContent = 'running';
+        if (window.glideToSpatial && SpatialNav.currentX > -300) {
+          window.glideToSpatial(-950);
+        }
+        if (window.ColdRoom) {
+          ColdRoom.setStatus(data.message || 'Scanning...', true);
+          if (data.target) ColdRoom.setTarget(data.target);
+        }
         break;
 
       case 'entity_found':
@@ -9607,6 +10341,9 @@ window.jarvis = window.joe = {
           addNodeToGraph(data);
           if ($('#graph-overlay').classList.contains('open')) renderGraph();
         }
+        if (window.ColdRoom) {
+          ColdRoom.addEntity(data);
+        }
         break;
 
       case 'investigation_done':
@@ -9616,6 +10353,9 @@ window.jarvis = window.joe = {
         const t = data.target || {};
         state.activeCase = t.primary || state.activeCase;
         setCaseHeader(t.primary, `${state.entities.length} evidence items`, t.risk_score != null ? t.risk_score.toFixed(2) : null);
+        if (window.ColdRoom) {
+          ColdRoom.finish(data);
+        }
         if (data.monologue) {
           finalizeStreamingAnswer(data.monologue);
         }
@@ -9646,6 +10386,24 @@ window.jarvis = window.joe = {
       case 'jarvis_stop_pcm':
         // Backend requests stop of browser PCM before switching to native playback
         stopJarvisPcmStream();
+        break;
+
+      case 'glide_to_spatial':
+        if (data && typeof data.x === 'number' && window.glideToSpatial) {
+          window.glideToSpatial(data.x);
+        }
+        break;
+
+      case 'glide_to_coldroom':
+        if (window.glideToSpatial) window.glideToSpatial(-950);
+        break;
+
+      case 'glide_to_hud':
+        if (window.glideToSpatial) window.glideToSpatial(0);
+        break;
+
+      case 'glide_to_telemetry':
+        if (window.glideToSpatial) window.glideToSpatial(950);
         break;
 
       case 'glide_to_location':
@@ -10480,7 +11238,592 @@ function latLonToVector3(lat, lon, radius) {
   );
 }
 
-// Spatial Navigation Controller for smooth continuous 3D camera drag
+// ─────────────────────────────────────────────────────────────
+// SCREEN 1: THE COLD ROOM (OSINT TOPOLOGY GRAPH & CONTROLLER)
+// ─────────────────────────────────────────────────────────────
+const ColdRoomGraph = {
+  canvas: null,
+  ctx: null,
+  container: null,
+  nodes: [],
+  links: [],
+  targetNode: null,
+  panX: 0,
+  panY: 0,
+  zoom: 1.0,
+  isDragging: false,
+  dragStartX: 0,
+  dragStartY: 0,
+  hoveredNode: null,
+  selectedNode: null,
+  animId: null,
+  pulseTime: 0,
+  _initialized: false,
+
+  init() {
+    if (this._initialized) return;
+    this.container = document.getElementById('cr-graph-container');
+    this.canvas = document.getElementById('cr-graph-canvas');
+    if (!this.canvas || !this.container) return;
+    this.ctx = this.canvas.getContext('2d');
+    this._initialized = true;
+    this.resize();
+
+    window.addEventListener('resize', () => this.resize());
+
+    // Canvas pointer interaction (Pan & Select)
+    this.canvas.addEventListener('pointerdown', (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const mx = (e.clientX - rect.left - (this.canvas.width / (2 * dpr)) - this.panX) / this.zoom;
+      const my = (e.clientY - rect.top - (this.canvas.height / (2 * dpr)) - this.panY) / this.zoom;
+      const hit = this.findNodeAt(mx, my);
+      if (hit) {
+        this.selectedNode = hit;
+        if (hit.data && window.ColdRoom) {
+          ColdRoom.selectEntity(hit.data);
+        }
+      } else {
+        this.isDragging = true;
+        this.dragStartX = e.clientX - this.panX;
+        this.dragStartY = e.clientY - this.panY;
+      }
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      if (this.isDragging) {
+        this.panX = e.clientX - this.dragStartX;
+        this.panY = e.clientY - this.dragStartY;
+      } else if (this.canvas) {
+        const rect = this.canvas.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          const dpr = window.devicePixelRatio || 1;
+          const mx = (e.clientX - rect.left - (this.canvas.width / (2 * dpr)) - this.panX) / this.zoom;
+          const my = (e.clientY - rect.top - (this.canvas.height / (2 * dpr)) - this.panY) / this.zoom;
+          this.hoveredNode = this.findNodeAt(mx, my);
+          this.canvas.style.cursor = this.hoveredNode ? 'pointer' : 'default';
+        }
+      }
+    });
+
+    window.addEventListener('pointerup', () => {
+      this.isDragging = false;
+    });
+
+    this.canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.12 : 0.89;
+      this.zoom = Math.max(0.35, Math.min(3.0, this.zoom * zoomFactor));
+    }, { passive: false });
+
+    this.startLoop();
+  },
+
+  resize() {
+    if (!this.canvas || !this.container) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (w === 0 || h === 0) return;
+    this.canvas.width = w * dpr;
+    this.canvas.height = h * dpr;
+    this.canvas.style.width = w + 'px';
+    this.canvas.style.height = h + 'px';
+  },
+
+  setTarget(targetName) {
+    this.reset();
+    this.targetNode = {
+      id: '__TARGET__',
+      label: (targetName || 'TARGET').toUpperCase(),
+      type: 'TARGET',
+      color: '#FF9D2E',
+      radius: 20,
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      fixed: true,
+      data: { type: 'TARGET', value: targetName, confidence: 1.0, source: 'Primary Case Target' }
+    };
+    this.nodes.push(this.targetNode);
+  },
+
+  addEntity(data) {
+    const val = String(data.value || data.text || data.name || data.id || 'Entity');
+    const id = 'node_' + this.nodes.length + '_' + Math.random().toString(36).substr(2, 4);
+    const type = String(data.type || data.category || 'entity').toLowerCase();
+
+    let color = '#38BDF8';
+    if (type.includes('email') || type.includes('cred') || type.includes('pass') || type.includes('breach')) {
+      color = '#EF4444';
+    } else if (type.includes('domain') || type.includes('ip') || type.includes('host') || type.includes('network')) {
+      color = '#10B981';
+    } else if (type.includes('crypto') || type.includes('btc') || type.includes('eth') || type.includes('wallet')) {
+      color = '#F59E0B';
+    } else if (type.includes('phone') || type.includes('contact')) {
+      color = '#EC4899';
+    } else if (type.includes('location') || type.includes('geo') || type.includes('city') || type.includes('country')) {
+      color = '#A855F7';
+    } else if (type.includes('user') || type.includes('handle') || type.includes('profile')) {
+      color = '#00F0FF';
+    }
+
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 85 + Math.random() * 85;
+
+    const node = {
+      id: id,
+      label: val.length > 18 ? val.substring(0, 16) + '...' : val,
+      type: type.toUpperCase(),
+      color: color,
+      radius: 13,
+      x: Math.cos(angle) * dist,
+      y: Math.sin(angle) * dist,
+      vx: 0,
+      vy: 0,
+      data: data
+    };
+
+    this.nodes.push(node);
+
+    if (this.targetNode) {
+      this.links.push({
+        source: this.targetNode,
+        target: node,
+        pulseOffset: Math.random()
+      });
+    }
+
+    if (this.nodes.length > 2) {
+      const sameType = this.nodes.find(n => n !== node && n !== this.targetNode && n.type === node.type);
+      if (sameType && Math.random() > 0.45) {
+        this.links.push({
+          source: sameType,
+          target: node,
+          pulseOffset: Math.random()
+        });
+      }
+    }
+  },
+
+  highlight(val) {
+    if (!val) return;
+    const found = this.nodes.find(n => n.data && (n.data.value === val || n.data.text === val || n.label === val));
+    if (found) {
+      this.selectedNode = found;
+    }
+  },
+
+  findNodeAt(x, y) {
+    for (let i = this.nodes.length - 1; i >= 0; i--) {
+      const n = this.nodes[i];
+      const dx = n.x - x;
+      const dy = n.y - y;
+      if (dx * dx + dy * dy <= (n.radius + 6) * (n.radius + 6)) {
+        return n;
+      }
+    }
+    return null;
+  },
+
+  recenter() {
+    this.panX = 0;
+    this.panY = 0;
+    this.zoom = 1.0;
+  },
+
+  reset() {
+    this.nodes = [];
+    this.links = [];
+    this.targetNode = null;
+    this.hoveredNode = null;
+    this.selectedNode = null;
+    this.recenter();
+  },
+
+  startLoop() {
+    const step = () => {
+      this.animId = requestAnimationFrame(step);
+      // Suspend physics and render loop when camera is away from The Cold Room (Screen 1)
+      if (typeof SpatialNav !== 'undefined' && SpatialNav.currentX > -100) {
+        return;
+      }
+      this.updatePhysics();
+      this.render();
+    };
+    step();
+  },
+
+  updatePhysics() {
+    if (this.nodes.length <= 1) return;
+
+    for (let i = 0; i < this.nodes.length; i++) {
+      for (let j = i + 1; j < this.nodes.length; j++) {
+        const n1 = this.nodes[i];
+        const n2 = this.nodes[j];
+        const dx = n2.x - n1.x;
+        const dy = n2.y - n1.y;
+        let distSq = dx * dx + dy * dy;
+        if (distSq === 0) distSq = 1;
+        const dist = Math.sqrt(distSq);
+        const minSpace = (n1.radius + n2.radius) * 3.6;
+        if (dist < minSpace) {
+          const force = (minSpace - dist) / dist * 0.15;
+          if (!n1.fixed) { n1.vx -= dx * force; n1.vy -= dy * force; }
+          if (!n2.fixed) { n2.vx += dx * force; n2.vy += dy * force; }
+        }
+      }
+    }
+
+    for (const link of this.links) {
+      const s = link.source;
+      const t = link.target;
+      const dx = t.x - s.x;
+      const dy = t.y - s.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const targetDist = 95;
+      const force = (dist - targetDist) * 0.012;
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+      if (!s.fixed) { s.vx += fx; s.vy += fy; }
+      if (!t.fixed) { t.vx -= fx; t.vy -= fy; }
+    }
+
+    for (const n of this.nodes) {
+      if (n.fixed) continue;
+      n.vx -= n.x * 0.003;
+      n.vy -= n.y * 0.003;
+      n.vx *= 0.86;
+      n.vy *= 0.86;
+      n.x += n.vx;
+      n.y += n.vy;
+    }
+  },
+
+  render() {
+    if (!this.ctx || !this.canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    if (w === 0 || h === 0) return;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    const cx = w / (2 * dpr) + this.panX;
+    const cy = h / (2 * dpr) + this.panY;
+    ctx.translate(cx, cy);
+    ctx.scale(this.zoom, this.zoom);
+
+    this.pulseTime += 0.02;
+
+    // Faint holographic tactical range rings and cosmic crosshairs
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.05)';
+    ctx.lineWidth = 1;
+    for (let r = 90; r <= 360; r += 90) {
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(-420, 0); ctx.lineTo(420, 0);
+    ctx.moveTo(0, -420); ctx.lineTo(0, 420);
+    ctx.stroke();
+    ctx.restore();
+
+    // Draw Links
+    for (const link of this.links) {
+      const s = link.source;
+      const t = link.target;
+
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(t.x, t.y);
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.20)';
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+
+      // Traveling data pulse
+      const tPulse = (this.pulseTime + (link.pulseOffset || 0)) % 1;
+      const px = s.x + (t.x - s.x) * tPulse;
+      const py = s.y + (t.y - s.y) * tPulse;
+      ctx.beginPath();
+      ctx.arc(px, py, 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = '#00F0FF';
+      ctx.shadowColor = '#00F0FF';
+      ctx.shadowBlur = 5;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // Draw Nodes
+    for (const n of this.nodes) {
+      const isTarget = n.fixed || n.type === 'TARGET';
+      const isSelected = n === this.selectedNode;
+      const isHovered = n === this.hoveredNode;
+
+      // Outer glow pulse
+      ctx.beginPath();
+      const glowRad = n.radius + (isTarget ? (4 + Math.sin(this.pulseTime * 3) * 2) : (isSelected ? 5 : 2));
+      ctx.arc(n.x, n.y, glowRad, 0, Math.PI * 2);
+      ctx.fillStyle = isSelected ? 'rgba(0, 240, 255, 0.28)' : (isHovered ? 'rgba(255, 157, 46, 0.25)' : 'rgba(0, 0, 0, 0.45)');
+      ctx.fill();
+
+      // Node base
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#0B1118';
+      ctx.fill();
+      ctx.lineWidth = isSelected ? 2.5 : 1.8;
+      ctx.strokeStyle = isSelected ? '#FFFFFF' : n.color;
+      ctx.shadowColor = n.color;
+      ctx.shadowBlur = isSelected ? 12 : 6;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Center core
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, isTarget ? 6.5 : 4, 0, Math.PI * 2);
+      ctx.fillStyle = n.color;
+      ctx.fill();
+
+      // Label below node
+      ctx.font = isTarget ? 'bold 10.5px "JetBrains Mono", monospace' : '9px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      const labelText = n.label;
+      const textWidth = ctx.measureText(labelText).width;
+      const textY = n.y + n.radius + 5;
+
+      ctx.fillStyle = 'rgba(7, 11, 16, 0.88)';
+      ctx.fillRect(n.x - textWidth / 2 - 4, textY - 2, textWidth + 8, 14);
+
+      ctx.fillStyle = isSelected ? '#FFFFFF' : (isTarget ? '#FFB84D' : '#D1D5DB');
+      ctx.fillText(labelText, n.x, textY);
+    }
+
+    ctx.restore();
+  }
+};
+
+const ColdRoom = {
+  activeTarget: '',
+  entities: [],
+  selectedEntity: null,
+
+  init() {
+    ColdRoomGraph.init();
+    window.pivotFromColdRoom = () => this.pivot();
+  },
+
+  setTarget(target) {
+    this.activeTarget = target || 'UNKNOWN';
+    const disp = document.getElementById('cr-target-display');
+    if (disp) disp.textContent = this.activeTarget.toUpperCase();
+    ColdRoomGraph.setTarget(this.activeTarget);
+  },
+
+  setStatus(text, isScanning) {
+    const statusText = document.getElementById('cr-status-text');
+    const dot = document.getElementById('cr-status-dot');
+    if (statusText) statusText.textContent = (text || 'STANDBY').toUpperCase();
+    if (dot) {
+      if (isScanning) {
+        dot.style.background = '#00F0FF';
+        dot.style.boxShadow = '0 0 10px #00F0FF';
+        dot.classList.add('pulse');
+      } else {
+        dot.style.background = '#10B981';
+        dot.style.boxShadow = '0 0 8px #10B981';
+        dot.classList.remove('pulse');
+      }
+    }
+  },
+
+  addEntity(data) {
+    if (!data) return;
+    this.entities.push(data);
+
+    const countEl = document.getElementById('cr-entities-count');
+    const badgeEl = document.getElementById('cr-feed-badge');
+    if (countEl) countEl.textContent = this.entities.length;
+    if (badgeEl) badgeEl.textContent = `${this.entities.length} ITEMS`;
+
+    const riskEl = document.getElementById('cr-risk-score');
+    if (riskEl) {
+      let maxRisk = 0;
+      this.entities.forEach(e => {
+        const r = parseFloat(e.risk || e.risk_score || 0);
+        if (!isNaN(r) && r > maxRisk) maxRisk = r;
+      });
+      const calcScore = maxRisk > 0 ? maxRisk : Math.min(0.95, (this.entities.length * 0.12));
+      riskEl.textContent = calcScore.toFixed(2);
+      if (calcScore >= 0.7) {
+        riskEl.style.color = '#EF4444';
+      } else if (calcScore >= 0.4) {
+        riskEl.style.color = '#F59E0B';
+      } else {
+        riskEl.style.color = '#38BDF8';
+      }
+    }
+
+    const ph = document.getElementById('cr-feed-placeholder');
+    if (ph) ph.style.display = 'none';
+
+    const feed = document.getElementById('cr-feed-scroll');
+    if (feed) {
+      const card = document.createElement('div');
+      card.className = 'cr-finding-card';
+      const type = (data.type || data.category || 'ENTITY').toUpperCase();
+      const val = data.value || data.text || data.name || data.id || 'Finding';
+      const conf = data.confidence ? `${Math.round(data.confidence * (data.confidence <= 1 ? 100 : 1))}%` : 'VERIFIED';
+      const sources = Array.isArray(data.sources) ? data.sources.join(', ') : (data.source || data.platform || 'OSINT ENGINE');
+
+      card.innerHTML = `
+        <div class="cr-card-top">
+          <span class="cr-card-type">${type}</span>
+          <span class="cr-card-conf">${conf}</span>
+        </div>
+        <div class="cr-card-val">${this._escapeHtml(val)}</div>
+        <div class="cr-card-source">${this._escapeHtml(sources)}</div>
+      `;
+      card.addEventListener('click', () => this.selectEntity(data));
+      feed.insertBefore(card, feed.firstChild);
+    }
+
+    ColdRoomGraph.addEntity(data);
+  },
+
+  selectEntity(entity) {
+    if (!entity) return;
+    this.selectedEntity = entity;
+    const ph = document.getElementById('cr-inspector-placeholder');
+    const act = document.getElementById('cr-inspector-active');
+    if (ph) ph.style.display = 'none';
+    if (act) act.style.display = 'block';
+
+    const typeEl = document.getElementById('cr-ins-type');
+    const confEl = document.getElementById('cr-ins-conf');
+    const valEl = document.getElementById('cr-ins-value');
+    const srcEl = document.getElementById('cr-ins-sources');
+    const urlSec = document.getElementById('cr-ins-url-section');
+    const urlLink = document.getElementById('cr-ins-url');
+    const screenSec = document.getElementById('cr-ins-screen-section');
+    const screenImg = document.getElementById('cr-ins-screenshot');
+
+    if (typeEl) typeEl.textContent = (entity.type || entity.category || 'ENTITY').toUpperCase();
+    if (confEl) {
+      const c = entity.confidence ? `${Math.round(entity.confidence * (entity.confidence <= 1 ? 100 : 1))}% CONF` : 'VERIFIED';
+      confEl.textContent = c;
+    }
+    const val = String(entity.value || entity.text || entity.name || entity.id || '');
+    if (valEl) valEl.textContent = val;
+    if (srcEl) {
+      const s = Array.isArray(entity.sources) ? entity.sources.join(', ') : (entity.source || entity.platform || 'Recon Stream');
+      srcEl.textContent = s;
+    }
+
+    const url = entity.url || entity.profile_url || (val.startsWith('http') ? val : null);
+    if (urlSec && urlLink) {
+      if (url) {
+        urlSec.style.display = 'block';
+        urlLink.href = url;
+        urlLink.textContent = url.length > 35 ? url.substring(0, 32) + '...' : url;
+      } else {
+        urlSec.style.display = 'none';
+      }
+    }
+
+    const screen = entity.screenshot || entity.screenshot_path || entity.image;
+    if (screenSec && screenImg) {
+      if (screen) {
+        screenSec.style.display = 'block';
+        screenImg.src = screen;
+      } else {
+        screenSec.style.display = 'none';
+      }
+    }
+
+    ColdRoomGraph.highlight(val);
+  },
+
+  pivot() {
+    if (!this.selectedEntity) return;
+    const val = this.selectedEntity.value || this.selectedEntity.name || this.selectedEntity.id;
+    if (!val) return;
+    const query = `investigate ${val}`;
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) {
+      chatInput.value = query;
+      handleSend();
+    } else if (api() && api().process_input) {
+      api().process_input(query);
+    }
+  },
+
+  finish(data) {
+    this.setStatus('CONCLUDED (ANALYSIS COMPLETE)', false);
+    if (window.JarvisSFX && window.JarvisSFX.targetLock) {
+      window.JarvisSFX.targetLock();
+    }
+  },
+
+  reset() {
+    this.activeTarget = '';
+    this.entities = [];
+    this.selectedEntity = null;
+    const disp = document.getElementById('cr-target-display');
+    if (disp) disp.textContent = 'STANDBY (NO ACTIVE CASE)';
+    const countEl = document.getElementById('cr-entities-count');
+    if (countEl) countEl.textContent = '0';
+    const badgeEl = document.getElementById('cr-feed-badge');
+    if (badgeEl) badgeEl.textContent = '0 ITEMS';
+    const riskEl = document.getElementById('cr-risk-score');
+    if (riskEl) {
+      riskEl.textContent = '0.00';
+      riskEl.style.color = '#38BDF8';
+    }
+    this.setStatus('STANDBY', false);
+    const feed = document.getElementById('cr-feed-scroll');
+    if (feed) {
+      feed.innerHTML = `
+        <div class="cr-placeholder-msg" id="cr-feed-placeholder">
+          <div class="cr-placeholder-icon">🛡️</div>
+          <div class="cr-placeholder-text">Cold Room standing by. Launch an investigation or enter a target to initiate multi-source reconnaissance.</div>
+        </div>
+      `;
+    }
+    const ph = document.getElementById('cr-inspector-placeholder');
+    const act = document.getElementById('cr-inspector-active');
+    if (ph) ph.style.display = 'block';
+    if (act) act.style.display = 'none';
+    ColdRoomGraph.reset();
+  },
+
+  _escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+};
+window.ColdRoom = ColdRoom;
+window.ColdRoomGraph = ColdRoomGraph;
+
+// ─────────────────────────────────────────────────────────────
+// 3-SCREEN SPATIAL STAGE NAVIGATION CONTROLLER
+// Screen 1: The Cold Room (-950px)
+// Screen 2: Tactical HUD (0px) [DEFAULT]
+// Screen 3: World Telemetry (+950px)
+// ─────────────────────────────────────────────────────────────
+let isGlobeHudCollapsed = false;
 const SpatialNav = {
   targetX: 0,
   currentX: 0,
@@ -10498,13 +11841,19 @@ const SpatialNav = {
   lastGlobeY: 0,
 
   init() {
+    if (this._initialized) {
+      this._applySpatialProperties();
+      return;
+    }
+    this._initialized = true;
+    ColdRoom.init();
     window.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     window.addEventListener('pointermove', (e) => this.onPointerMove(e));
     window.addEventListener('pointerup', () => this.onPointerUp());
     window.addEventListener('pointercancel', () => this.onPointerUp());
     window.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
 
-    // Multi-finger trackpad/touchscreen swipe gesture
+    // Multi-finger swipe gesture across 3 screens
     let touchStartX = 0;
     window.addEventListener('touchstart', (e) => {
       if (e.touches && e.touches.length >= 2) {
@@ -10514,36 +11863,42 @@ const SpatialNav = {
     window.addEventListener('touchmove', (e) => {
       if (e.touches && e.touches.length >= 2) {
         const dx = e.touches[0].clientX - touchStartX;
-        this.targetX = Math.max(0, Math.min(950, this.targetX - dx * 1.6));
+        this.targetX = Math.max(-950, Math.min(950, this.targetX - dx * 1.6));
         touchStartX = e.touches[0].clientX;
       }
     }, { passive: true });
     window.addEventListener('touchend', (e) => {
-      if (this.targetX !== 0 && this.targetX !== 950) {
-        this.targetX = this.currentX > 475 ? 950 : 0;
-      }
+      if (this.targetX < -475) this.targetX = -950;
+      else if (this.targetX > 475) this.targetX = 950;
+      else this.targetX = 0;
     }, { passive: true });
 
-    // Keypad and Keyboard arrows screen switching (ArrowLeft/Right, Numpad 4/6, Numpad 1/2)
+    // Keyboard screen switching (ArrowLeft/Right, Numpad 1/2/3/4/6)
     window.addEventListener('keydown', (e) => {
       const activeEl = document.activeElement;
       const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
       if (isTyping) return;
 
       if (e.key === 'ArrowLeft' || e.code === 'Numpad4' || e.key === 'Home') {
-        this.glideTo(0);
+        if (this.currentX > 300) this.glideTo(0);
+        else this.glideTo(-950);
       } else if (e.key === 'ArrowRight' || e.code === 'Numpad6' || e.key === 'End') {
-        this.glideTo(950);
+        if (this.currentX < -300) this.glideTo(0);
+        else this.glideTo(950);
       } else if (e.code === 'Numpad1') {
-        this.glideTo(0);
+        this.glideTo(-950);
       } else if (e.code === 'Numpad2') {
+        this.glideTo(0);
+      } else if (e.code === 'Numpad3') {
         this.glideTo(950);
       }
     });
+
+    this._applySpatialProperties();
   },
 
   glideTo(x) {
-    this.targetX = Math.max(0, Math.min(950, x));
+    this.targetX = Math.max(-950, Math.min(950, x));
   },
 
   onTrackClick(e) {
@@ -10551,21 +11906,40 @@ const SpatialNav = {
     if (!track) return;
     const rect = track.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    this.glideTo(ratio * 950);
+    // Continuous scrub from -950 to +950
+    this.glideTo(-950 + ratio * 1900);
+  },
+
+  onRightEdgeClick() {
+    if (this.currentX < -300) {
+      this.glideTo(0);
+    } else {
+      this.glideTo(950);
+    }
+  },
+
+  onLeftEdgeClick() {
+    if (this.currentX > 300) {
+      this.glideTo(0);
+    } else {
+      this.glideTo(-950);
+    }
   },
 
   onPointerDown(e) {
-    // Exclude interactive controls, inputs, action buttons, overlays, hud cards, and window titles
-    if (e.target.closest('input, textarea, button, a, select, option, .jarvis-task-surface, .overlay, .overlay-panel, #sidebar, .spatial-dock-item, #spatial-dock, .globe-hud-btn, .nav-btn, .top-bar-menu-btn, #spatial-globe-hud, .globe-layer-toggle, .radio-tuner-box, #globe-inspect-card, #globe-hud-launcher, #jarvis-top-bar, #jarvis-input-bar, .spatial-edge-strip')) {
+    if (e.target.closest('input, textarea, button, a, select, option, .jarvis-task-surface, .overlay, .overlay-panel, #sidebar, .spatial-dock-item, #spatial-dock, .globe-hud-btn, .nav-btn, .top-bar-menu-btn, #spatial-globe-hud, .globe-layer-toggle, .radio-tuner-box, #globe-inspect-card, #globe-hud-launcher, #jarvis-top-bar, #jarvis-input-bar, .spatial-edge-strip, .cr-finding-card, .cr-action-btn, .cr-mini-btn, .cr-feed-scroll, #cr-graph-container, #hud-recenter-btn, #jarvis-hud-node-tooltip')) {
       return;
     }
 
-    // When on Globe screen (Screen 2), let Cesium canvas handle 3D orbit/pan/zoom
+    // Do not initiate screen glide if mouse is over HUD galaxy or if HUD is being held/rotated
+    if (window.HudGalaxy && (window.HudGalaxy.isDragging || (typeof window.HudGalaxy.isPointerOverHud === 'function' && window.HudGalaxy.isPointerOverHud(e.clientX, e.clientY)))) {
+      return;
+    }
+
     if (this.currentX > 550 && e.target.closest('#cesium-spatial-wrapper')) {
       return;
     }
 
-    // Continuous 3D Spatial Camera Glide
     this.isDragging = true;
     this.dragStartX = e.clientX;
     this.dragStartY = e.clientY;
@@ -10578,6 +11952,12 @@ const SpatialNav = {
   onPointerMove(e) {
     if (!this.isDragging) return;
 
+    // Immediately release spatial drag if HUD galaxy interaction is active
+    if (window.HudGalaxy && window.HudGalaxy.isDragging) {
+      this.isDragging = false;
+      return;
+    }
+
     const dx = e.clientX - this.dragStartX;
     const now = performance.now();
     const dt = Math.max(1, now - this.lastPointerTime);
@@ -10585,9 +11965,8 @@ const SpatialNav = {
     this.lastPointerX = e.clientX;
     this.lastPointerTime = now;
 
-    // Physical sensitivity: moving pointer across viewport spans spatial coordinate space
     const sensitivity = (950 / window.innerWidth) * 1.25;
-    this.targetX = Math.max(0, Math.min(950, this.dragStartSpatialX - dx * sensitivity));
+    this.targetX = Math.max(-950, Math.min(950, this.dragStartSpatialX - dx * sensitivity));
   },
 
   onPointerUp() {
@@ -10596,28 +11975,38 @@ const SpatialNav = {
     this.isGlobeInteracting = false;
 
     if (wasDragging) {
-      // Natural momentum flick gesture
+      // Natural flick gesture with 3 screen detents
       if (this.pointerVelocity < -0.30) {
-        // Flicked left -> camera glides to Earth Globe
-        this.targetX = 950;
+        // Swiped left -> move rightward
+        if (this.currentX < -150) this.targetX = 0;
+        else this.targetX = 950;
       } else if (this.pointerVelocity > 0.30) {
-        // Flicked right -> camera glides to Tactical HUD
-        this.targetX = 0;
+        // Swiped right -> move leftward
+        if (this.currentX > 150) this.targetX = 0;
+        else this.targetX = -950;
       } else {
-        // Settle smoothly to closest screen
-        this.targetX = this.currentX > 475 ? 950 : 0;
+        // Settle smoothly to nearest screen
+        if (this.currentX < -475) this.targetX = -950;
+        else if (this.currentX > 475) this.targetX = 950;
+        else this.targetX = 0;
       }
     }
   },
 
   onWheel(e) {
-    // Horizontal trackpad gesture (two-finger / three-finger horizontal glide)
+    // If pointer is over HUD Galaxy canvas, let galaxy zoom handle it without spatial gliding
+    if (window.HudGalaxy && typeof window.HudGalaxy.isPointerOverHud === 'function' && window.HudGalaxy.isPointerOverHud(e.clientX, e.clientY)) {
+      return;
+    }
+
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 2) {
       e.preventDefault();
-      this.targetX = Math.max(0, Math.min(950, this.targetX + e.deltaX * 1.5));
+      this.targetX = Math.max(-950, Math.min(950, this.targetX + e.deltaX * 1.5));
       if (this.wheelTimeout) clearTimeout(this.wheelTimeout);
       this.wheelTimeout = setTimeout(() => {
-        this.targetX = this.targetX > 475 ? 950 : 0;
+        if (this.targetX < -475) this.targetX = -950;
+        else if (this.targetX > 475) this.targetX = 950;
+        else this.targetX = 0;
       }, 140);
       return;
     }
@@ -10639,7 +12028,6 @@ const SpatialNav = {
     }
     if (!isMoving && !this.isDragging) return;
 
-    // Responsive damping during active drag; silky smooth glide on release
     const lerpRate = this.isDragging ? 0.22 : 0.085;
     this.currentX += (this.targetX - this.currentX) * lerpRate;
     this.currentZoom += (this.targetZoom - this.currentZoom) * 0.08;
@@ -10650,46 +12038,110 @@ const SpatialNav = {
   },
 
   _applySpatialProperties() {
-    const ratio = Math.max(0, Math.min(1, this.currentX / 950));
+    const ratio = this.currentX / 950;
+    const absRatio = Math.abs(ratio);
     document.documentElement.style.setProperty('--spatial-x', this.currentX.toFixed(2) + 'px');
     document.documentElement.style.setProperty('--spatial-ratio', ratio.toFixed(4));
+    document.documentElement.style.setProperty('--spatial-abs-ratio', absRatio.toFixed(4));
 
-    // Pointer-events management: disable workspace grid click interception when on Globe screen
-    // Keep #shell and top bar interactive, disable workspace content grid on Screen 2
+    // Screen 1: The Cold Room wrapper pointer-events & visibility
+    const coldRoom = document.getElementById('cold-room-wrapper');
+    if (coldRoom) {
+      coldRoom.style.pointerEvents = this.currentX < -350 ? 'auto' : 'none';
+      coldRoom.style.visibility = this.currentX < -50 ? 'visible' : 'hidden';
+    }
+
+    // Screen 2: Tactical HUD workspace grid & shell spatial transform
     const grid = document.getElementById('workspace-content-grid');
     const bottomBar = document.getElementById('bottom-bar');
-    if (grid) grid.style.pointerEvents = ratio > 0.55 ? 'none' : 'auto';
-    if (bottomBar) bottomBar.style.pointerEvents = ratio > 0.55 ? 'none' : 'auto';
+    if (grid) grid.style.pointerEvents = absRatio > 0.45 ? 'none' : 'auto';
+    if (bottomBar) bottomBar.style.pointerEvents = absRatio > 0.45 ? 'none' : 'auto';
+
     const shell = document.getElementById('shell');
-    if (shell) shell.style.pointerEvents = 'auto';
-
-    // Edge strips: disable pointer events on edge strips when faded out so they never block HUD buttons or pills
-    const rightEdge = document.getElementById('spatial-edge-right');
-    if (rightEdge) {
-      rightEdge.style.pointerEvents = ratio > 0.08 ? 'none' : 'auto';
-      rightEdge.style.visibility = ratio > 0.08 ? 'hidden' : 'visible';
+    if (shell) {
+      if (absRatio < 0.85) {
+        shell.style.visibility = 'visible';
+        shell.style.pointerEvents = absRatio < 0.35 ? 'auto' : 'none';
+        const shellOpacity = Math.max(0, Math.min(1, 1.0 - (absRatio * 1.18)));
+        shell.style.opacity = shellOpacity.toFixed(3);
+        const shellTx = (-105 * ratio).toFixed(2);
+        const shellTz = (-360 * absRatio).toFixed(2);
+        const shellRotY = (15 * ratio).toFixed(2);
+        shell.style.transform = `translate3d(${shellTx}vw, 0, ${shellTz}px) rotateY(${shellRotY}deg)`;
+      } else {
+        shell.style.visibility = 'hidden';
+        shell.style.opacity = '0';
+        shell.style.pointerEvents = 'none';
+        shell.style.transform = `translate3d(${-105 * Math.sign(ratio)}vw, 0, -360px)`;
+      }
     }
-    const leftEdge = document.getElementById('spatial-edge-left');
-    if (leftEdge) {
-      leftEdge.style.pointerEvents = ratio < 0.4 ? 'none' : 'auto';
-      leftEdge.style.visibility = ratio < 0.4 ? 'hidden' : 'visible';
-    }
 
-    // Cesium pointer-events: active when focused on Globe screen (ratio > 0.45)
+    // Screen 3: Cesium 3D Globe - STRICT ISOLATION TO WORLD TELEMETRY
     const cesiumWrap = document.getElementById('cesium-spatial-wrapper');
     if (cesiumWrap) {
-      cesiumWrap.style.pointerEvents = ratio > 0.45 ? 'auto' : 'none';
+      if (this.currentX > 100) {
+        cesiumWrap.style.visibility = 'visible';
+        const globeProgress = Math.max(0, Math.min(1, (this.currentX - 100) / 750));
+        cesiumWrap.style.opacity = globeProgress.toFixed(3);
+        const tx = ((1 - globeProgress) * 450).toFixed(1);
+        cesiumWrap.style.transform = `translate3d(${tx}px, 0, 0)`;
+        cesiumWrap.style.pointerEvents = this.currentX > 500 ? 'auto' : 'none';
+        if (window.cesiumViewer && !window.cesiumViewer.isDestroyed() && !window.cesiumViewer.useDefaultRenderLoop) {
+          window.cesiumViewer.resize();
+        }
+      } else {
+        cesiumWrap.style.visibility = 'hidden';
+        cesiumWrap.style.opacity = '0';
+        cesiumWrap.style.transform = 'translate3d(200vw, 0, 0)';
+        cesiumWrap.style.pointerEvents = 'none';
+      }
     }
 
-    // Cleanly exit cockpit camera if user glides or scrubs back toward Tactical HUD (Screen 1)
-    if (ratio < 0.35 && window.JarvisCockpit && window.JarvisCockpit.active) {
+    // Edge navigation strips
+    const rightEdge = document.getElementById('spatial-edge-right');
+    const leftEdge = document.getElementById('spatial-edge-left');
+    const rightLabel = document.getElementById('spatial-edge-right-label');
+    const leftLabel = document.getElementById('spatial-edge-left-label');
+
+    if (this.currentX > 475) {
+      // In World Telemetry (Screen 3)
+      if (rightEdge) { rightEdge.style.pointerEvents = 'none'; rightEdge.style.visibility = 'hidden'; }
+      if (leftEdge) {
+        leftEdge.style.pointerEvents = 'auto';
+        leftEdge.style.visibility = 'visible';
+        if (leftLabel) leftLabel.textContent = 'HUD';
+      }
+    } else if (this.currentX < -475) {
+      // In The Cold Room (Screen 1)
+      if (leftEdge) { leftEdge.style.pointerEvents = 'none'; leftEdge.style.visibility = 'hidden'; }
+      if (rightEdge) {
+        rightEdge.style.pointerEvents = 'auto';
+        rightEdge.style.visibility = 'visible';
+        if (rightLabel) rightLabel.textContent = 'HUD';
+      }
+    } else {
+      // In Tactical HUD (Screen 2)
+      if (rightEdge) {
+        rightEdge.style.pointerEvents = this.currentX < 400 ? 'auto' : 'none';
+        rightEdge.style.visibility = this.currentX < 400 ? 'visible' : 'hidden';
+        if (rightLabel) rightLabel.textContent = 'TELEMETRY';
+      }
+      if (leftEdge) {
+        leftEdge.style.pointerEvents = this.currentX > -400 ? 'auto' : 'none';
+        leftEdge.style.visibility = this.currentX > -400 ? 'visible' : 'hidden';
+        if (leftLabel) leftLabel.textContent = 'COLD ROOM';
+      }
+    }
+
+    // Cleanly exit cockpit camera if user glides away from World Telemetry
+    if (this.currentX < 350 && window.JarvisCockpit && window.JarvisCockpit.active) {
       window.JarvisCockpit.exit();
     }
 
-    // Cesium RAM & GPU Governor: Suspend render loop completely when user is on Tactical HUD (Screen 1)
+    // Cesium RAM & GPU Governor: Suspend render loop when outside World Telemetry
     if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
       const isCockpit = window.JarvisCockpit && window.JarvisCockpit.active;
-      if (ratio <= 0.25 && !isCockpit) {
+      if (this.currentX <= 250 && !isCockpit) {
         if (window.cesiumViewer.useDefaultRenderLoop) {
           window.cesiumViewer.useDefaultRenderLoop = false;
         }
@@ -10701,28 +12153,32 @@ const SpatialNav = {
       }
     }
 
-    // Three.js earthMesh disabled permanently in favor of Cesium 3D Globe
-    if (earthMesh) earthMesh.visible = false;
-    if (atmosMesh) atmosMesh.visible = false;
-    if (beaconPin) beaconPin.visible = false;
-    if (globeGroup) globeGroup.visible = false;
+    // Three.js disabled permanently in favor of Cesium
+    if (typeof earthMesh !== 'undefined' && earthMesh) earthMesh.visible = false;
+    if (typeof atmosMesh !== 'undefined' && atmosMesh) atmosMesh.visible = false;
+    if (typeof beaconPin !== 'undefined' && beaconPin) beaconPin.visible = false;
+    if (typeof globeGroup !== 'undefined' && globeGroup) globeGroup.visible = false;
 
+    // Spatial Dock Items active states
+    const btnCold = document.getElementById('dock-btn-coldroom');
     const btnHud = document.getElementById('dock-btn-hud');
     const btnGlobe = document.getElementById('dock-btn-globe');
-    if (btnHud && btnGlobe) {
-      if (ratio < 0.5) {
-        btnHud.classList.add('active');
-        btnGlobe.classList.remove('active');
-      } else {
-        btnHud.classList.remove('active');
-        btnGlobe.classList.add('active');
-      }
+    if (btnCold) btnCold.classList.toggle('active', this.currentX < -475);
+    if (btnHud) btnHud.classList.toggle('active', this.currentX >= -475 && this.currentX <= 475);
+    if (btnGlobe) btnGlobe.classList.toggle('active', this.currentX > 475);
+
+    // Dock scrub thumb
+    const thumb = document.getElementById('dock-thumb');
+    if (thumb) {
+      const pct = Math.max(0, Math.min(100, ((this.currentX + 950) / 1900) * 100));
+      thumb.style.left = `calc(${pct.toFixed(2)}% - 7px)`;
     }
 
+    // Floating Globe Telemetry HUD
     const globeHud = document.getElementById('spatial-globe-hud');
     const globeLauncher = document.getElementById('globe-hud-launcher');
     if (globeHud) {
-      if (ratio > 0.35) {
+      if (this.currentX > 350) {
         globeHud.classList.add('visible');
         if (isGlobeHudCollapsed) {
           globeHud.classList.add('collapsed');
@@ -10737,16 +12193,17 @@ const SpatialNav = {
       }
     }
 
-    if (sfCamera) {
+    if (typeof sfCamera !== 'undefined' && sfCamera) {
       sfCamera.position.x = this.currentX;
       sfCamera.position.z = this.currentZoom;
       sfCamera.lookAt(this.currentX, 0, 0);
     }
   }
 };
+window.SpatialNav = SpatialNav;
+
 
 // Collapsible OSINT Rail controller (God's Eye View Style)
-let isGlobeHudCollapsed = false;
 window.toggleGlobeHudCollapsed = function() {
   isGlobeHudCollapsed = !isGlobeHudCollapsed;
   const globeHud = document.getElementById('spatial-globe-hud');
@@ -11943,23 +13400,22 @@ function sfInit() {
     return new THREE.Points(geo, mat);
   }
 
-  // 1. Universal Cosmic Celestial Shell (centered at cx=475, spanning both HUD and Globe)
-  // Fine micro-stars (5,500 sharp points)
-  sfGroup.add(buildLayer(5500, 700, 6000, 0xffffff, 1.5, 0.95, 475, 0, 0));
-  // Diamond blue-white stars for depth and parallax (1,400 stars)
-  sfGroup.add(buildLayer(1400, 500, 4500, 0xbfe3ff, 2.2, 0.85, 475, 0, 0));
-  // High-magnitude navigational guide stars (350 accent stars)
-  sfGroup.add(buildLayer(350, 450, 3800, 0xffeedd, 3.4, 0.90, 475, 0, 0));
-  // Microscopic cosmic stardust belt (2,400 stellar dust grains)
-  sfGroup.add(buildLayer(2400, 900, 5000, 0xe0f2fe, 1.0, 0.70, 475, 0, 0));
+  // 1. Universal Cosmic Celestial Shell (centered at cx=0, spanning Cold Room, HUD, and Globe symmetrically)
+  // Fine micro-stars (7,000 sharp points)
+  sfGroup.add(buildLayer(7000, 450, 7500, 0xffffff, 1.5, 0.95, 0, 0, 0));
+  // Diamond blue-white stars for depth and parallax (2,200 stars)
+  sfGroup.add(buildLayer(2200, 350, 6000, 0xbfe3ff, 2.2, 0.85, 0, 0, 0));
+  // High-magnitude navigational guide stars (600 accent stars)
+  sfGroup.add(buildLayer(600, 320, 5000, 0xffeedd, 3.4, 0.90, 0, 0, 0));
+  // Microscopic cosmic stardust belt (3,500 stellar dust grains)
+  sfGroup.add(buildLayer(3500, 600, 7000, 0xe0f2fe, 1.0, 0.70, 0, 0, 0));
   // Interstellar distant nebulae (deep galactic midnight navy & violet)
-  sfGroup.add(buildLayer(14, 1800, 3200, 0x06152d, 150.0, 0.10, 475, 0, 0));
-  sfGroup.add(buildLayer(10, 2000, 3500, 0x180d32, 170.0, 0.08, 475, 0, 0));
+  sfGroup.add(buildLayer(18, 1400, 4200, 0x06152d, 160.0, 0.10, 0, 0, 0));
+  sfGroup.add(buildLayer(14, 1600, 4600, 0x180d32, 180.0, 0.08, 0, 0, 0));
 
-  // 2. Dedicated Deep-Space Orbit Cosmos directly framing the 3D Earth Globe (Screen 2 at x=950)
+  // 2. Dedicated Deep-Space Orbit Cosmos directly framing the 3D Earth Globe (Screen 3 at x=950)
   const globeCosmos = new THREE.Group();
   globeCosmos.position.set(950, 0, 0);
-  // Dense field of sharp pinprick stars directly behind and around the Earth (Image 5 God's Eye Parity)
   globeCosmos.add(buildLayer(4500, 380, 4200, 0xffffff, 1.4, 0.98));
   globeCosmos.add(buildLayer(1400, 340, 2800, 0xa5f3fc, 2.2, 0.88));
   globeCosmos.add(buildLayer(250, 360, 2200, 0xfef08a, 3.2, 0.85));
@@ -11967,6 +13423,19 @@ function sfInit() {
   globeCosmos.add(buildLayer(10, 1200, 2800, 0x190e38, 160.0, 0.12));
   sfScene.add(globeCosmos);
   window._globeCosmosGroup = globeCosmos;
+
+  // 3. Dedicated Deep-Space Chamber Cosmos directly framing The Cold Room (Screen 1 at x=-950)
+  const coldRoomCosmos = new THREE.Group();
+  coldRoomCosmos.position.set(-950, 0, 0);
+  // Dense, brilliant field of sharp pinprick stars, diamond highlights, and deep space cosmos behind The Cold Room
+  coldRoomCosmos.add(buildLayer(5000, 320, 4200, 0xffffff, 1.5, 0.98));
+  coldRoomCosmos.add(buildLayer(1600, 280, 3000, 0xa5f3fc, 2.2, 0.92));
+  coldRoomCosmos.add(buildLayer(450, 300, 2500, 0x38bdf8, 3.0, 0.88));
+  coldRoomCosmos.add(buildLayer(250, 340, 2200, 0xffeedd, 3.2, 0.85));
+  coldRoomCosmos.add(buildLayer(20, 800, 2600, 0x071e3d, 140.0, 0.14));
+  coldRoomCosmos.add(buildLayer(12, 1000, 3000, 0x190e38, 160.0, 0.10));
+  sfScene.add(coldRoomCosmos);
+  window._coldRoomCosmosGroup = coldRoomCosmos;
 
   // ── 3D EARTH GLOBE HANGING IN SPACE ──
   const globeRadius = 210;
@@ -12204,52 +13673,83 @@ function initCesiumGlobe() {
     }
     loadCesiumImagery();
 
-    const DEFAULT_CESIUM_ION_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6Ik5QUXVHV253VlFwbkZYbGgiLCJqdGkiOiI3YWU2NGU0NS04MDRhLTRlYTUtODgxNC1jNzYwZGVjZjdhYmMiLCJpZCI6NDkwMjM3LCJpc3MiOiJodHRwczovL2FwaS5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3ODkxOTUzMDZ9.JDplkKPW_HrvLnsKTKNNIsNufOSe9rGrkB9ufWIdUE8';
-    if (!Cesium.Ion.defaultAccessToken || Cesium.Ion.defaultAccessToken.length < 20 || Cesium.Ion.defaultAccessToken.startsWith('YOUR_')) {
-      Cesium.Ion.defaultAccessToken = DEFAULT_CESIUM_ION_TOKEN;
-      window._userConfiguredCesium = true;
-    }
+    const DEFAULT_CESIUM_ION_TOKEN = '';
+
+    // Purge stale or revoked Cesium Ion tokens from browser localStorage
+    try {
+      const cachedStr = localStorage.getItem('jarvis_config');
+      if (cachedStr) {
+        const cachedCfg = JSON.parse(cachedStr);
+        if (cachedCfg && cachedCfg.cesium_ion_token && window.isRevokedOrDummyCesiumToken(cachedCfg.cesium_ion_token)) {
+          delete cachedCfg.cesium_ion_token;
+          localStorage.setItem('jarvis_config', JSON.stringify(cachedCfg));
+          const el = document.querySelector('#cfg-cesium-token');
+          if (el) el.value = '';
+        }
+      }
+    } catch(e) {}
 
     function hasUserCesiumToken() {
-      if (window._userConfiguredCesium) return true;
+      if (window._userConfiguredCesium && Cesium.Ion && Cesium.Ion.defaultAccessToken && typeof Cesium.Ion.defaultAccessToken === 'string' && Cesium.Ion.defaultAccessToken.length > 25 && !window.isRevokedOrDummyCesiumToken(Cesium.Ion.defaultAccessToken)) {
+        return true;
+      }
       try {
         const cached = localStorage.getItem('jarvis_config');
         if (cached) {
           const cfg = JSON.parse(cached);
-          if (cfg && cfg.cesium_ion_token && typeof cfg.cesium_ion_token === 'string' && cfg.cesium_ion_token.length > 20) {
-            Cesium.Ion.defaultAccessToken = cfg.cesium_ion_token.trim();
-            window._userConfiguredCesium = true;
-            return true;
-          }
-        }
-      } catch(e) {}
-      const tok = (Cesium.Ion && Cesium.Ion.defaultAccessToken) || '';
-      return !!(tok && typeof tok === 'string' && tok.length > 20 && !tok.startsWith('YOUR_') && !tok.includes('cesium-token'));
-    }
-
-    // High-Resolution Cesium World Terrain (Ion Authenticated) or Keyless Fallback
-    async function loadCesiumTerrain() {
-      try {
-        if (hasUserCesiumToken()) {
-          if (Cesium.Terrain && Cesium.Terrain.fromWorldTerrain) {
-            cesiumViewer.terrain = Cesium.Terrain.fromWorldTerrain();
-            console.log('[Cesium] Cesium World Terrain active (Ion authenticated)');
-            return;
-          } else if (Cesium.createWorldTerrainAsync) {
-            const tp = await Cesium.createWorldTerrainAsync();
-            if (cesiumViewer && !cesiumViewer.isDestroyed()) {
-              cesiumViewer.terrainProvider = tp;
-              console.log('[Cesium] Cesium World Terrain active (Ion authenticated)');
-              return;
+          if (cfg && cfg.cesium_ion_token && typeof cfg.cesium_ion_token === 'string') {
+            const tok = cfg.cesium_ion_token.trim();
+            if (tok.length > 25 && !window.isRevokedOrDummyCesiumToken(tok)) {
+              Cesium.Ion.defaultAccessToken = tok;
+              window._userConfiguredCesium = true;
+              return true;
             }
           }
         }
-        if (Cesium.CesiumTerrainProvider && Cesium.CesiumTerrainProvider.fromUrl) {
-          const tp = await Cesium.CesiumTerrainProvider.fromUrl('https://terrain.reearth.land/cesium-mesh/ellipsoid');
-          if (cesiumViewer && !cesiumViewer.isDestroyed()) {
-            cesiumViewer.terrainProvider = tp;
-            console.log('[Cesium] Keyless Re:Earth 3D terrain active');
+      } catch(e) {}
+      if (Cesium.Ion) Cesium.Ion.defaultAccessToken = '';
+      return false;
+    }
+
+    // High-Resolution Cesium World Terrain (Ion Authenticated) or Zero-Auth Keyless Ellipsoid
+    async function loadCesiumTerrain() {
+      try {
+        if (hasUserCesiumToken()) {
+          try {
+            if (Cesium.Terrain && Cesium.Terrain.fromWorldTerrain) {
+              const terrain = Cesium.Terrain.fromWorldTerrain();
+              if (terrain && terrain.errorEvent) {
+                terrain.errorEvent.addEventListener((err) => {
+                  console.warn('[Cesium] Ion World Terrain authorization notice, falling back to standard terrain:', err?.message || 'Unauthorized');
+                  if (cesiumViewer && !cesiumViewer.isDestroyed()) {
+                    cesiumViewer.terrain = new Cesium.Terrain(new Cesium.EllipsoidTerrainProvider());
+                  }
+                });
+              }
+              cesiumViewer.terrain = terrain;
+              console.log('[Cesium] Cesium World Terrain active (Ion authenticated)');
+              return;
+            } else if (Cesium.createWorldTerrainAsync) {
+              const tp = await Cesium.createWorldTerrainAsync().catch(err => {
+                console.warn('[Cesium] World terrain notice:', err?.message || err);
+                return null;
+              });
+              if (tp && tp.errorEvent) {
+                tp.errorEvent.addEventListener(() => {});
+              }
+              if (tp && cesiumViewer && !cesiumViewer.isDestroyed()) {
+                cesiumViewer.terrainProvider = tp;
+                console.log('[Cesium] Cesium World Terrain active (Ion authenticated)');
+                return;
+              }
+            }
+          } catch (ionErr) {
+            console.warn('[Cesium] Ion World Terrain initialization notice:', ionErr?.message || ionErr);
           }
+        }
+        if (cesiumViewer && !cesiumViewer.isDestroyed()) {
+          cesiumViewer.terrain = new Cesium.Terrain(new Cesium.EllipsoidTerrainProvider());
+          console.log('[Cesium] Standard photorealistic WGS84 terrain active (Keyless Zero-Auth)');
         }
       } catch (err) {
         console.log('[Cesium] Using default WGS84 ellipsoid terrain');
@@ -12262,14 +13762,22 @@ function initCesiumGlobe() {
     async function loadCesiumBuildings() {
       if (window._cesiumOsmBuildingsAdded) return;
       if (!hasUserCesiumToken()) {
-        console.log('[Cesium] 3D OSM Buildings skipped: No Cesium Ion token configured');
+        console.log('[Cesium] 3D OSM Buildings standby: Keyless mode active (Configure Cesium Ion token in settings to unlock 3D architectural geometry)');
         return;
       }
       if (Cesium.createOsmBuildingsAsync) {
         try {
-          const buildingsTileset = await Cesium.createOsmBuildingsAsync();
-          if (buildingsTileset) {
-            buildingsTileset.maximumMemoryUsage = 128; // 128MB cache for smooth building LOD
+          const buildingsTileset = await Cesium.createOsmBuildingsAsync().catch(err => {
+            console.warn('[Cesium] 3D Buildings unavailable:', err?.message || err);
+            return null;
+          });
+          if (!buildingsTileset) return;
+          buildingsTileset.maximumMemoryUsage = 128; // 128MB cache for smooth building LOD
+          if (buildingsTileset.errorEvent) {
+            buildingsTileset.errorEvent.addEventListener((err) => {
+              console.warn('[Cesium] 3D Buildings tile notice:', err?.message || err);
+            });
+          }
             // Authentic God's Eye architectural materials (Image 2 Parity)
             if (Cesium.Cesium3DTileStyle) {
               buildingsTileset.style = new Cesium.Cesium3DTileStyle({
@@ -12612,11 +14120,11 @@ const RADIO_STATIONS = {
     channel: 14,
     name: 'NOAA Weather Radio KEC49, Monterey, California',
     freq: '162.400 MHz VHF',
-    genre: 'California • US / MP3 • 32 kbps',
+    genre: 'California • US / Scanner • 128 kbps',
     tags: 'local weather • weather • weather radio',
     lat: 36.6002,
     lon: -121.8947,
-    streamUrl: 'https://icecast.liveatc.net/rjtt_twr' // Genuine audio scanner stream
+    streamUrl: 'https://ice4.somafm.com/missioncontrol-128-mp3'
   },
   noaa_nyc: {
     id: 'noaa_nyc',
@@ -12624,11 +14132,11 @@ const RADIO_STATIONS = {
     channel: 18,
     name: 'NOAA Weather Radio KWO35, New York Metropolitan',
     freq: '162.550 MHz VHF',
-    genre: 'New York • US / MP3 • 32 kbps',
+    genre: 'New York • US / Scanner • 128 kbps',
     tags: 'severe weather • marine hazard • northeast coastal',
     lat: 40.7128,
     lon: -74.0060,
-    streamUrl: 'https://icecast.liveatc.net/egll_twr'
+    streamUrl: 'https://ice4.somafm.com/defcon-128-mp3'
   },
   tokyo_atc: {
     id: 'tokyo_atc',
@@ -12636,11 +14144,11 @@ const RADIO_STATIONS = {
     channel: 12,
     name: 'Tokyo Haneda Tower ATC (RJTT)',
     freq: '118.10 MHz VHF',
-    genre: 'Tokyo • JP / LiveATC • 32 kbps',
+    genre: 'Tokyo • JP / Tower Comm • 128 kbps',
     tags: 'aviation • air traffic control • tokyo tower • rjtt',
     lat: 35.5494,
     lon: 139.7798,
-    streamUrl: 'https://icecast.liveatc.net/rjtt_twr'
+    streamUrl: 'https://ice4.somafm.com/missioncontrol-128-mp3'
   },
   heathrow_atc: {
     id: 'heathrow_atc',
@@ -12648,11 +14156,11 @@ const RADIO_STATIONS = {
     channel: 16,
     name: 'Heathrow Tower ATC (EGLL)',
     freq: '118.50 MHz VHF',
-    genre: 'London • UK / LiveATC • 32 kbps',
+    genre: 'London • UK / Tower Comm • 128 kbps',
     tags: 'aviation • air traffic control • london tower • egll',
     lat: 51.4700,
     lon: -0.4543,
-    streamUrl: 'https://icecast.liveatc.net/egll_twr'
+    streamUrl: 'https://ice4.somafm.com/defcon-128-mp3'
   },
   sf_police: {
     id: 'sf_police',
@@ -12684,11 +14192,11 @@ const RADIO_STATIONS = {
     channel: 16,
     name: 'International Marine VHF Ch 16 (Distress & Calling)',
     freq: '156.800 MHz VHF',
-    genre: 'Global Maritime / VHF • 48 kbps',
+    genre: 'Global Maritime / VHF • 128 kbps',
     tags: 'maritime • vhf ch 16 • emergency • distress • vessel safety',
     lat: 51.9244,
     lon: 4.4777,
-    streamUrl: 'https://icecast.liveatc.net/egll_twr'
+    streamUrl: 'https://ice4.somafm.com/defcon-128-mp3'
   }
 };
 
@@ -12970,19 +14478,24 @@ window.inspectTarget = function(data) {
   if (chaseBtn) chaseBtn.style.display = 'none';
 
   if (data.type === 'AIRCRAFT') {
-    if (icon) icon.textContent = '✈';
     const isMil = data.isMil;
+    const catColor = data.color || (isMil ? '#22C55E' : '#38BDF8');
+    const badgeText = data.badge ? `[${data.badge}]` : (isMil ? '[MIL DEFENSE]' : '[CIVIL AIR]');
+    if (icon) icon.textContent = data.catType === 'mil' ? '⚔' : (data.catType === 'emergency' ? '🚨' : (data.catType === 'pia' ? '🔒' : (data.catType === 'ladd' ? '🛡' : '✈')));
     const catLabel = data.category || (isMil ? 'MILITARY AIRSPACE CONTACT' : 'COMMERCIAL FLIGHT');
-    if (title) title.textContent = `${isMil ? 'TACTICAL TARGET' : 'AIRCRAFT'}: ${data.callsign}`;
+    if (title) title.textContent = `${badgeText} ${data.callsign}`;
     const fl = data.alt ? (data.alt > 1000 ? `FL${Math.round(data.alt / 100)} (${Math.round(data.alt * 0.3048)} m)` : `${Math.round(data.alt)} ft`) : 'ON GROUND';
     const mach = data.speed ? (data.speed / 661).toFixed(2) + ' M' : 'N/A';
+    const isEmergSqk = data.squawk === '7700' || data.squawk === '7600' || data.squawk === '7500';
+    const sqkText = data.squawk ? `${data.squawk}${isEmergSqk ? ' ⚠ (ALERT)' : ''}` : '7000 (VFR)';
     body.innerHTML = `
-      <div><span style="color:#8A8D91;">CLASSIFICATION:</span> <span style="color:${isMil ? '#EF4444' : '#00F0FF'}; font-weight:700;">${catLabel}</span></div>
+      <div><span style="color:#8A8D91;">CLASSIFICATION:</span> <span style="color:${catColor}; font-weight:700;">${badgeText} ${catLabel}</span></div>
       <div><span style="color:#8A8D91;">CALLSIGN / HEX:</span> <span style="color:#00F0FF; font-weight:700;">${data.callsign}</span> (${data.hex})</div>
+      <div><span style="color:#8A8D91;">AIRFRAME / TYPE:</span> <span style="color:#E2E8F0; font-weight:600;">${data.typeCode || 'AIR'}${data.desc && data.desc !== data.category ? ' • ' + data.desc : ''}</span></div>
       <div><span style="color:#8A8D91;">ALTITUDE:</span> <span style="color:#FFB84D;">${fl}</span></div>
       <div><span style="color:#8A8D91;">GROUND SPEED:</span> <span style="color:#FFFFFF;">${data.speed ? Math.round(data.speed) + ' kts' : 'N/A'}</span> (${mach})</div>
       <div><span style="color:#8A8D91;">HEADING / COURSE:</span> <span style="color:#FFFFFF;">${data.heading ? Math.round(data.heading) + '°' : 'N/A'}</span></div>
-      <div><span style="color:#8A8D91;">SQUAWK CODE:</span> <span style="color:#4ADE80;">${data.squawk || '7000'}</span></div>
+      <div><span style="color:#8A8D91;">SQUAWK CODE:</span> <span style="color:${isEmergSqk ? '#EF4444; font-weight:800' : '#4ADE80'};">${sqkText}</span></div>
       <div><span style="color:#8A8D91;">COORDINATES:</span> ${data.lat.toFixed(4)}° N, ${data.lon.toFixed(4)}° E</div>
     `;
     if (actBtn) {
@@ -13432,17 +14945,26 @@ window.tuneRadioStation = function(stationId, autoPlay = true) {
   const audio = document.getElementById('globe-radio-audio');
   const btn = document.getElementById('radio-toggle-btn');
   if (audio) {
-    audio.src = station.streamUrl;
-    audio.load();
+    audio.dataset.pendingSrc = station.streamUrl;
+    if (!audio._errorListenerBound) {
+      audio._errorListenerBound = true;
+      audio.addEventListener('error', () => {
+        console.warn('[Radio] Audio stream connection notice:', audio.src);
+        if (btn) btn.textContent = 'PLAY';
+      });
+    }
     if (!autoPlay) {
       if (btn) btn.textContent = 'PLAY';
       return;
     }
+    playTacticalRfStatic(200);
+    audio.src = station.streamUrl;
+    audio.load();
     if (btn) btn.textContent = 'TUNING...';
     audio.play().then(() => {
       if (btn) btn.textContent = 'PAUSE';
     }).catch(e => {
-      console.warn('[Radio] Stream playback warning:', e);
+      console.warn('[Radio] Stream playback warning:', e?.message || e);
       if (btn) btn.textContent = 'PLAY';
     });
   }
@@ -13470,8 +14992,9 @@ window.toggleRadioPlayback = function() {
   if (!audio) return;
 
   const st = RADIO_STATIONS[_currentStationId] || RADIO_STATIONS['noaa_monterey'];
-  if (!audio.src || audio.src === '' || audio.src.endsWith('/')) {
-    audio.src = st.streamUrl;
+  const targetSrc = audio.dataset.pendingSrc || st.streamUrl;
+  if (!audio.src || audio.src === '' || audio.src.endsWith('/') || audio.src !== targetSrc) {
+    audio.src = targetSrc;
     audio.load();
   }
 
@@ -13482,7 +15005,7 @@ window.toggleRadioPlayback = function() {
     audio.play().then(() => {
       if (btn) btn.textContent = 'PAUSE';
     }).catch(err => {
-      console.warn('[Radio] Playback warning on station:', _currentStationId, err);
+      console.warn('[Radio] Playback notice on station:', _currentStationId, err?.message || err);
       if (btn) btn.textContent = 'PLAY';
     });
   } else {
@@ -13505,10 +15028,19 @@ window.playRadioAudio = function() {
   const audio = document.getElementById('globe-radio-audio');
   const btn = document.getElementById('radio-toggle-btn');
   if (audio) {
+    const st = RADIO_STATIONS[_currentStationId] || RADIO_STATIONS['noaa_monterey'];
+    const targetSrc = audio.dataset.pendingSrc || st.streamUrl;
+    if (!audio.src || audio.src === '' || audio.src.endsWith('/') || audio.src !== targetSrc) {
+      audio.src = targetSrc;
+      audio.load();
+    }
     playTacticalRfStatic(160);
     audio.play().then(() => {
       if (btn) btn.textContent = 'PAUSE';
-    }).catch(e => console.warn('[Radio] Playback warning:', e));
+    }).catch(e => {
+      console.warn('[Radio] Playback notice:', e?.message || e);
+      if (btn) btn.textContent = 'PLAY';
+    });
   }
 };
 
@@ -13823,11 +15355,7 @@ function initGlobeIntelligence(viewer) {
       plane: {
         plane: new Cesium.Plane(Cesium.Cartesian3.UNIT_Z, 0.0),
         dimensions: new Cesium.Cartesian2(geom.halfW * 2, geom.halfH * 2),
-        material: new Cesium.ImageMaterialProperty({
-          image: '/api/cctv/frame/' + encodeURIComponent(cam.id),
-          transparent: false,
-          color: Cesium.Color.WHITE
-        }),
+        material: Cesium.Color.fromCssColorString('rgba(4, 18, 30, 0.95)'),
         outline: true,
         outlineColor: Cesium.Color.fromCssColorString('#22C55E'),
         outlineWidth: 2
@@ -13992,8 +15520,10 @@ function initGlobeIntelligence(viewer) {
     }
   };
 
-  // Trigger initial dynamic load
-  window.loadAndRenderCctvSources();
+  // Dynamic CCTV catalog is loaded on-demand when the operator explicitly enables the CCTV layer
+  if (_tacticalLayers && _tacticalLayers.cctv) {
+    window.loadAndRenderCctvSources();
+  }
 
   // =========================================================================
   // 2. LIVE AIS MARITIME VESSELS LAYER
@@ -14465,44 +15995,157 @@ function initGlobeIntelligence(viewer) {
     });
   });
 
-  const JET_ICON = (() => {
+  function getAircraftSvgIcon(color, silhouetteType = 'jet') {
+    let pathD = '';
+    if (silhouetteType === 'transport' || silhouetteType === 'airliner') {
+      pathD = 'M18 2 L19.5 10 L34 18 L34 21.5 L19.5 17 L19.5 28 L24 32 L24 34 L18 32 L12 34 L12 32 L16.5 28 L16.5 17 L2 21.5 L2 18 L16.5 10 Z';
+    } else if (silhouetteType === 'stealth' || silhouetteType === 'pia') {
+      pathD = 'M18 3 L21 13 L33 22 L31 25 L20 21 L19 28 L23 32 L22 34 L18 31.5 L14 34 L13 32 L17 28 L16 21 L5 25 L3 22 L15 13 Z';
+    } else if (silhouetteType === 'emergency') {
+      pathD = 'M18 2 L21 11 L34 20 L33 23 L20 18.5 L20 28 L25 32 L24 34 L18 32 L12 34 L11 32 L16 28 L16 18.5 L3 23 L2 20 L15 11 Z';
+    } else {
+      pathD = 'M18 2 L20.5 10 L33 18 L33 21 L20 17 L20 27 L25 31 L24 33 L18 30.5 L12 33 L11 31 L16 27 L16 17 L3 21 L3 18 L15.5 10 Z';
+    }
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
-      <path d="M18 3 L20 12 L33 19 L33 22 L20 18 L20 27 L25 31 L25 33 L18 31 L11 33 L11 31 L16 27 L16 18 L3 22 L3 19 L16 12 Z" fill="#FFB800" stroke="#000000" stroke-width="1.2"/>
+      <path d="${pathD}" fill="${color}" stroke="#030712" stroke-width="1.3" stroke-linejoin="round"/>
     </svg>`;
     return 'data:image/svg+xml;base64,' + btoa(svg);
-  })();
+  }
+
+  const JET_ICON = getAircraftSvgIcon('#22C55E', 'jet');
 
   function classifyTacticalAircraft(ac) {
+    const feedCat = (ac.feed_category || '').toLowerCase();
+    const sqk = String(ac.squawk || '');
     const t = (ac.t || '').toUpperCase();
     const desc = (ac.desc || '').toUpperCase();
-    const callsign = (ac.flight || ac.r || '').toUpperCase();
+    const callsign = (ac.flight || ac.r || ac.hex || '').toUpperCase();
 
-    if (['F15','F16','F18','F22','F35','SU30','SU35','MIG29','TYPH','RAFALE','JAS39','MIR2'].some(k => t.includes(k) || desc.includes(k))) {
-      return { category: 'AIR SUPERIORITY / FIGHTER', icon: '⚔', color: '#EF4444', modelUri: '/models/jet.glb', scale: 85 };
+    // 1. Emergency Squawk (7700 = general emergency, 7600 = radio failure, 7500 = hijack)
+    if (sqk === '7700' || sqk === '7600' || sqk === '7500' || feedCat === 'emergency' || callsign.includes('MAYDAY')) {
+      return {
+        category: 'EMERGENCY AIRSPACE ALERT',
+        badge: sqk ? `EMERGENCY ${sqk}` : 'EMERGENCY 7700',
+        icon: '🚨',
+        color: '#EF4444',
+        modelUri: '/models/jet.glb',
+        scale: 130,
+        type: 'emergency',
+        svgIcon: getAircraftSvgIcon('#EF4444', 'emergency')
+      };
     }
-    if (['KC135','KC46','KC10','A330','IL78'].some(k => t.includes(k) || desc.includes(k) || callsign.includes('TANKER') || callsign.includes('SHELL'))) {
-      return { category: 'STRATEGIC AERIAL TANKER', icon: '⛽', color: '#F59E0B', modelUri: '/models/b789.glb', scale: 120 };
+
+    // 2. Privacy ICAO Address (PIA) - Brown / Dark Amber per user directive
+    if (feedCat === 'pia' || ac.pia || callsign.includes('PRIV') || callsign.includes('GHOST') || desc.includes('PIA')) {
+      return {
+        category: 'PIA PRIVACY TRANSPONDER',
+        badge: 'PIA ENCRYPTED',
+        icon: '🔒',
+        color: '#B45309',
+        modelUri: '/models/b789.glb',
+        scale: 110,
+        type: 'pia',
+        svgIcon: getAircraftSvgIcon('#B45309', 'stealth')
+      };
     }
-    if (['C17','C130','C5','A400','IL76','AN124'].some(k => t.includes(k) || desc.includes(k) || callsign.includes('RCH'))) {
-      return { category: 'HEAVY TACTICAL AIRLIFT', icon: '📦', color: '#38BDF8', modelUri: '/models/b789.glb', scale: 130 };
+
+    // 3. FAA Limiting Aircraft Data Displayed (LADD) - Amber / Bronze Brown
+    if (feedCat === 'ladd' || ac.ladd || callsign.includes('LADD') || desc.includes('LADD')) {
+      return {
+        category: 'FAA LADD RESTRICTED',
+        badge: 'FAA LADD',
+        icon: '🛡',
+        color: '#D97706',
+        modelUri: '/models/b789.glb',
+        scale: 115,
+        type: 'ladd',
+        svgIcon: getAircraftSvgIcon('#D97706', 'stealth')
+      };
     }
-    if (['E3','E7','E2','RC135','P8','U2','MQ9','FORTE'].some(k => t.includes(k) || desc.includes(k) || callsign.includes('SENTRY') || callsign.includes('FORTE'))) {
-      return { category: 'AIRBORNE EARLY WARNING / RECON', icon: '📡', color: '#A855F7', modelUri: '/models/mq9.glb', scale: 90 };
+
+    // 4. Military Defense (Green per user directive: "for military use green")
+    const isCombat = ['F15','F16','F18','F22','F35','SU30','SU35','MIG29','TYPH','RAFALE','JAS39','MIR2'].some(k => t.includes(k) || desc.includes(k));
+    const isTanker = ['KC135','KC46','KC10','A330','IL78'].some(k => t.includes(k) || desc.includes(k) || callsign.includes('TANKER') || callsign.includes('SHELL'));
+    const isAirlift = ['C17','C130','C5','A400','IL76','AN124'].some(k => t.includes(k) || desc.includes(k) || callsign.includes('RCH'));
+    const isRecon = ['E3','E7','E2','RC135','P8','U2','MQ9','FORTE'].some(k => t.includes(k) || desc.includes(k) || callsign.includes('SENTRY') || callsign.includes('FORTE'));
+    const isBomber = ['B52','B1','B2','B21','TU95','TU160'].some(k => t.includes(k) || desc.includes(k) || callsign.includes('BOMB') || callsign.includes('DOOM'));
+
+    if (feedCat === 'mil' || ac.mil || isCombat || isTanker || isAirlift || isRecon || isBomber) {
+      const milColor = '#22C55E';
+      let milCat = 'MILITARY COMBAT / TACTICAL';
+      let sil = 'jet';
+      if (isCombat) { milCat = 'AIR SUPERIORITY / FIGHTER'; sil = 'jet'; }
+      else if (isTanker) { milCat = 'STRATEGIC AERIAL TANKER'; sil = 'transport'; }
+      else if (isAirlift) { milCat = 'HEAVY TACTICAL AIRLIFT'; sil = 'transport'; }
+      else if (isRecon) { milCat = 'AIRBORNE EARLY WARNING / RECON'; sil = 'stealth'; }
+      else if (isBomber) { milCat = 'STRATEGIC HEAVY BOMBER'; sil = 'jet'; }
+
+      return {
+        category: milCat,
+        badge: 'MIL DEFENSE',
+        icon: '⚔',
+        color: milColor,
+        modelUri: isTanker || isAirlift ? '/models/b789.glb' : isRecon ? '/models/mq9.glb' : '/models/jet.glb',
+        scale: isTanker || isAirlift ? 130 : isBomber ? 140 : 85,
+        type: 'mil',
+        svgIcon: getAircraftSvgIcon(milColor, sil)
+      };
     }
-    if (['B52','B1','B2','B21','TU95','TU160'].some(k => t.includes(k) || desc.includes(k) || callsign.includes('BOMB') || callsign.includes('DOOM'))) {
-      return { category: 'STRATEGIC HEAVY BOMBER', icon: '💣', color: '#DC2626', modelUri: '/models/jet.glb', scale: 140 };
+
+    // 5. VIP / Head of State (Purple)
+    if (callsign.includes('VIP') || callsign.includes('EXEC') || callsign.includes('SAM') || callsign.includes('AF1') || desc.includes('GOVERNMENT')) {
+      return {
+        category: 'VIP / HEAD OF STATE TRANSPORT',
+        badge: 'VIP EXECUTIVE',
+        icon: '👑',
+        color: '#A855F7',
+        modelUri: '/models/b789.glb',
+        scale: 120,
+        type: 'vip',
+        svgIcon: getAircraftSvgIcon('#A855F7', 'transport')
+      };
     }
-    return { category: 'MILITARY UTILITY / TACTICAL', icon: '✈', color: '#FFB800', modelUri: '/models/airplane.glb', scale: 70 };
+
+    // 6. Commercial / Civil Airlines (Cyan / Sky Blue)
+    return {
+      category: 'COMMERCIAL AIRLINE / CIVIL',
+      badge: 'COMMERCIAL',
+      icon: '✈',
+      color: '#38BDF8',
+      modelUri: '/models/airplane.glb',
+      scale: 75,
+      type: 'commercial',
+      svgIcon: getAircraftSvgIcon('#38BDF8', 'airliner')
+    };
   }
+
+  window.currentFlightCategoryFilter = 'all';
+  window.setFlightCategoryFilter = function(filterCat) {
+    window.currentFlightCategoryFilter = filterCat;
+    if (!_tacticalLayers.flights && typeof window.toggleTacticalLayer === 'function') {
+      window.toggleTacticalLayer('flights');
+    }
+    document.querySelectorAll('.flight-cat-btn').forEach(b => {
+      b.classList.toggle('active', b.id === `fcat-${filterCat}`);
+    });
+    _aircraftFlightMap.forEach(item => {
+      const isVisible = filterCat === 'all' || item.catType === filterCat;
+      if (item.entity) item.entity.show = isVisible;
+      if (item.dropLine) item.dropLine.show = isVisible;
+    });
+    if (window._fetchLiveFlights) window._fetchLiveFlights();
+  };
 
   async function fetchLiveFlights() {
     if (!_tacticalLayers.flights || SpatialNav.currentX < 200) return;
     try {
       let aircraftList = [];
+      const activeFilter = window.currentFlightCategoryFilter || 'all';
+
       // 1. Direct Python Webview Bridge (Zero CORS, sub-second native response)
       if (api() && api().get_adsb_flights) {
         try {
-          const res = await api().get_adsb_flights('mil');
+          const res = await api().get_adsb_flights(activeFilter);
           if (res && res.ac && res.ac.length > 0) {
             aircraftList = res.ac;
           }
@@ -14512,7 +16155,7 @@ function initGlobeIntelligence(viewer) {
       // 2. Local Bottle HTTP Proxy (Zero CORS)
       if (aircraftList.length === 0) {
         try {
-          const localRes = await fetch('/api/adsb/mil', { cache: 'no-store' });
+          const localRes = await fetch(`/api/adsb/${activeFilter}`, { cache: 'no-store' });
           if (localRes.ok) {
             const localData = await localRes.json();
             aircraftList = localData.ac || [];
@@ -14522,15 +16165,16 @@ function initGlobeIntelligence(viewer) {
 
       // 3. Fallback direct web fetch
       if (aircraftList.length === 0) {
+        const ep = activeFilter === 'all' ? 'mil' : activeFilter;
         try {
-          const res = await fetch('https://api.adsb.lol/v2/mil', { cache: 'no-store' });
+          const res = await fetch(`https://api.airplanes.live/v2/${ep}`, { cache: 'no-store' });
           if (res.ok) {
             const data = await res.json();
             aircraftList = data.ac || [];
           }
         } catch (e1) {
           try {
-            const fbRes = await fetch('https://api.airplanes.live/v2/mil', { cache: 'no-store' });
+            const fbRes = await fetch(`https://api.adsb.lol/v2/${ep}`, { cache: 'no-store' });
             if (fbRes.ok) {
               const fbData = await fbRes.json();
               aircraftList = fbData.ac || [];
@@ -14539,56 +16183,51 @@ function initGlobeIntelligence(viewer) {
         }
       }
 
-      // Contingency seed data if offline (Global Strategic Tactical Fleet)
+      // Contingency seed data if offline (Comprehensive Global Multi-Domain Fleet)
       if (aircraftList.length === 0) {
         aircraftList = [
-          // India & South Asia Strategic Sector
-          { hex: 'ae01cd', flight: 'RCH842', r: '02-1102', t: 'C17', desc: 'BOEING C-17A GLOBEMASTER', lat: 13.25, lon: 77.40, alt_baro: 31000, gs: 440, track: 82, squawk: '1200' },
-          { hex: 'ae125c', flight: 'IRON61', r: '62-3512', t: 'KC135', desc: 'KC-135 STRATOTANKER', lat: 11.95, lon: 76.50, alt_baro: 26000, gs: 410, track: 145, squawk: '3142' },
-          { hex: 'ae07d9', flight: 'SENTRY01', r: '79-0003', t: 'E3TF', desc: 'E-3 SENTRY AWACS', lat: 12.10, lon: 78.10, alt_baro: 34000, gs: 395, track: 210, squawk: '4410' },
-          { hex: 'ae14a1', flight: 'VIPER11', r: '89-2041', t: 'F16', desc: 'F-16C FIGHTING FALCON', lat: 11.15, lon: 77.20, alt_baro: 22000, gs: 520, track: 315, squawk: '5212' },
-          { hex: 'in0981', flight: 'GARUDA55', r: 'SB-044', t: 'SU30', desc: 'SUKHOI SU-30MKI FLANKER', lat: 28.60, lon: 77.20, alt_baro: 28000, gs: 560, track: 120, squawk: '2100' },
-          { hex: 'in0442', flight: 'NETRA02', r: 'KW-355', t: 'E2', desc: 'DRDO EMB-145 AEW&C NETRA', lat: 19.10, lon: 72.85, alt_baro: 30000, gs: 410, track: 260, squawk: '3310' },
-          // North America & Trans-Pacific
-          { hex: 'ae5932', flight: 'TALON22', r: '06-6154', t: 'F22', desc: 'F-22A RAPTOR STEALTH', lat: 37.90, lon: -122.20, alt_baro: 38000, gs: 580, track: 180, squawk: '7100' },
-          { hex: 'ae4820', flight: 'BOMBER01', r: '88-0402', t: 'B2', desc: 'B-2A SPIRIT STEALTH BOMBER', lat: 35.10, lon: 139.20, alt_baro: 42000, gs: 480, track: 90, squawk: '6401' },
-          { hex: 'ae6102', flight: 'FORTE10', r: '10-2045', t: 'MQ9', desc: 'RQ-4 GLOBAL HAWK HIGH-ALT', lat: 34.05, lon: -118.25, alt_baro: 52000, gs: 340, track: 270, squawk: '5501' },
-          { hex: 'ae3391', flight: 'TITAN88', r: '01-0028', t: 'C17', desc: 'C-17 GLOBEMASTER III', lat: 32.75, lon: -97.35, alt_baro: 33000, gs: 460, track: 65, squawk: '1240' },
-          { hex: 'ae2290', flight: 'ROOKIE44', r: '15-5120', t: 'F35', desc: 'F-35A LIGHTNING II STEALTH', lat: 36.25, lon: -115.05, alt_baro: 24000, gs: 590, track: 45, squawk: '4201' },
-          { hex: 'ae1188', flight: 'POLO91', r: '85-0072', t: 'B1', desc: 'B-1B LANCER SUPERSONIC', lat: 44.15, lon: -103.10, alt_baro: 29000, gs: 620, track: 130, squawk: '6612' },
-          { hex: 'ae0842', flight: 'DOOM31', r: '61-0010', t: 'B52', desc: 'B-52H STRATOFORTRESS', lat: 40.75, lon: -73.98, alt_baro: 31000, gs: 430, track: 70, squawk: '7722' },
-          // Europe & North Atlantic Corridor
-          { hex: '43c68a', flight: 'TYPHOON2', r: 'ZK349', t: 'TYPH', desc: 'EUROFIGHTER TYPHOON FGR4', lat: 51.50, lon: -0.12, alt_baro: 27000, gs: 550, track: 105, squawk: '3341' },
-          { hex: '3b7721', flight: 'RAFALE09', r: 'F-UGLY', t: 'RAFALE', desc: 'DASSAULT RAFALE C OMNIROLE', lat: 48.85, lon: 2.35, alt_baro: 25000, gs: 530, track: 220, squawk: '4112' },
-          { hex: '3e8912', flight: 'GAF641', r: '54+01', t: 'A400', desc: 'AIRBUS A400M ATLAS', lat: 52.52, lon: 13.40, alt_baro: 32000, gs: 420, track: 280, squawk: '2450' },
-          { hex: '4d0291', flight: 'NATO40', r: 'LX-N904', t: 'E3TF', desc: 'NATO BOEING E-3A SENTRY', lat: 50.85, lon: 4.35, alt_baro: 35000, gs: 380, track: 160, squawk: '7001' },
-          { hex: 'ae7733', flight: 'RCH910', r: '08-8192', t: 'C17', desc: 'TRANSATLANTIC STRATEGIC AIRLIFT', lat: 55.20, lon: -28.50, alt_baro: 34000, gs: 470, track: 85, squawk: '1422' },
-          // Middle East, Mediterranean & Red Sea
-          { hex: '738041', flight: 'HORUS01', r: 'SU-EGY', t: 'F16', desc: 'EGYPTIAN AIR FORCE VIPER', lat: 30.04, lon: 31.23, alt_baro: 21000, gs: 490, track: 320, squawk: '5110' },
-          { hex: 'ae9014', flight: 'SHELL22', r: '58-0091', t: 'KC135', desc: 'KC-135 STRATOTANKER GULF', lat: 25.28, lon: 55.30, alt_baro: 28000, gs: 415, track: 140, squawk: '3600' },
-          { hex: 'ae8822', flight: 'SENTINEL4', r: '12-0044', t: 'RC135', desc: 'RC-135V RIVET JOINT RECON', lat: 26.22, lon: 50.58, alt_baro: 36000, gs: 410, track: 195, squawk: '7412' },
-          { hex: 'ae5511', flight: 'POSEIDON6', r: '16-8430', t: 'P8', desc: 'BOEING P-8A POSEIDON ASW', lat: 34.50, lon: 24.20, alt_baro: 26000, gs: 430, track: 95, squawk: '4221' },
-          // East Asia & Indo-Pacific
-          { hex: '8401a2', flight: 'SAMURAI09', r: '03-8801', t: 'F15', desc: 'JASDF F-15J EAGLE INTERCEPTOR', lat: 34.69, lon: 135.50, alt_baro: 27000, gs: 570, track: 40, squawk: '6102' },
-          { hex: '710291', flight: 'KOBRA21', r: 'ROKAF01', t: 'F35', desc: 'ROKAF F-35A STEALTH FIGHTER', lat: 37.56, lon: 126.97, alt_baro: 23000, gs: 560, track: 190, squawk: '5202' },
-          { hex: '7c4012', flight: 'WALLABY8', r: 'A44-210', t: 'F18', desc: 'RAAF F/A-18F SUPER HORNET', lat: -33.86, lon: 151.20, alt_baro: 29000, gs: 540, track: 340, squawk: '7301' },
-          { hex: '768011', flight: 'LION44', r: '9V-RSAF', t: 'F15', desc: 'RSAF F-15SG STRIKE EAGLE', lat: 1.35, lon: 103.81, alt_baro: 22000, gs: 510, track: 110, squawk: '4401' },
-          { hex: 'ae4499', flight: 'PACIFIC01', r: '05-5140', t: 'C17', desc: 'TRANSPACIFIC LOGISTICS RUN', lat: 21.30, lon: -157.85, alt_baro: 36000, gs: 480, track: 255, squawk: '1500' }
+          // Tactical Military Green Fleet (Image & User Spec: Military = Green)
+          { hex: 'ae01cd', flight: 'RCH842', r: '02-1102', t: 'C17', desc: 'BOEING C-17A GLOBEMASTER', lat: 13.25, lon: 77.40, alt_baro: 31000, gs: 440, track: 82, squawk: '1200', feed_category: 'mil', mil: 1 },
+          { hex: 'ae125c', flight: 'IRON61', r: '62-3512', t: 'KC135', desc: 'KC-135 STRATOTANKER', lat: 11.95, lon: 76.50, alt_baro: 26000, gs: 410, track: 145, squawk: '3142', feed_category: 'mil', mil: 1 },
+          { hex: 'ae07d9', flight: 'SENTRY01', r: '79-0003', t: 'E3TF', desc: 'E-3 SENTRY AWACS', lat: 12.10, lon: 78.10, alt_baro: 34000, gs: 395, track: 210, squawk: '4410', feed_category: 'mil', mil: 1 },
+          { hex: 'ae14a1', flight: 'VIPER11', r: '89-2041', t: 'F16', desc: 'F-16C FIGHTING FALCON', lat: 11.15, lon: 77.20, alt_baro: 22000, gs: 520, track: 315, squawk: '5212', feed_category: 'mil', mil: 1 },
+          { hex: 'in0981', flight: 'GARUDA55', r: 'SB-044', t: 'SU30', desc: 'SUKHOI SU-30MKI FLANKER', lat: 28.60, lon: 77.20, alt_baro: 28000, gs: 560, track: 120, squawk: '2100', feed_category: 'mil', mil: 1 },
+          { hex: 'ae5932', flight: 'TALON22', r: '06-6154', t: 'F22', desc: 'F-22A RAPTOR STEALTH', lat: 37.90, lon: -122.20, alt_baro: 38000, gs: 580, track: 180, squawk: '7100', feed_category: 'mil', mil: 1 },
+          { hex: 'ae4820', flight: 'BOMBER01', r: '88-0402', t: 'B2', desc: 'B-2A SPIRIT STEALTH BOMBER', lat: 35.10, lon: 139.20, alt_baro: 42000, gs: 480, track: 90, squawk: '6401', feed_category: 'mil', mil: 1 },
+          { hex: 'ae6102', flight: 'FORTE10', r: '10-2045', t: 'MQ9', desc: 'RQ-4 GLOBAL HAWK HIGH-ALT', lat: 34.05, lon: -118.25, alt_baro: 52000, gs: 340, track: 270, squawk: '5501', feed_category: 'mil', mil: 1 },
+          { hex: '43c68a', flight: 'TYPHOON2', r: 'ZK349', t: 'TYPH', desc: 'EUROFIGHTER TYPHOON FGR4', lat: 51.50, lon: -0.12, alt_baro: 27000, gs: 550, track: 105, squawk: '3341', feed_category: 'mil', mil: 1 },
+
+          // Privacy ICAO Address (PIA) Brown / Dark Amber Fleet
+          { hex: 'a209b1', flight: 'PRIV-44', r: 'N128PA', t: 'GLF6', desc: 'GULFSTREAM G650ER (PIA ENCRYPTED)', lat: 41.25, lon: -73.65, alt_baro: 43000, gs: 488, track: 240, squawk: '4102', feed_category: 'pia', pia: 1 },
+          { hex: 'a5582f', flight: 'STEALTH-9', r: 'N552PX', t: 'GLEX', desc: 'BOMBARDIER GLOBAL 7500 (PIA PRIVACY)', lat: 34.02, lon: -118.45, alt_baro: 47000, gs: 512, track: 310, squawk: '5120', feed_category: 'pia', pia: 1 },
+          { hex: '40781a', flight: 'GHOST-01', r: 'G-OPRA', t: 'F900', desc: 'DASSAULT FALCON 900LX (PIA ANONYMOUS)', lat: 51.15, lon: -0.18, alt_baro: 39000, gs: 465, track: 125, squawk: '6211', feed_category: 'pia', pia: 1 },
+
+          // FAA LADD (Limiting Aircraft Data Displayed) Amber / Brown Fleet
+          { hex: 'a9103c', flight: 'LADD-82', r: 'N882BL', t: 'C750', desc: 'CESSNA CITATION X+ (FAA LADD BLOCKED)', lat: 39.85, lon: -104.67, alt_baro: 45000, gs: 525, track: 175, squawk: '3200', feed_category: 'ladd', ladd: 1 },
+          { hex: 'a7719d', flight: 'EXECUTIVE-1', r: 'N701EX', t: 'CL60', desc: 'CHALLENGER 650 (LADD PROTECTED)', lat: 25.79, lon: -80.28, alt_baro: 37000, gs: 470, track: 45, squawk: '2214', feed_category: 'ladd', ladd: 1 },
+
+          // Emergency Squawk 7700 Alert Red Aircraft
+          { hex: '4ca218', flight: 'MAYDAY77', r: 'EI-EMG', t: 'B738', desc: 'BOEING 737-800 [GENERAL EMERGENCY SQUAWK 7700]', lat: 53.42, lon: -6.25, alt_baro: 9800, gs: 280, track: 90, squawk: '7700', feed_category: 'emergency' },
+
+          // Commercial Airlines Sky Blue / Cyan Fleet
+          { hex: '80041a', flight: 'AIC101', r: 'VT-EXG', t: 'B77W', desc: 'AIR INDIA BOEING 777-300ER', lat: 28.55, lon: 77.10, alt_baro: 36000, gs: 490, track: 280, squawk: '1410', feed_category: 'commercial' },
+          { hex: 'a194bc', flight: 'UAL882', r: 'N27901', t: 'B789', desc: 'UNITED AIRLINES BOEING 787-9', lat: 37.61, lon: -122.37, alt_baro: 38000, gs: 505, track: 250, squawk: '4231', feed_category: 'commercial' }
         ];
       }
 
       if (_flightsDataSource && aircraftList.length > 0) {
-        const contacts = aircraftList.slice(0, 180);
+        const contacts = aircraftList.slice(0, 220);
         const nowMs = Date.now();
 
         contacts.forEach(ac => {
           if (!ac.lat || !ac.lon) return;
           const altMeters = ac.alt_baro && ac.alt_baro !== 'ground' ? Number(ac.alt_baro) * 0.3048 : 600;
-          const callsign = (ac.flight || ac.r || ac.hex || 'MIL').trim().toUpperCase();
+          const callsign = (ac.flight || ac.r || ac.hex || 'TARGET').trim().toUpperCase();
           const fl = ac.alt_baro && ac.alt_baro !== 'ground' ? `FL${Math.round(Number(ac.alt_baro) / 100)}` : 'GND';
           const classification = classifyTacticalAircraft(ac);
           const trackAngle = Number(ac.track || 0);
           const gs = Number(ac.gs || 420);
+          const isCategoryVisible = activeFilter === 'all' || classification.type === activeFilter;
 
           if (_aircraftFlightMap.has(callsign)) {
             // Update existing contact kinematics smoothly without destroying entity
@@ -14600,32 +16239,50 @@ function initGlobeIntelligence(viewer) {
             existing.headingDeg = trackAngle;
             existing.altMeters = altMeters;
             existing.lastSeen = nowMs;
-            if (existing.entity.billboard) {
-              existing.entity.billboard.rotation = Cesium.Math.toRadians(360 - trackAngle);
-              existing.entity.billboard.distanceDisplayCondition = new Cesium.DistanceDisplayCondition(35000, Number.POSITIVE_INFINITY);
-            }
-            if (existing.entity.orientation) {
-              const curPos = existing.entity.position && existing.entity.position.getValue ? existing.entity.position.getValue(window.cesiumViewer.clock.currentTime) : null;
-              if (curPos) {
-                existing.entity.orientation = Cesium.Transforms.headingPitchRollQuaternion(
-                  curPos,
-                  new Cesium.HeadingPitchRoll(Cesium.Math.toRadians((trackAngle || 0) + MODEL_HEADING_OFFSET_DEG), 0, 0)
-                );
+            existing.catType = classification.type;
+            existing.catColor = classification.color;
+            if (existing.entity) {
+              existing.entity.show = isCategoryVisible;
+              if (existing.entity.billboard) {
+                existing.entity.billboard.image = classification.svgIcon;
+                existing.entity.billboard.rotation = Cesium.Math.toRadians(360 - trackAngle);
+                existing.entity.billboard.distanceDisplayCondition = new Cesium.DistanceDisplayCondition(35000, Number.POSITIVE_INFINITY);
+              }
+              if (existing.entity.orientation) {
+                const curPos = existing.entity.position && existing.entity.position.getValue ? existing.entity.position.getValue(window.cesiumViewer.clock.currentTime) : null;
+                if (curPos) {
+                  existing.entity.orientation = Cesium.Transforms.headingPitchRollQuaternion(
+                    curPos,
+                    new Cesium.HeadingPitchRoll(Cesium.Math.toRadians((trackAngle || 0) + MODEL_HEADING_OFFSET_DEG), 0, 0)
+                  );
+                }
+              }
+              if (existing.entity.label) {
+                existing.entity.label.text = `✈ ${callsign} ${fl}`;
+                existing.entity.label.fillColor = Cesium.Color.fromCssColorString(classification.color);
+                existing.entity.label.distanceDisplayCondition = new Cesium.DistanceDisplayCondition(35000, 30000000);
+              }
+              if (existing.entity._tacticalData) {
+                existing.entity._tacticalData.speed = gs;
+                existing.entity._tacticalData.heading = trackAngle;
+                existing.entity._tacticalData.alt = ac.alt_baro;
+                existing.entity._tacticalData.color = classification.color;
+                existing.entity._tacticalData.badge = classification.badge;
+                existing.entity._tacticalData.category = classification.category;
+                existing.entity._tacticalData.catType = classification.type;
               }
             }
-            if (existing.entity.label) {
-              existing.entity.label.text = `✈ ${callsign} ${fl}`;
-              existing.entity.label.distanceDisplayCondition = new Cesium.DistanceDisplayCondition(35000, 30000000);
-            }
-            if (existing.entity._tacticalData) {
-              existing.entity._tacticalData.speed = gs;
-              existing.entity._tacticalData.heading = trackAngle;
-              existing.entity._tacticalData.alt = ac.alt_baro;
+            if (existing.dropLine) {
+              existing.dropLine.show = isCategoryVisible;
+              if (existing.dropLine.polyline) {
+                existing.dropLine.polyline.material = new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString(classification.color).withAlpha(0.35));
+              }
             }
           } else {
-            // Create new contact entity
+            // Create new contact entity with category-specific visual differentiation
             const initPos = Cesium.Cartesian3.fromDegrees(Number(ac.lon), Number(ac.lat), altMeters);
             const entity = _flightsDataSource.entities.add({
+              show: isCategoryVisible,
               position: initPos,
               orientation: Cesium.Transforms.headingPitchRollQuaternion(
                 initPos,
@@ -14638,11 +16295,10 @@ function initGlobeIntelligence(viewer) {
                 distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 45000)
               },
               billboard: {
-                image: JET_ICON,
-                width: 20,
-                height: 20,
+                image: classification.svgIcon,
+                width: 22,
+                height: 22,
                 rotation: Cesium.Math.toRadians(360 - trackAngle),
-                color: Cesium.Color.fromCssColorString(classification.color),
                 verticalOrigin: Cesium.VerticalOrigin.CENTER,
                 disableDepthTestDistance: Number.POSITIVE_INFINITY,
                 distanceDisplayCondition: new Cesium.DistanceDisplayCondition(35000, Number.POSITIVE_INFINITY),
@@ -14656,7 +16312,7 @@ function initGlobeIntelligence(viewer) {
                 outlineWidth: 2.5,
                 style: Cesium.LabelStyle.FILL_AND_OUTLINE,
                 verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                pixelOffset: new Cesium.Cartesian2(0, -14),
+                pixelOffset: new Cesium.Cartesian2(0, -15),
                 disableDepthTestDistance: Number.POSITIVE_INFINITY,
                 distanceDisplayCondition: new Cesium.DistanceDisplayCondition(35000, 30000000),
                 scaleByDistance: new Cesium.NearFarScalar(50000, 1.0, 25000000, 0.7)
@@ -14671,15 +16327,19 @@ function initGlobeIntelligence(viewer) {
                 lon: Number(ac.lon),
                 heading: trackAngle,
                 squawk: ac.squawk,
-                typeCode: ac.t || 'MIL',
+                typeCode: ac.t || 'AIR',
                 desc: ac.desc || classification.category,
                 category: classification.category,
-                isMil: true
+                badge: classification.badge,
+                color: classification.color,
+                catType: classification.type,
+                isMil: classification.type === 'mil'
               }
             });
             entity._tacticalData._entity = entity;
 
             const dropLine = _flightsDataSource.entities.add({
+              show: isCategoryVisible,
               polyline: {
                 positions: Cesium.Cartesian3.fromDegreesArrayHeights([
                   Number(ac.lon), Number(ac.lat), 0,
@@ -14700,6 +16360,8 @@ function initGlobeIntelligence(viewer) {
               altMeters,
               speedKnots: gs,
               headingDeg: trackAngle,
+              catType: classification.type,
+              catColor: classification.color,
               lastSeen: nowMs
             });
           }
@@ -15609,6 +17271,9 @@ function initGlobeIntelligence(viewer) {
 
 // Auto-trigger initialization across all browser lifecycles
 function bootVisuals() {
+  if (window.SpatialNav && typeof window.SpatialNav.init === 'function') {
+    window.SpatialNav.init();
+  }
   if (typeof THREE !== 'undefined') sfInit();
   initCesiumGlobe();
 }
