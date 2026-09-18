@@ -139,7 +139,7 @@
   ::-webkit-scrollbar-track { background: transparent; }
 
   #shell {
-    position: relative; z-index: 2;
+    position: fixed; inset: 0; z-index: 2;
     display: flex;
     flex-direction: column;
     height: 100vh;
@@ -1337,6 +1337,17 @@
     color: #FFFFFF !important;
   }
 
+  #composer button#mic-btn {
+    background: rgba(255, 157, 46, 0.12) !important;
+    border-color: rgba(255, 157, 46, 0.35) !important;
+    color: #FF9D2E !important;
+  }
+  #composer button#mic-btn:hover {
+    background: rgba(255, 157, 46, 0.25) !important;
+    border-color: #FF9D2E !important;
+    color: #FFB84D !important;
+  }
+
   #composer button.mic-recording {
     background: rgba(239, 68, 68, 0.2) !important;
     border-color: #EF4444 !important;
@@ -2320,6 +2331,8 @@ body {
   font-weight: 700;
   color: #94A3B8;
   letter-spacing: 0.08em;
+}
+
 .cr-count-badge {
   background: rgba(0, 240, 255, 0.12);
   border: 1px solid rgba(0, 240, 255, 0.30);
@@ -4376,6 +4389,12 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
             </span>
           </div>
           <input type="text" id="chat-input" placeholder="Ask J.A.R.V.I.S. anything... (or hold Space to speak)" />
+          <button type="button" id="mic-btn" class="mic-btn" title="Voice Input (or hold Space to speak)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+              <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+            </svg>
+          </button>
           <button class="send" id="send-btn" title="Send">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </button>
@@ -4920,8 +4939,10 @@ let currentStreamingElem = null;
 let streamingBuffer = "";
 
 let userHasScrolledUp = false;
+let thread = document.getElementById('thread');
 
 function scrollThreadToBottom(force = false) {
+  if (!thread) thread = document.getElementById('thread');
   if (!thread) return;
   if (force) {
     userHasScrolledUp = false;
@@ -4931,11 +4952,13 @@ function scrollThreadToBottom(force = false) {
   }
 }
 
+if (!thread) thread = document.getElementById('thread');
 if (thread) {
   thread.addEventListener('scroll', () => {
     const distanceToBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight;
     userHasScrolledUp = distanceToBottom > 80;
   });
+}
 
   // Enable smooth mouse wheel scrolling for the message thread
   window.addEventListener('wheel', (e) => {
@@ -4951,7 +4974,6 @@ if (thread) {
       thread.scrollTop += e.deltaY;
     }
   }, { passive: true });
-}
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
@@ -8140,6 +8162,48 @@ async function stopMicListening(aborted = false) {
   if (!currentStreamingElem && jarvisHudState === 'listening') {
     setHudState('idle');
   }
+}
+
+// Global Voice Mic Command Handler & Widget Updater
+if (typeof window.updateGodsEyeVoiceWidget !== 'function') {
+  window.updateGodsEyeVoiceWidget = function(state) {
+    const w = document.getElementById('dock-voice-widget');
+    if (!w) return;
+    w.classList.remove('listening', 'speaking', 'mic-off', 'mic-muted');
+    if (state === 'listening') w.classList.add('listening');
+    else if (state === 'speaking') w.classList.add('speaking');
+    else w.classList.add('mic-off');
+  };
+}
+
+if (typeof window.triggerVoiceMicCommand !== 'function') {
+  window.triggerVoiceMicCommand = function() {
+    if (isMicListening) {
+      if (typeof stopMicListening === 'function') {
+        stopMicListening(true);
+      }
+      if (typeof window.updateGodsEyeVoiceWidget === 'function') {
+        window.updateGodsEyeVoiceWidget('mic_off');
+      }
+      if (window.JarvisSFX && window.JarvisSFX.micCancel) {
+        window.JarvisSFX.micCancel();
+      }
+    } else {
+      if (window.JarvisSFX && window.JarvisSFX.micStart) {
+        window.JarvisSFX.micStart();
+      }
+      if (typeof window.updateGodsEyeVoiceWidget === 'function') {
+        window.updateGodsEyeVoiceWidget('listening');
+      }
+      if (typeof startMicListening === 'function') {
+        startMicListening();
+      } else if (window.api && window.api().start_native_mic) {
+        window.api().start_native_mic();
+        setHudState('listening');
+      }
+    }
+  };
+  window.toggleVoiceMicCommand = window.triggerVoiceMicCommand;
 }
 
 let lastMicToggleTime = 0;
@@ -12193,6 +12257,23 @@ const SpatialNav = {
       }
     }
 
+    // God's Eye Bottom Voice HUD Dock controller:
+    // Visible in The Cold Room (Screen 1) and World Telemetry (Screen 3).
+    // In Tactical HUD (Screen 2), visible when chat panel is collapsed (clean unobstructed view).
+    const voiceDock = document.getElementById('gods-eye-bottom-dock');
+    if (voiceDock) {
+      const inHudWithOpenChat = (Math.abs(this.currentX) < 450) && !document.body.classList.contains('chat-panel-collapsed');
+      if (inHudWithOpenChat) {
+        voiceDock.style.opacity = '0';
+        voiceDock.style.pointerEvents = 'none';
+        voiceDock.style.visibility = 'hidden';
+      } else {
+        voiceDock.style.opacity = '1';
+        voiceDock.style.pointerEvents = 'auto';
+        voiceDock.style.visibility = 'visible';
+      }
+    }
+
     if (typeof sfCamera !== 'undefined' && sfCamera) {
       sfCamera.position.x = this.currentX;
       sfCamera.position.z = this.currentZoom;
@@ -12233,6 +12314,9 @@ window.toggleChatPanel = function(forceState) {
     document.body.classList.remove('chat-panel-collapsed');
     const input = document.getElementById('chat-input');
     if (input) setTimeout(() => input.focus(), 150);
+  }
+  if (window.SpatialNav && typeof window.SpatialNav._applySpatialProperties === 'function') {
+    window.SpatialNav._applySpatialProperties();
   }
 };
 
