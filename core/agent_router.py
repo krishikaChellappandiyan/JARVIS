@@ -370,7 +370,75 @@ class AgentRouter:
             )
             return True, "Locking onto global military airspace and ADS-B radar feeds.", task, "flight_intel"
 
-        # ── 7.5 Check for Area Annotation (AI Ability) ─────────────
+        # ── 7.1 Check for Satellite Tracking ─────────────────────
+        if any(kw in text_lower for kw in [
+            "track satellite", "where is iss", "track iss", "satellite pass",
+            "orbital telemetry", "satellite position", "starlink satellites",
+            "orbital objects", "track the iss", "international space station"
+        ]) or (("satellite" in text_lower or "satellites" in text_lower or "iss" in text_lower) and any(w in text_lower for w in ["track", "where", "orbit", "overhead", "pass", "telemetry"])):
+            m_sat = re.search(r'(?:track|find|where\s+is)\s+(?:the\s+)?(?:satellite\s+)?([a-zA-Z0-9\-\s]+?)(?:\s+satellite)?$', text_strip, flags=re.IGNORECASE)
+            raw_sat = m_sat.group(1).strip() if m_sat else "ISS"
+            sat_name = re.sub(r'\b(?:the|satellite|satellites|orbit|station)\b', '', raw_sat, flags=re.IGNORECASE).strip() or "ISS"
+            task = self.task_manager.create_task(
+                type_=TaskType.SATELLITE_TRACK.value,
+                title=f"Orbital Tracking: {sat_name.upper()}",
+                data={"query": sat_name}
+            )
+            return True, f"Acquiring real-time orbital telemetry for {sat_name.upper()}, {sal}.", task, "satellite_track"
+
+        # ── 7.2 Check for Conflict Zones & Warzones ──────────────
+        if any(kw in text_lower for kw in [
+            "conflict zone", "conflict zones", "warzone", "warzones", "active warzone",
+            "war zones", "frontlines", "frontline update", "active conflicts", "warzone briefing",
+            "theatre of war", "ukraine war", "gaza conflict", "red sea conflict", "military conflict"
+        ]):
+            task = self.task_manager.create_task(
+                type_=TaskType.CONFLICT_INTEL.value,
+                title="Global Conflict & Warzone Intelligence",
+                data={"query": text_strip}
+            )
+            return True, f"Synthesizing active warzone telemetry and frontline geometry, {sal}.", task, "conflict_intel"
+
+        # ── 7.3 Check for Turn-by-Turn Road Routing ───────────────
+        if any(kw in text_lower for kw in [
+            "turn by turn", "driving directions", "drive from", "driving route",
+            "street route", "how do i drive from", "navigate from", "road directions"
+        ]) or (("directions" in text_lower or "route" in text_lower) and (" from " in text_lower and " to " in text_lower)):
+            task = self.task_manager.create_task(
+                type_=TaskType.DIRECTIONS.value,
+                title="Valhalla Street Navigation",
+                data={"query": text_strip}
+            )
+            return True, f"Computing precision turn-by-turn road route and maneuvers, {sal}.", task, "directions"
+
+        # ── 7.4 Check for OSINT Cyber RECON ───────────────────────
+        if any(kw in text_lower for kw in [
+            "cyber recon", "osint scan", "scan domain", "recon domain",
+            "whois lookup", "dns lookup", "shodan scan", "ssl certs",
+            "ip reputation", "cve scan", "sanctions check", "recon target"
+        ]) or re.search(r'\b(?:whois|dns|shodan|cve|certs)\s+(?:lookup|scan|recon)\b', text_lower):
+            m_tgt = re.search(r'(?:recon|scan|lookup|check)\s+(?:target\s+|domain\s+|ip\s+)?([a-zA-Z0-9\.\-_]+)', text_lower)
+            tgt = m_tgt.group(1).strip() if m_tgt else "target"
+            task = self.task_manager.create_task(
+                type_=TaskType.CYBER_RECON.value,
+                title=f"Cyber RECON: {tgt}",
+                data={"target": tgt, "query": text_strip}
+            )
+            return True, f"Initiating OSINT cyber intelligence sweep on {tgt}, {sal}.", task, "cyber_recon"
+
+        # ── 7.5 Check for Live SIGINT News Broadcasts ────────────
+        if any(kw in text_lower for kw in [
+            "live news", "news stream", "sigint news", "broadcast stream",
+            "world news live", "news channel", "live news feed", "24/7 news"
+        ]):
+            task = self.task_manager.create_task(
+                type_=TaskType.LIVE_NEWS.value,
+                title="Global SIGINT News Broadcast",
+                data={"query": text_strip}
+            )
+            return True, f"Accessing 24/7 global SIGINT broadcast network, {sal}.", task, "live_news"
+
+        # ── 7.6 Check for Area Annotation (AI Ability) ─────────────
         if any(kw in text_lower for kw in [
             "annotate this area", "annotate area", "mark this area", "highlight this area",
             "annotate sector", "draw boundary", "defense zone", "tactical perimeter",

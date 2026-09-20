@@ -34,6 +34,11 @@ class TaskType(str, Enum):
     ENGINEERING_SCRIPT = "engineering_script"
     AMBIENT_CONFIG = "ambient_config"
     REMINDER_TIMER = "reminder_timer"
+    SATELLITE_TRACK = "satellite_track"
+    CONFLICT_INTEL = "conflict_intel"
+    CYBER_RECON = "cyber_recon"
+    DIRECTIONS = "directions"
+    LIVE_NEWS = "live_news"
     GENERIC_SKILL = "generic_skill"
 
 @dataclass

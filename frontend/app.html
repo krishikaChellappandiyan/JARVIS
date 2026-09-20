@@ -4114,6 +4114,7 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
 <div id="starfield"></div>
 <div id="cesium-spatial-wrapper">
   <div id="cesiumContainer"></div>
+  <iframe id="osirisContainer" src="about:blank" data-src="/osiris-live" allow="accelerometer; autoplay; camera; encrypted-media; geolocation; gyroscope; fullscreen" style="display:none; width:100%; height:100%; border:none; position:absolute; inset:0; z-index:2; background:#040711;"></iframe>
   <div id="orbital-space-aperture"></div>
 </div>
 <div id="bg-layer"></div>
@@ -4222,6 +4223,21 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
         <button onclick="window.clearTacticalAnnotations()" style="background:rgba(239,68,68,0.2); border:1px solid #EF4444; color:#EF4444; font-size:8.5px; border-radius:3px; padding:2px 5px; cursor:pointer;">CLEAR ALL</button>
       </div>
       <div id="globe-annotations-list" style="max-height:120px; overflow-y:auto; display:flex; flex-direction:column; gap:3px;"></div>
+    </div>
+
+    <!-- OSIRIS Ultra-Smooth 60FPS Planetary Engine Toggle -->
+    <div class="globe-hud-card" style="border:1px solid rgba(0,240,255,0.4); background:linear-gradient(135deg, rgba(4,14,26,0.92) 0%, rgba(2,6,14,0.95) 100%);">
+      <div class="globe-hud-title">
+        <span style="display:flex; align-items:center; gap:6px;">
+          <span style="color:#00F0FF; font-size:12px;">⚡</span>
+          <span>PLANETARY 3D ENGINE</span>
+        </span>
+        <span id="globe-engine-badge" style="color:#22C55E; font-size:9.5px; font-weight:800; background:rgba(34,197,94,0.15); padding:1px 6px; border-radius:3px; border:1px solid rgba(34,197,94,0.3);">CESIUM 3D</span>
+      </div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-top:6px;">
+        <button class="globe-style-btn active" id="btn-engine-cesium" onclick="window.setGlobeEngine('cesium')" style="padding:6px; font-size:9px; font-weight:700;">🌐 CESIUM 3D</button>
+        <button class="globe-style-btn" id="btn-engine-osiris" onclick="window.setGlobeEngine('osiris')" style="padding:6px; font-size:9px; font-weight:700; color:#00F0FF; border-color:rgba(0,240,255,0.5);">⚡ OSIRIS (60 FPS)</button>
+      </div>
     </div>
 
     <!-- Earth Visual Style Selector -->
@@ -4496,6 +4512,7 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
   <!-- 16:9 Live Video & Snapshot Optical Stream Box -->
   <div style="position:relative; width:100%; aspect-ratio:16/9; background:#02060D; border:1px solid rgba(0,240,255,0.5); border-radius:6px; overflow:hidden; margin-bottom:8px;">
     <video id="cctv-dock-video" autoplay muted loop playsinline style="width:100%; height:100%; object-fit:cover; display:block;"></video>
+    <iframe id="cctv-dock-iframe" src="" allow="autoplay; encrypted-media; fullscreen" style="width:100%; height:100%; border:none; display:none;"></iframe>
     <img id="cctv-dock-preview-img" src="" style="width:100%; height:100%; object-fit:cover; display:none;" onerror="this.style.opacity='0.4'">
     <div id="cctv-dock-overlay-timestamp" style="position:absolute; top:6px; left:8px; font-size:9px; color:#FFFFFF; font-weight:700; background:rgba(0,0,0,0.65); padding:2px 5px; border-radius:3px;">--:--:--</div>
     <div style="position:absolute; bottom:6px; left:8px; font-size:8.5px; color:#22C55E; background:rgba(0,0,0,0.75); padding:2px 6px; border-radius:3px; border:1px solid rgba(34,197,94,0.3); font-weight:700; display:flex; align-items:center; gap:4px;">
@@ -4583,6 +4600,7 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
   <div style="position:relative; flex:1; width:100%; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#010408;">
     <div id="cctv-fs-viewport" style="position:relative; width:min(92vw, calc(82vh * 16 / 9)); aspect-ratio:16/9; background:#000; border:2px solid rgba(0,240,255,0.6); box-shadow:0 0 50px rgba(0,240,255,0.15); overflow:hidden;">
       <video id="cctv-fs-video" autoplay muted loop playsinline style="width:100%; height:100%; object-fit:cover; display:block;"></video>
+      <iframe id="cctv-fs-iframe" src="" allow="autoplay; encrypted-media; fullscreen" style="width:100%; height:100%; border:none; display:none;"></iframe>
       <img id="cctv-fs-img" src="" style="width:100%; height:100%; object-fit:cover; display:none;">
 
       <!-- Reticle and HUD Overlays -->
@@ -13638,7 +13656,61 @@ window.glideToSpatial = function(x) {
   SpatialNav.glideTo(x);
 };
 
+window.setGlobeEngine = function(engine) {
+  const osirisFrame = document.getElementById('osirisContainer');
+  const cesiumCont = document.getElementById('cesiumContainer');
+  const badge = document.getElementById('globe-engine-badge');
+  const btnCesium = document.getElementById('btn-engine-cesium');
+  const btnOsiris = document.getElementById('btn-engine-osiris');
+
+  window._activeGlobeEngine = engine;
+
+  if (engine === 'osiris') {
+    if (cesiumCont) cesiumCont.style.display = 'none';
+    if (osirisFrame) {
+      osirisFrame.style.display = 'block';
+      if (!osirisFrame.src || osirisFrame.src === 'about:blank' || osirisFrame.src.includes('osirisai.live')) {
+        osirisFrame.src = '/osiris-live';
+      }
+    }
+    if (badge) {
+      badge.textContent = 'OSIRIS 60 FPS';
+      badge.style.color = '#00F0FF';
+      badge.style.borderColor = 'rgba(0,240,255,0.4)';
+    }
+    if (btnCesium) btnCesium.classList.remove('active');
+    if (btnOsiris) btnOsiris.classList.add('active');
+  } else {
+    if (osirisFrame) osirisFrame.style.display = 'none';
+    if (cesiumCont) {
+      cesiumCont.style.display = 'block';
+      if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
+        window.cesiumViewer.scene.requestRender();
+      }
+    }
+    if (badge) {
+      badge.textContent = 'CESIUM 3D';
+      badge.style.color = '#22C55E';
+      badge.style.borderColor = 'rgba(34,197,94,0.3)';
+    }
+    if (btnCesium) btnCesium.classList.add('active');
+    if (btnOsiris) btnOsiris.classList.remove('active');
+  }
+  if (window.JarvisSFX) window.JarvisSFX.scanRadar();
+};
+
 window.focusGlobeCoordinates = function(lat, lon, label) {
+  const osirisFrame = document.getElementById('osirisContainer');
+  if (osirisFrame && osirisFrame.contentWindow) {
+    try {
+      osirisFrame.contentWindow.postMessage({
+        type: 'jarvis_fly_to',
+        lat: lat,
+        lon: lon,
+        label: label
+      }, '*');
+    } catch (e) {}
+  }
   if (window.JarvisPatrol && window.JarvisPatrol.active && !window.JarvisPatrol._isPatrolling) {
     window.JarvisPatrol.stop();
   }
@@ -16527,6 +16599,7 @@ function syncCctvFullscreenData(data) {
   const fsSel = document.getElementById('cctv-fs-camera-select');
   const fsVid = document.getElementById('cctv-fs-video');
   const fsImg = document.getElementById('cctv-fs-img');
+  const fsIframe = document.getElementById('cctv-fs-iframe');
 
   if (fsTitle) fsTitle.textContent = `${data.city ? data.city.toUpperCase() + ' • ' : ''}${data.label || data.name || data.id}`;
   if (fsCoords) fsCoords.textContent = `LAT: ${Number(data.lat || 0).toFixed(4)}° | LON: ${Number(data.lon || 0).toFixed(4)}°`;
@@ -16537,18 +16610,27 @@ function syncCctvFullscreenData(data) {
   const frameUrl = `/api/cctv/frame/${encodeURIComponent(data.id)}?t=${Date.now()}`;
   if (fsImg) fsImg.src = frameUrl;
 
-  const sampleVideos = [
-    'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-    'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
-    'https://storage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4',
-    'https://storage.googleapis.com/gtv-videos-bucket/sample/WhatCarCanYouGetForAGrand.mp4'
-  ];
-  const vUrl = data.videoUrl || sampleVideos[Math.abs(data.id.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % sampleVideos.length];
-  if (fsVid && fsVid.src !== vUrl) {
-    fsVid.src = vUrl;
-    fsVid.load();
-    fsVid.play().catch(()=>{});
+  const isIframe = data.feedType === 'iframe' || (data.url && (data.url.includes('youtube.com') || data.url.includes('embed')));
+  if (isIframe && fsIframe) {
+    fsIframe.src = data.url;
+    fsIframe.style.display = 'block';
+    if (fsVid) fsVid.style.display = 'none';
+    if (fsImg) fsImg.style.display = 'none';
+  } else {
+    if (fsIframe) { fsIframe.style.display = 'none'; fsIframe.src = ''; }
+    const sampleVideos = [
+      'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+      'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+      'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+      'https://storage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4',
+      'https://storage.googleapis.com/gtv-videos-bucket/sample/WhatCarCanYouGetForAGrand.mp4'
+    ];
+    const vUrl = data.videoUrl || sampleVideos[Math.abs(data.id.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % sampleVideos.length];
+    if (fsVid && fsVid.src !== vUrl) {
+      fsVid.src = vUrl;
+      fsVid.load();
+      fsVid.play().catch(()=>{});
+    }
   }
 }
 
@@ -16565,6 +16647,7 @@ window.openCctvDock = function(data) {
   const clock = document.getElementById('cctv-dock-overlay-timestamp');
   const img = document.getElementById('cctv-dock-preview-img');
   const vid = document.getElementById('cctv-dock-video');
+  const iframe = document.getElementById('cctv-dock-iframe');
   const sel = document.getElementById('cctv-dock-camera-select');
 
   if (meta1) meta1.textContent = `${data.city || 'METRO'} • HDG ${data.heading || 0}° • FOV ${data.fov || 72}° • RNG ${data.rangeM || 450}m`;
@@ -16575,18 +16658,27 @@ window.openCctvDock = function(data) {
   const frameUrl = `/api/cctv/frame/${encodeURIComponent(data.id)}?t=${Date.now()}`;
   if (img) img.src = frameUrl;
 
-  const sampleVideos = [
-    'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-    'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
-    'https://storage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4',
-    'https://storage.googleapis.com/gtv-videos-bucket/sample/WhatCarCanYouGetForAGrand.mp4'
-  ];
-  const vUrl = data.videoUrl || sampleVideos[Math.abs(data.id.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % sampleVideos.length];
-  if (vid && vid.src !== vUrl) {
-    vid.src = vUrl;
-    vid.load();
-    vid.play().catch(()=>{});
+  const isIframe = data.feedType === 'iframe' || (data.url && (data.url.includes('youtube.com') || data.url.includes('embed')));
+  if (isIframe && iframe) {
+    iframe.src = data.url;
+    iframe.style.display = 'block';
+    if (vid) vid.style.display = 'none';
+    if (img) img.style.display = 'none';
+  } else {
+    if (iframe) { iframe.style.display = 'none'; iframe.src = ''; }
+    const sampleVideos = [
+      'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+      'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+      'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+      'https://storage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4',
+      'https://storage.googleapis.com/gtv-videos-bucket/sample/WhatCarCanYouGetForAGrand.mp4'
+    ];
+    const vUrl = data.videoUrl || sampleVideos[Math.abs(data.id.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % sampleVideos.length];
+    if (vid && vid.src !== vUrl) {
+      vid.src = vUrl;
+      vid.load();
+      vid.play().catch(()=>{});
+    }
   }
 
   if (sel && sel.value !== data.id) sel.value = data.id;

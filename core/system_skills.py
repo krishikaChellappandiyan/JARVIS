@@ -481,6 +481,94 @@ class SystemSkillEngine:
                     task_mgr.complete_task(task.task_id, summary="CCTV optical layers online")
                     return True, debrief_msg, False, "", {"action_type": "CCTV", "city": city}
 
+                elif task.type == TaskType.SATELLITE_TRACK.value:
+                    sat_query = task.data.get("query", "ISS")
+                    sal = self.memory.get_salutation()
+                    from modules.osiris_intel import get_osiris_client
+                    sats = get_osiris_client().get_satellites(query=sat_query, limit=5)
+                    if sats:
+                        target_sat = sats[0]
+                        s_name = target_sat.get("name", sat_query.upper())
+                        s_lat = target_sat.get("lat", 0.0)
+                        s_lon = target_sat.get("lng", 0.0)
+                        s_alt = target_sat.get("alt", 420)
+                        debrief_msg = f"Orbital telemetry acquired for {s_name}. Current position is {s_lat:.2f} degrees latitude, {s_lon:.2f} degrees longitude, altitude {s_alt} kilometers, {sal}."
+                        task_mgr.complete_task(task.task_id, summary=f"Tracking {s_name}: Alt {s_alt}km")
+                        payload = {"action_type": "SATELLITE", "satellite": target_sat, "lat": s_lat, "lon": s_lon, "name": s_name}
+                    else:
+                        debrief_msg = f"Unable to acquire telemetry for satellite '{sat_query}' on orbital tracking arrays, {sal}."
+                        task_mgr.complete_task(task.task_id, summary="Satellite not found")
+                        payload = {"action_type": "SATELLITE", "query": sat_query}
+                    try:
+                        from frontend.hud_panel import HUDPanelManager
+                        HUDPanelManager().show_action_hud(title=f"Orbital Tracking // {sat_query.upper()}", action_type="SATELLITE", details=debrief_msg)
+                    except Exception:
+                        pass
+                    return True, debrief_msg, False, "", payload
+
+                elif task.type == TaskType.CONFLICT_INTEL.value:
+                    sal = self.memory.get_salutation()
+                    from modules.osiris_intel import get_osiris_client
+                    conflicts = get_osiris_client().get_conflicts()
+                    n_warzones = conflicts.get("activeWarzones", 0)
+                    n_total = conflicts.get("totalZones", 0)
+                    zones = conflicts.get("zones", [])
+                    top_names = [z.get("label", "Zone") for z in zones[:3]]
+                    top_str = ", ".join(top_names) if top_names else "major geopolitical theatres"
+                    debrief_msg = f"Monitoring {n_warzones} active warzones out of {n_total} tracked conflict zones globally, {sal}. Primary active sectors include {top_str}."
+                    task_mgr.complete_task(task.task_id, summary=f"Conflicts: {n_warzones} active warzones")
+                    try:
+                        from frontend.hud_panel import HUDPanelManager
+                        HUDPanelManager().show_action_hud(title="Global Conflict & Frontline Intelligence", action_type="CONFLICT", details=debrief_msg)
+                    except Exception:
+                        pass
+                    return True, debrief_msg, False, "", {"action_type": "CONFLICT", "data": conflicts}
+
+                elif task.type == TaskType.DIRECTIONS.value:
+                    query_text = task.data.get("query", "")
+                    sal = self.memory.get_salutation()
+                    m_dirs = re.search(r'from\s+["\']?([^"\',]+)["\']?\s+to\s+["\']?([^"\',]+)["\']?', query_text, flags=re.IGNORECASE)
+                    from_loc = m_dirs.group(1).strip() if m_dirs else "Origin"
+                    to_loc = m_dirs.group(2).strip() if m_dirs else "Destination"
+
+                    from frontend.desktop import resolve_geospatial_coordinates
+                    c_from = resolve_geospatial_coordinates(from_loc)
+                    c_to = resolve_geospatial_coordinates(to_loc)
+
+                    if c_from and c_to:
+                        from modules.osiris_intel import get_osiris_client
+                        route = get_osiris_client().get_turn_by_turn_route(c_from[0], c_from[1], c_to[0], c_to[1])
+                        debrief_msg = f"Turn-by-turn road route computed from {from_loc.title()} to {to_loc.title()}, {sal}. Projecting navigation corridor on the 3D grid."
+                        payload = {"action_type": "DIRECTIONS", "from": from_loc, "to": to_loc, "route": route, "from_coords": c_from, "to_coords": c_to}
+                    else:
+                        debrief_msg = f"Routing directive received for {from_loc.title()} to {to_loc.title()}, {sal}."
+                        payload = {"action_type": "DIRECTIONS", "from": from_loc, "to": to_loc}
+                    task_mgr.complete_task(task.task_id, summary=f"Route: {from_loc} -> {to_loc}")
+                    return True, debrief_msg, False, "", payload
+
+                elif task.type == TaskType.CYBER_RECON.value:
+                    target = task.data.get("target", "target")
+                    sal = self.memory.get_salutation()
+                    from modules.osiris_intel import get_osiris_client
+                    recon_data = get_osiris_client().get_cyber_recon(target)
+                    debrief_msg = f"Cyber reconnaissance sweep complete for {target}, {sal}. Network indicators and threat intelligence cataloged."
+                    task_mgr.complete_task(task.task_id, summary=f"Cyber RECON: {target}")
+                    try:
+                        from frontend.hud_panel import HUDPanelManager
+                        HUDPanelManager().show_action_hud(title=f"Cyber Intelligence // {target}", action_type="RECON", details=debrief_msg)
+                    except Exception:
+                        pass
+                    return True, debrief_msg, False, "", {"action_type": "CYBER_RECON", "target": target, "data": recon_data}
+
+                elif task.type == TaskType.LIVE_NEWS.value:
+                    sal = self.memory.get_salutation()
+                    from modules.osiris_intel import get_osiris_client
+                    news_feeds = get_osiris_client().get_live_news()
+                    feed_count = len(news_feeds)
+                    debrief_msg = f"Connecting to 24/7 global SIGINT broadcast streams, {sal}. {feed_count} international channels active."
+                    task_mgr.complete_task(task.task_id, summary=f"SIGINT Broadcasts: {feed_count} channels")
+                    return True, debrief_msg, False, "", {"action_type": "LIVE_NEWS", "feeds": news_feeds}
+
                 elif task.type == TaskType.SITUATIONAL_BRIEFING.value:
                     task_mgr.update_progress(task.task_id, 30, "Compiling multi-source situational briefing...")
                     from modules.situational_briefing import SituationalBriefingEngine

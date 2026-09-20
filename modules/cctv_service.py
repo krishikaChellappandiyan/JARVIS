@@ -899,6 +899,41 @@ def find_cctv_for_location(location_name: str, radius_km: float = 75.0) -> List[
     if matched:
         return matched
 
+    # 1.5 Query OSIRIS global 28,400+ CCTV surveillance network
+    try:
+        from modules.osiris_intel import get_osiris_client
+        osiris_matches = get_osiris_client().get_cctv_cameras(query=loc_clean, limit=12)
+        if osiris_matches:
+            osiris_cams = []
+            for oc in osiris_matches:
+                cid = f"osiris-{oc.get('id')}"
+                stype = oc.get("stream_type", "image")
+                ftype = "iframe" if stype == "iframe" else ("video" if stype in ("hls", "video") else "image")
+                osiris_cams.append({
+                    "id": cid,
+                    "name": oc.get("name") or f"{oc.get('city', location_name)} Optical Vantage",
+                    "city": oc.get("city") or location_name.title(),
+                    "cityId": (oc.get("city") or location_name).lower().replace(" ", "-"),
+                    "provider": f"OSIRIS // {oc.get('source', 'Surveillance Grid')}",
+                    "lat": oc.get("lat"),
+                    "lon": oc.get("lng"),
+                    "headingDeg": 0,
+                    "pitchDeg": -18,
+                    "fovDeg": 75,
+                    "rangeM": 600,
+                    "mountHeightM": 25,
+                    "groundElevationM": 15,
+                    "feedType": ftype,
+                    "url": oc.get("stream_url") or f"/api/cctv/frame/{cid}",
+                    "snapshotUrl": oc.get("stream_url") or f"/api/cctv/frame/{cid}",
+                    "sourceKind": "osiris-live",
+                    "license": "OSIRIS Public Surveillance Network"
+                })
+            if osiris_cams:
+                return osiris_cams
+    except Exception as e:
+        print(f"[cctv] OSIRIS query notice: {e}")
+
     # 2. Geocoding resolution
     geo_res = None
     try:

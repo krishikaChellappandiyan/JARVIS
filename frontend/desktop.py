@@ -2110,6 +2110,85 @@ class JarvisAPI:
             print(f"[desktop] Error fetching live CCTV frame: {e}")
             return b"", "image/jpeg"
 
+    # ── OSIRIS Global Intelligence Platform API Methods ─────────
+
+    def get_osiris_stats(self) -> dict:
+        """Fetch real-time aggregate statistics from OSIRIS."""
+        try:
+            from modules.osiris_intel import get_osiris_client
+            return get_osiris_client().get_stats()
+        except Exception as e:
+            print(f"[desktop] OSIRIS stats notice: {e}")
+            return {}
+
+    def get_osiris_cctv(self, query: str = "", city: str = "", lat: float = None, lon: float = None, radius_km: float = None, limit: int = 40) -> list:
+        """Query 28,400+ cameras from OSIRIS global surveillance network."""
+        try:
+            from modules.osiris_intel import get_osiris_client
+            return get_osiris_client().get_cctv_cameras(query=query, city=city, lat=lat, lon=lon, radius_km=radius_km, limit=limit)
+        except Exception as e:
+            print(f"[desktop] OSIRIS CCTV notice: {e}")
+            return []
+
+    def get_osiris_flights(self, military_only: bool = False) -> dict:
+        """Query real-time ADS-B aircraft with military and GPS jamming separation."""
+        try:
+            from modules.osiris_intel import get_osiris_client
+            return get_osiris_client().get_flights(military_only=military_only)
+        except Exception as e:
+            print(f"[desktop] OSIRIS flights notice: {e}")
+            return {"total": 0, "military": [], "commercial": [], "private": [], "gps_jamming": []}
+
+    def get_osiris_satellites(self, query: str = "", category: str = "", limit: int = 50) -> list:
+        """Query 18,800+ tracked satellites with TLE positions from OSIRIS."""
+        try:
+            from modules.osiris_intel import get_osiris_client
+            return get_osiris_client().get_satellites(query=query, category=category, limit=limit)
+        except Exception as e:
+            print(f"[desktop] OSIRIS satellites notice: {e}")
+            return []
+
+    def get_osiris_conflicts(self) -> dict:
+        """Query active warzones and frontline data from OSIRIS."""
+        try:
+            from modules.osiris_intel import get_osiris_client
+            return get_osiris_client().get_conflicts()
+        except Exception as e:
+            print(f"[desktop] OSIRIS conflicts notice: {e}")
+            return {"totalZones": 0, "activeWarzones": 0, "zones": []}
+
+    def get_osiris_route(self, from_loc: str, to_loc: str, mode: str = "auto") -> dict:
+        """Query Valhalla/OSRM turn-by-turn routing from OSIRIS."""
+        try:
+            c1 = self.resolve_coords(from_loc)
+            c2 = self.resolve_coords(to_loc)
+            if c1 and c2:
+                from modules.osiris_intel import get_osiris_client
+                route = get_osiris_client().get_turn_by_turn_route(c1[0], c1[1], c2[0], c2[1], mode=mode)
+                return {"success": True, "route": route, "from_coords": c1, "to_coords": c2}
+            return {"success": False, "error": "Could not resolve locations"}
+        except Exception as e:
+            print(f"[desktop] OSIRIS route notice: {e}")
+            return {"success": False, "error": str(e)}
+
+    def get_osiris_recon(self, target: str) -> dict:
+        """Query OSINT cyber intelligence from OSIRIS."""
+        try:
+            from modules.osiris_intel import get_osiris_client
+            return get_osiris_client().get_cyber_recon(target)
+        except Exception as e:
+            print(f"[desktop] OSIRIS recon notice: {e}")
+            return {"target": target}
+
+    def get_osiris_news(self) -> list:
+        """Query 24/7 global SIGINT broadcast streams."""
+        try:
+            from modules.osiris_intel import get_osiris_client
+            return get_osiris_client().get_live_news()
+        except Exception as e:
+            print(f"[desktop] OSIRIS news notice: {e}")
+            return []
+
     def _get_legacy_synthetic_cctv_frame(self, camera_id: str) -> bytes:
         """Legacy fallback synthetic frame."""
         now = time.time()
@@ -4243,15 +4322,194 @@ class JarvisDesktop:
 
                                     return json.dumps(_generate_fallback_overpass_roads(query))
 
+                                _OSIRIS_PROXY_BASE = "https://osirisai.live"
+                                _OSIRIS_DISK_CACHE = os.path.expanduser("~/.jarvis/osiris_cache/web")
+                                os.makedirs(_OSIRIS_DISK_CACHE, exist_ok=True)
+                                _OSIRIS_MEM_CACHE = {}
+
+                                def _fetch_osiris(path_and_query, method="GET", body=None, content_type=None):
+                                    clean_path = path_and_query.lstrip('/')
+                                    target_url = f"{_OSIRIS_PROXY_BASE}/{clean_path}" if clean_path else f"{_OSIRIS_PROXY_BASE}/"
+
+                                    is_static = any(clean_path.startswith(p) for p in ['_next/static/', 'vendor/', 'fonts/', 'site.webmanifest', 'favicon'])
+                                    cache_key = hashlib.md5(target_url.encode('utf-8')).hexdigest()
+                                    cache_file = os.path.join(_OSIRIS_DISK_CACHE, f"{cache_key}.bin")
+                                    meta_file = os.path.join(_OSIRIS_DISK_CACHE, f"{cache_key}.json")
+
+                                    if is_static and cache_key in _OSIRIS_MEM_CACHE:
+                                        return _OSIRIS_MEM_CACHE[cache_key]
+
+                                    if is_static and os.path.exists(cache_file) and os.path.exists(meta_file):
+                                        try:
+                                            with open(cache_file, 'rb') as f:
+                                                cached_bytes = f.read()
+                                            with open(meta_file, 'r', encoding='utf-8') as f:
+                                                meta = json.load(f)
+                                            res = (meta.get('status', 200), meta.get('headers', {'Content-Type': 'application/octet-stream'}), cached_bytes)
+                                            _OSIRIS_MEM_CACHE[cache_key] = res
+                                            return res
+                                        except Exception:
+                                            pass
+
+                                    req_headers = {
+                                        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+                                        'Accept': bottle.request.headers.get('Accept', '*/*'),
+                                        'Accept-Language': 'en-US,en;q=0.9',
+                                    }
+                                    if content_type:
+                                        req_headers['Content-Type'] = content_type
+
+                                    try:
+                                        req = urllib.request.Request(target_url, data=body, headers=req_headers, method=method)
+                                        with urllib.request.urlopen(req, timeout=12.0) as resp:
+                                            status = resp.status
+                                            resp_data = resp.read()
+                                            encoding = resp.headers.get('Content-Encoding', '').lower()
+                                            if 'gzip' in encoding:
+                                                try:
+                                                    import gzip
+                                                    resp_data = gzip.decompress(resp_data)
+                                                except Exception:
+                                                    pass
+
+                                            out_headers = {}
+                                            ct = resp.headers.get('Content-Type')
+                                            if ct:
+                                                out_headers['Content-Type'] = ct
+                                            else:
+                                                if clean_path.endswith('.js'):
+                                                    out_headers['Content-Type'] = 'application/javascript; charset=UTF-8'
+                                                elif clean_path.endswith('.css'):
+                                                    out_headers['Content-Type'] = 'text/css; charset=UTF-8'
+                                                elif clean_path.endswith('.json'):
+                                                    out_headers['Content-Type'] = 'application/json; charset=UTF-8'
+                                                elif clean_path.endswith('.png'):
+                                                    out_headers['Content-Type'] = 'image/png'
+                                                elif clean_path.endswith('.ico'):
+                                                    out_headers['Content-Type'] = 'image/x-icon'
+                                                elif clean_path.endswith('.svg'):
+                                                    out_headers['Content-Type'] = 'image/svg+xml'
+
+                                            if is_static and status == 200 and len(resp_data) > 0:
+                                                try:
+                                                    with open(cache_file, 'wb') as f:
+                                                        f.write(resp_data)
+                                                    with open(meta_file, 'w', encoding='utf-8') as f:
+                                                        json.dump({'status': status, 'headers': out_headers}, f)
+                                                    _OSIRIS_MEM_CACHE[cache_key] = (status, out_headers, resp_data)
+                                                except Exception:
+                                                    pass
+
+                                            return status, out_headers, resp_data
+                                    except urllib.error.HTTPError as he:
+                                        try:
+                                            err_data = he.read()
+                                        except Exception:
+                                            err_data = b'{"error":"Upstream HTTP error"}'
+                                        return he.code, {'Content-Type': 'application/json'}, err_data
+                                    except Exception as e:
+                                        return 502, {'Content-Type': 'application/json'}, json.dumps({"error": str(e)}).encode('utf-8')
+
+                                def _serve_osiris_proxy(path_and_query, method="GET", body=None, content_type=None):
+                                    status, headers, data = _fetch_osiris(path_and_query, method=method, body=body, content_type=content_type)
+                                    bottle.response.status = status
+                                    for k, v in headers.items():
+                                        bottle.response.set_header(k, v)
+                                    bottle.response.set_header('Access-Control-Allow-Origin', '*')
+                                    bottle.response.set_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+                                    bottle.response.set_header('Access-Control-Allow-Headers', 'Origin, Accept, Content-Type, Authorization, X-Requested-With')
+                                    for rm in ['X-Frame-Options', 'Content-Security-Policy', 'Content-Security-Policy-Report-Only', 'Strict-Transport-Security']:
+                                        if rm in bottle.response.headers:
+                                            del bottle.response.headers[rm]
+                                    return data
+
+                                @app.route('/osiris-live')
+                                @app.route('/osiris-live/')
+                                def _bottle_osiris_live():
+                                    status, headers, data = _fetch_osiris('/', method='GET')
+                                    try:
+                                        html = data.decode('utf-8', errors='ignore')
+                                        bootstrap = (
+                                            '<script>'
+                                            'window.__JARVIS_EMBEDDED_OSIRIS__=true;'
+                                            'if(window.location.pathname.startsWith("/osiris-live")){'
+                                            '  try{window.history.replaceState(null,"","/");}catch(e){}'
+                                            '}'
+                                            'window.addEventListener("message",function(evt){'
+                                            '  if(!evt.data)return;'
+                                            '  if(evt.data.type==="jarvis_fly_to"){'
+                                            '    const lat=parseFloat(evt.data.lat);'
+                                            '    const lon=parseFloat(evt.data.lon);'
+                                            '    const zoom=evt.data.zoom||11;'
+                                            '    if(!isNaN(lat)&&!isNaN(lon)){'
+                                            '      if(window._osirisMap&&typeof window._osirisMap.flyTo==="function"){'
+                                            '        window._osirisMap.flyTo({center:[lon,lat],zoom:zoom,essential:true});'
+                                            '      }'
+                                            '    }'
+                                            '  }'
+                                            '});'
+                                            '</script>'
+                                        )
+                                        if '<head>' in html:
+                                            html = html.replace('<head>', f'<head>{bootstrap}', 1)
+                                        else:
+                                            html = bootstrap + html
+                                        data = html.encode('utf-8')
+                                    except Exception:
+                                        pass
+                                    bottle.response.status = status
+                                    bottle.response.content_type = 'text/html; charset=utf-8'
+                                    bottle.response.set_header('Access-Control-Allow-Origin', '*')
+                                    for rm in ['X-Frame-Options', 'Content-Security-Policy', 'Content-Security-Policy-Report-Only', 'Strict-Transport-Security']:
+                                        if rm in bottle.response.headers:
+                                            del bottle.response.headers[rm]
+                                    return data
+
+                                @app.route('/_next/<path:path>')
+                                def _bottle_osiris_next(path):
+                                    qs = bottle.request.query_string
+                                    full = f"_next/{path}?{qs}" if qs else f"_next/{path}"
+                                    return _serve_osiris_proxy(full)
+
+                                @app.route('/vendor/<path:path>')
+                                def _bottle_osiris_vendor(path):
+                                    qs = bottle.request.query_string
+                                    full = f"vendor/{path}?{qs}" if qs else f"vendor/{path}"
+                                    return _serve_osiris_proxy(full)
+
+                                @app.route('/api/<path:path>', method=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+                                def _bottle_osiris_api_fallback(path):
+                                    if bottle.request.method == 'OPTIONS':
+                                        bottle.response.headers['Access-Control-Allow-Origin'] = '*'
+                                        bottle.response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+                                        bottle.response.headers['Access-Control-Allow-Headers'] = '*'
+                                        return ''
+                                    qs = bottle.request.query_string
+                                    full = f"api/{path}?{qs}" if qs else f"api/{path}"
+                                    raw_body = None
+                                    if bottle.request.body:
+                                        try:
+                                            raw_body = bottle.request.body.read()
+                                        except Exception:
+                                            raw_body = None
+                                    ct = bottle.request.headers.get('Content-Type')
+                                    return _serve_osiris_proxy(full, method=bottle.request.method, body=raw_body, content_type=ct)
+
                                 @app.route('/')
                                 @app.route('/<file:path>')
-                                def asset(file):
+                                def asset(file="app.html"):
                                     if not server.root_path:
                                         return ''
-                                    bottle.response.set_header('Cache-Control', 'no-cache, no-store, must-revalidate')
-                                    bottle.response.set_header('Pragma', 'no-cache')
-                                    bottle.response.set_header('Expires', 0)
-                                    return bottle.static_file(file, root=server.root_path)
+                                    pure_file = (file.split('?')[0] if file else "app.html") or "app.html"
+                                    full_local = os.path.join(server.root_path, pure_file)
+                                    if os.path.exists(full_local) and not os.path.isdir(full_local):
+                                        bottle.response.set_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+                                        bottle.response.set_header('Pragma', 'no-cache')
+                                        bottle.response.set_header('Expires', 0)
+                                        return bottle.static_file(pure_file, root=server.root_path)
+                                    qs = bottle.request.query_string
+                                    full_req = f"{file}?{qs}" if qs else file
+                                    return _serve_osiris_proxy(full_req)
 
                             server.root_path = abspath(common_path) if common_path is not None else None
                             server.port = http_port or _get_random_port()

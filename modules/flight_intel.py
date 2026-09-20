@@ -303,6 +303,31 @@ class FlightIntelEngine:
             # Silently catch network or sandbox restrictions
             pass
 
+        # Attempt 1.5: OSIRIS Live Military Flights
+        if not flights:
+            try:
+                from modules.osiris_intel import get_osiris_client
+                osiris_flights = get_osiris_client().get_flights(military_only=True)
+                for mf in osiris_flights.get("military", []):
+                    f_id = (mf.get("callsign") or mf.get("registration") or mf.get("icao24") or "MIL-FLIGHT").strip()
+                    flights.append({
+                        'hex': mf.get('icao24', '').strip(),
+                        'flight': f_id,
+                        'r': mf.get('registration', '').strip(),
+                        't': mf.get('model', 'MIL').strip(),
+                        'desc': mf.get('model', 'Military Combat Aircraft').strip(),
+                        'lat': mf.get('lat', 0.0),
+                        'lon': mf.get('lng', 0.0),
+                        'alt_baro': mf.get('alt', 0),
+                        'gs': mf.get('speed_knots', 0.0),
+                        'track': mf.get('heading', 0.0),
+                        'squawk': mf.get('squawk', 'N/A'),
+                        'category': 'Military Airspace',
+                        'source': 'osiris'
+                    })
+            except Exception as e:
+                pass
+
         # Attempt 2: If no flights returned, use contingency fixtures
         if not flights:
             flights = list(OFFLINE_MIL_FIXTURES)

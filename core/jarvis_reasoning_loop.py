@@ -244,6 +244,43 @@ class JarvisCognitiveLoop:
         sc = SystemController()
         return sc.set_volume(percent)
 
+    def tool_osiris_satellites(self, query: str = "ISS") -> Dict[str, Any]:
+        """Queries OSIRIS for real-time satellite tracking and orbital coordinates."""
+        from modules.osiris_intel import get_osiris_client
+        sats = get_osiris_client().get_satellites(query=query, limit=5)
+        if sats:
+            first = sats[0]
+            self.bus.emit("glide_to_location", {
+                "lat": first.get("lat", 0.0),
+                "lon": first.get("lng", 0.0),
+                "label": f"SATELLITE // {first.get('name', query.upper())}"
+            })
+            return {"success": True, "name": first.get("name"), "lat": first.get("lat"), "lng": first.get("lng"), "alt": first.get("alt")}
+        return {"success": False, "query": query}
+
+    def tool_osiris_conflicts(self) -> Dict[str, Any]:
+        """Queries OSIRIS for active global conflict zones and warzone telemetry."""
+        from modules.osiris_intel import get_osiris_client
+        conflicts = get_osiris_client().get_conflicts()
+        return {"success": True, "activeWarzones": conflicts.get("activeWarzones", 0), "totalZones": conflicts.get("totalZones", 0), "zones": conflicts.get("zones", [])}
+
+    def tool_osiris_cyber_recon(self, target: str) -> Dict[str, Any]:
+        """Executes OSINT cyber intelligence sweep via OSIRIS RECON toolkit."""
+        from modules.osiris_intel import get_osiris_client
+        recon = get_osiris_client().get_cyber_recon(target)
+        return {"success": True, "target": target, "data": recon}
+
+    def tool_osiris_directions(self, from_loc: str, to_loc: str) -> Dict[str, Any]:
+        """Queries OSIRIS Valhalla/OSRM turn-by-turn road routing engine."""
+        from frontend.desktop import resolve_geospatial_coordinates
+        from modules.osiris_intel import get_osiris_client
+        c1 = resolve_geospatial_coordinates(from_loc)
+        c2 = resolve_geospatial_coordinates(to_loc)
+        if c1 and c2:
+            route = get_osiris_client().get_turn_by_turn_route(c1[0], c1[1], c2[0], c2[1])
+            return {"success": True, "from": from_loc, "to": to_loc, "route": route}
+        return {"success": False, "from": from_loc, "to": to_loc}
+
     # ── 2. Intent & Plan Synthesis ────────────────────────────────────
 
     def analyze_goal(self, user_text: str) -> List[Dict[str, Any]]:
@@ -558,6 +595,22 @@ class JarvisCognitiveLoop:
                 elif action == "cockpit":
                     self.bus.emit("control_cockpit", {"action": "enter", "target": step.get("target", "")})
                     obs["result"] = "Tactical cockpit chase camera engaged on selected target vector."
+
+                elif action == "satellites":
+                    res = self.tool_osiris_satellites(step.get("query", "ISS"))
+                    obs["result"] = f"Tracked satellite telemetry: {res.get('name', 'Object')} at {res.get('lat', 0):.2f}°, {res.get('lng', 0):.2f}°."
+
+                elif action == "conflicts":
+                    res = self.tool_osiris_conflicts()
+                    obs["result"] = f"Monitored {res.get('activeWarzones', 0)} active warzones across global theatres."
+
+                elif action == "cyber_recon":
+                    res = self.tool_osiris_cyber_recon(step.get("target", "target"))
+                    obs["result"] = f"Completed OSINT cyber recon sweep for {step.get('target')}."
+
+                elif action == "directions":
+                    res = self.tool_osiris_directions(step.get("from", "Origin"), step.get("to", "Destination"))
+                    obs["result"] = f"Computed Valhalla turn-by-turn road route between {step.get('from')} and {step.get('to')}."
 
                 elif action == "search":
                     res = self.tool_web_search(step["query"])
