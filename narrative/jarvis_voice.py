@@ -247,13 +247,13 @@ class JarvisVoice:
         raw_gemini = config.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY")
         self.gemini_key = self._clean_key(raw_gemini)
         self.gemini_available = bool(self.gemini_key)
-        self.gemini_rate_limited = False
+        self._gemini_rate_limited_until = 0.0
 
         # NVIDIA NIM key
         raw_nvidia = config.get("nvidia_api_key") or os.environ.get("NVIDIA_API_KEY")
         self.nvidia_key = self._clean_key(raw_nvidia)
         self.nvidia_available = bool(self.nvidia_key)
-        self.nvidia_rate_limited = False
+        self._nvidia_rate_limited_until = 0.0
 
         # NVIDIA model override from config
         self.nvidia_model = config.get("nvidia_model", NVIDIA_MODEL)
@@ -263,7 +263,7 @@ class JarvisVoice:
         self.groq_key = self._clean_key(raw_groq)
         self.groq_available = bool(self.groq_key)
         self.groq_model = config.get("groq_model") or "openai/gpt-oss-120b"
-        self.groq_rate_limited = False
+        self._groq_rate_limited_until = 0.0
 
         # Detect available SLM
         self.slm_model = self._detect_slm()
@@ -344,6 +344,39 @@ class JarvisVoice:
         self._current_player_proc = None
         self._interrupted = threading.Event()
         self._playback_lock = threading.Lock()
+
+    @property
+    def groq_rate_limited(self) -> bool:
+        return time.time() < getattr(self, '_groq_rate_limited_until', 0.0)
+
+    @groq_rate_limited.setter
+    def groq_rate_limited(self, val: bool):
+        if val:
+            self._groq_rate_limited_until = time.time() + 15.0
+        else:
+            self._groq_rate_limited_until = 0.0
+
+    @property
+    def nvidia_rate_limited(self) -> bool:
+        return time.time() < getattr(self, '_nvidia_rate_limited_until', 0.0)
+
+    @nvidia_rate_limited.setter
+    def nvidia_rate_limited(self, val: bool):
+        if val:
+            self._nvidia_rate_limited_until = time.time() + 15.0
+        else:
+            self._nvidia_rate_limited_until = 0.0
+
+    @property
+    def gemini_rate_limited(self) -> bool:
+        return time.time() < getattr(self, '_gemini_rate_limited_until', 0.0)
+
+    @gemini_rate_limited.setter
+    def gemini_rate_limited(self, val: bool):
+        if val:
+            self._gemini_rate_limited_until = time.time() + 15.0
+        else:
+            self._gemini_rate_limited_until = 0.0
 
     def interrupt(self) -> bool:
         """
@@ -1267,12 +1300,16 @@ class JarvisVoice:
             or question.lstrip().startswith("[COMMAND_DEBRIEF]")
         )
         if not _is_skill_context:
-            res_skill = self.skills.try_execute(question)
-            if len(res_skill) == 5:
-                handled, skill_msg, is_search, search_query, skill_payload = res_skill
-            else:
-                handled, skill_msg, is_search, search_query = res_skill
-                skill_payload = {}
+            try:
+                res_skill = self.skills.try_execute(question)
+                if len(res_skill) == 5:
+                    handled, skill_msg, is_search, search_query, skill_payload = res_skill
+                else:
+                    handled, skill_msg, is_search, search_query = res_skill
+                    skill_payload = {}
+            except Exception as se:
+                print(f"[jarvis_voice] System skill try_execute error suppressed: {se}")
+                handled, skill_msg, is_search, search_query, skill_payload = False, "", False, "", {}
         else:
             handled, skill_msg, is_search, search_query, skill_payload = False, "", False, "", {}
         if handled and not is_search:
@@ -1573,6 +1610,11 @@ class JarvisVoice:
         Returns {"type": "investigate" | "covo", "target": str | None}
         """
         curr = current_target.primary if current_target else "None"
+
+        # 0. Fast guard: Never hijack map, routing, CCTV, or satellite console tasks into OSINT stalk
+        map_or_media_triggers = ("cctv", "camera", "cameras", "traffic", "flight", "plane", "aircraft", "route", "corridor", "map", "globe", "earth", "sector", "zone", "perimeter", "weather", "satellite", "orbit", "iss", "surveillance")
+        if any(w in text.lower() for w in map_or_media_triggers):
+            return {"type": "covo", "target": None}
 
         # 1. Fast deterministic check for investigation commands (0ms)
         stalk_match = re.match(r'^(?:stalk|pivot|investigate|scan|trace|lookup|dox)\s+(\S+)', text, re.IGNORECASE)

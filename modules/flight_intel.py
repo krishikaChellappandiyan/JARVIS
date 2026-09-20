@@ -339,14 +339,23 @@ class FlightIntelEngine:
         top = flights[0]
         desc = top.get('desc') or top.get('t') or 'tactical aircraft'
         callsign = top.get('flight', 'Unknown')
-        alt = top.get('alt_baro', 0)
+        alt_raw = top.get('alt_baro', 0)
         speed = top.get('gs', 0)
+        if str(alt_raw).lower() == 'ground':
+            alt_phrase = 'on the ground'
+        else:
+            try:
+                alt_phrase = f'at {int(float(alt_raw)):,} feet'
+            except (ValueError, TypeError):
+                alt_phrase = f'at {alt_raw} feet'
 
         lines = [
             f'Locked onto {len(flights)} military radar signatures.',
-            f'Lead track is {callsign} ({desc}) at {alt} feet, tearing through at {speed} knots.'
+            f'Lead track is {callsign} ({desc}) {alt_phrase}, tearing through at {speed} knots.'
         ]
         if len(flights) > 1:
             second = flights[1]
-            lines.append(f'Secondary target {second.get("flight", "VIPER")} ({second.get("t", "F16")}) at {second.get("alt_baro", 0)} ft.')
+            sec_alt = second.get('alt_baro', 0)
+            sec_alt_phrase = 'on the ground' if str(sec_alt).lower() == 'ground' else f'at {sec_alt} ft'
+            lines.append(f'Secondary target {second.get("flight", "VIPER")} ({second.get("t", "F16")}) {sec_alt_phrase}.')
         return ' '.join(lines)

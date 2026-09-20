@@ -31,6 +31,13 @@ class JarvisCognitiveLoop:
         self.task_manager: TaskManager = get_task_manager()
         self._max_steps = 5
 
+    def get_salutation(self) -> str:
+        try:
+            from core.jarvis_memory import JarvisMemory
+            return JarvisMemory().get_salutation() or "Sir"
+        except Exception:
+            return "Sir"
+
     # ── 1. Dynamic Tool / Capability Registry ────────────────────────
 
     def tool_gods_eye_nav(self, location_name: str, zoom_altitude: Optional[float] = None) -> Dict[str, Any]:
@@ -84,6 +91,51 @@ class JarvisCognitiveLoop:
             "count": len(cameras),
             "cameras": cameras[:5],
             "city": cameras[0].get("city", location_name) if cameras else location_name
+        }
+
+    def tool_annotate_area(self, location_or_target: str = "", sector_name: str = "", radius_km: float = 30.0, classification: str = "DEFENSE ZONE") -> Dict[str, Any]:
+        """
+        AI ability to designate, annotate, and project tactical perimeters/sectors on 3D World Telemetry.
+        Resolves coordinates if location is specified, or marks current optical vantage.
+        """
+        from modules.maps_nav import MapsNavigationEngine
+        nav = MapsNavigationEngine()
+        lat, lon = None, None
+        clean_loc = (location_or_target or "").strip()
+
+        if clean_loc and clean_loc.lower() not in ("here", "this area", "current area", "current view", "this sector", "viewport"):
+            geo = nav.geocode(clean_loc)
+            if geo:
+                lat = geo.get("lat")
+                lon = geo.get("lon")
+                clean_loc = geo.get("name", clean_loc)
+
+        if not sector_name:
+            if clean_loc and clean_loc.lower() not in ("here", "this area", "current area", "current view", "this sector", "viewport"):
+                sector_name = f"{clean_loc.upper()} {classification}"
+            else:
+                sector_name = f"TACTICAL {classification}"
+
+        payload = {
+            "lat": lat,
+            "lon": lon,
+            "radius_km": radius_km,
+            "sector_name": sector_name,
+            "classification": classification,
+            "use_camera_center": (lat is None or lon is None)
+        }
+        self.bus.emit("annotate_area", payload)
+        self.bus.emit("jarvis_play_sfx", {"effect": "target_lock"})
+
+        loc_str = f"at {lat:.2f}°, {lon:.2f}°" if lat is not None else "around current optical vantage"
+        return {
+            "success": True,
+            "sector_name": sector_name,
+            "radius_km": radius_km,
+            "classification": classification,
+            "lat": lat,
+            "lon": lon,
+            "debrief": f"Tactical perimeter illuminated for {sector_name} ({radius_km:.0f} km radius) {loc_str}."
         }
 
     def tool_traffic_query(self, location_name: str) -> Dict[str, Any]:
@@ -200,20 +252,31 @@ class JarvisCognitiveLoop:
         Detects combinations of CCTV, traffic, navigation, flight tracking, weather, and terminal tasks.
         """
         text_lower = user_text.lower().strip()
+        sal = self.get_salutation()
         plan_steps = []
 
         loc_candidate = ""
         m_loc = re.search(r'\b(?:in|at|for|around|over|near|towards)\s+([a-zA-Z\s,\.\-]{2,30})', text_lower)
         if m_loc:
             raw_loc = m_loc.group(1).strip()
-            cleaned_loc = re.sub(r'\b(?:and|check|see|show|find|tell|traffic|cctv|camera|flights?|weather|how|what)\b.*$', '', raw_loc).strip()
+            cleaned_loc = re.sub(r'\b(?:and|check|see|show|find|tell|traffic|cctv|camera|flights?|weather|how|what|lock|mark|pull|scan)\b.*$', '', raw_loc).strip()
             loc_candidate = cleaned_loc.strip(' ,.?!')
 
+        if not loc_candidate:
+            m_scan = re.search(r'\b(?:scan|check|monitor|track|search)\s+([a-zA-Z\s,\.\-]{2,30}?)\s+(?:airspace|radar|weather|cctv|traffic|perimeter|zone)\b', text_lower)
+            if m_scan:
+                loc_candidate = m_scan.group(1).strip(' ,.?!')
+
+        if not loc_candidate:
+            m_air = re.search(r'\b([a-zA-Z]{3,20})\s+(?:airspace|weather|traffic|cctv|radar)\b', text_lower)
+            if m_air and m_air.group(1).lower() not in ('the', 'local', 'our', 'all', 'pull', 'scan', 'check'):
+                loc_candidate = m_air.group(1).strip()
+
         has_cctv = any(w in text_lower for w in ["cctv", "camera", "cameras", "cam", "cams", "optical", "surveillance", "vantage"])
-        has_traffic = any(w in text_lower for w in ["traffic", "congestion", "road", "roads", "flow", "jam", "commute", "highway"])
-        has_flight = any(w in text_lower for w in ["flight", "flights", "aircraft", "plane", "planes", "radar", "airspace", "ads-b", "adsb", "chase"])
-        has_weather = any(w in text_lower for w in ["weather", "forecast", "rain", "temperature", "storm", "wind"])
-        has_cockpit = any(w in text_lower for w in ["cockpit", "chase cam", "lock on", "track plane", "lock onto"])
+        has_traffic = any(w in text_lower for w in ["traffic", "congestion", "road", "roads", "flow", "jam", "commute", "highway"]) and "air traffic" not in text_lower
+        has_flight = any(w in text_lower for w in ["flight", "flights", "aircraft", "plane", "planes", "radar", "airspace", "ads-b", "adsb", "chase", "air traffic"])
+        has_weather = any(w in text_lower for w in ["weather", "forecast", "rain", "temperature", "storm", "wind", "pull the weather"])
+        has_cockpit = any(w in text_lower for w in ["cockpit", "chase cam", "lock on", "track plane", "lock onto", "nearest flight"])
         has_search = bool(re.search(r'\b(?:google\s+search|web\s+search|search\s+(?:the\s+web|google|online))\b', text_lower))
         has_briefing = any(w in text_lower for w in ["good morning", "briefing", "situational briefing", "status report", "morning protocol", "executive briefing", "how is the day looking", "how does the day look"])
         has_diag = any(w in text_lower for w in ["diagnostic", "system resource", "hardware stat", "cpu load", "thermals", "system status", "hardware status", "system telemetry", "resource monitor"])
@@ -224,12 +287,38 @@ class JarvisCognitiveLoop:
         has_clip = any(w in text_lower for w in ["clipboard", "what's on my clipboard", "whats on my clipboard", "read clipboard", "copied"])
         has_vol = any(w in text_lower for w in ["volume up", "volume down", "mute", "unmute", "set volume"])
         has_media = any(w in text_lower for w in ["pause music", "resume music", "play music", "next track", "previous track", "stop music"])
+        has_annotate = any(w in text_lower for w in [
+            "annotate", "mark this area", "mark area", "draw boundary", "defense zone",
+            "tactical perimeter", "highlight area", "highlight sector", "draw perimeter",
+            "surveillance zone", "no-fly zone", "no fly zone", "security perimeter", "annotate sector",
+            "mark a", "mark perimeter", "perimeter", "30km"
+        ])
 
         if loc_candidate:
             plan_steps.append({
                 "action": "nav",
                 "location": loc_candidate,
-                "progress_phrase": f"Navigating orbital telemetry to {loc_candidate.title()}, Sir..."
+                "progress_phrase": f"Navigating orbital telemetry to {loc_candidate.title()}, {sal}..."
+            })
+
+        if has_annotate:
+            m_sec = re.search(r'(?:annotate|mark|highlight|designate)\s+(?:this\s+area|area|sector)?\s*(?:as|called|named)?\s*(.*)', user_text.strip(), flags=re.IGNORECASE)
+            raw_sec = m_sec.group(1).strip() if m_sec else ""
+            clean_sec = re.sub(r'\b(?:with|at|radius|perimeter|km|miles?)\b.*$', '', raw_sec, flags=re.IGNORECASE).strip()
+            clean_sec = re.sub(r'^(?:a|an|the)\s+', '', clean_sec, flags=re.IGNORECASE).strip()
+            if re.match(r'^(?:\d+[\w\s]*|this\s+area|area|sector)?$', clean_sec, flags=re.IGNORECASE):
+                clean_sec = ""
+            sec_name = clean_sec or (f"{loc_candidate.title()} Sector" if loc_candidate else "Tactical Defense Zone")
+            m_rad = re.search(r'(\d+(?:\.\d+)?)\s*(?:km|kilo)', text_lower)
+            radius = float(m_rad.group(1)) if m_rad else 30.0
+            classification = "NO-FLY ZONE" if ("no fly" in text_lower or "no-fly" in text_lower) else "SURVEILLANCE ZONE" if "surveillance" in text_lower else "DEFENSE ZONE"
+            plan_steps.append({
+                "action": "annotate",
+                "location": loc_candidate,
+                "sector_name": sec_name,
+                "radius_km": radius,
+                "classification": classification,
+                "progress_phrase": f"Illuminating tactical perimeter and annotating sector boundary on World Telemetry, {sal}..."
             })
 
         if has_cctv:
@@ -243,7 +332,7 @@ class JarvisCognitiveLoop:
                 plan_steps.append({
                     "action": "ask_location",
                     "topic": "optical surveillance feeds",
-                    "progress_phrase": "Awaiting location designation for optical surveillance feeds..."
+                    "progress_phrase": f"Awaiting location designation for optical surveillance feeds, {sal}..."
                 })
 
         if has_traffic:
@@ -251,13 +340,13 @@ class JarvisCognitiveLoop:
                 plan_steps.append({
                     "action": "traffic",
                     "location": loc_candidate,
-                    "progress_phrase": f"Cross-referencing live street traffic and GIS flow vectors for {loc_candidate.title()}..."
+                    "progress_phrase": f"Cross-referencing live street traffic and GIS flow vectors for {loc_candidate.title()}, {sal}..."
                 })
             else:
                 plan_steps.append({
                     "action": "ask_location",
                     "topic": "live street traffic telemetry",
-                    "progress_phrase": "Awaiting location designation for traffic telemetry..."
+                    "progress_phrase": f"Awaiting location designation for traffic telemetry, {sal}..."
                 })
 
         if has_weather:
@@ -265,20 +354,20 @@ class JarvisCognitiveLoop:
                 plan_steps.append({
                     "action": "weather",
                     "location": loc_candidate,
-                    "progress_phrase": f"Pulling regional atmospheric radar and precipitation telemetry for {loc_candidate.title()}..."
+                    "progress_phrase": f"Pulling regional atmospheric radar and precipitation telemetry for {loc_candidate.title()}, {sal}..."
                 })
             else:
                 plan_steps.append({
                     "action": "ask_location",
                     "topic": "atmospheric telemetry",
-                    "progress_phrase": "Awaiting location designation for atmospheric telemetry..."
+                    "progress_phrase": f"Awaiting location designation for atmospheric telemetry, {sal}..."
                 })
 
         if has_flight:
             plan_steps.append({
                 "action": "flights",
                 "query": loc_candidate,
-                "progress_phrase": "Scanning global ADS-B military and civilian airspace transponders..."
+                "progress_phrase": f"Scanning global ADS-B military and civilian airspace transponders, {sal}..."
             })
 
         if has_cockpit:
@@ -292,51 +381,51 @@ class JarvisCognitiveLoop:
             plan_steps.append({
                 "action": "briefing",
                 "location": loc_candidate,
-                "progress_phrase": "Compiling multi-source executive situational briefing, Sir..."
+                "progress_phrase": f"Compiling multi-source executive situational briefing, {sal}..."
             })
 
         if has_diag:
             plan_steps.append({
                 "action": "diagnostics",
-                "progress_phrase": "Querying live hardware diagnostic sensors and CPU telemetry, Sir..."
+                "progress_phrase": f"Querying live hardware diagnostic sensors and CPU telemetry, {sal}..."
             })
 
         if has_proc:
             plan_steps.append({
                 "action": "top_processes",
                 "query": user_text,
-                "progress_phrase": "Auditing active processes and resource allocation, Sir..."
+                "progress_phrase": f"Auditing active processes and resource allocation, {sal}..."
             })
 
         if has_git:
             plan_steps.append({
                 "action": "git_intel",
-                "progress_phrase": "Inspecting repository branch and working directory state, Sir..."
+                "progress_phrase": f"Inspecting repository branch and working directory state, {sal}..."
             })
 
         if has_calendar:
             plan_steps.append({
                 "action": "calendar",
-                "progress_phrase": "Scanning your agenda and scheduling buffers, Sir..."
+                "progress_phrase": f"Scanning your agenda and scheduling buffers, {sal}..."
             })
 
         if has_inbox:
             plan_steps.append({
                 "action": "inbox",
-                "progress_phrase": "Scanning inbox dispatches and priority communications, Sir..."
+                "progress_phrase": f"Scanning inbox dispatches and priority communications, {sal}..."
             })
 
         if has_clip:
             plan_steps.append({
                 "action": "clipboard",
-                "progress_phrase": "Reading active system clipboard buffers, Sir..."
+                "progress_phrase": f"Reading active system clipboard buffers, {sal}..."
             })
 
         if has_vol or has_media:
             plan_steps.append({
                 "action": "media_control",
                 "command": user_text,
-                "progress_phrase": "Dispatching audio/media command to system controller, Sir..."
+                "progress_phrase": f"Dispatching audio/media command to system controller, {sal}..."
             })
 
         if not plan_steps and has_search:
@@ -366,6 +455,8 @@ class JarvisCognitiveLoop:
         if not steps:
             return {"handled": False, "text": "", "findings": []}
 
+        sal = self.get_salutation()
+
         task = self.task_manager.create_task(
             type_=TaskType.INVESTIGATION.value,
             title=f"Goal: {user_text[:35]}",
@@ -394,7 +485,7 @@ class JarvisCognitiveLoop:
             try:
                 if action == "ask_location":
                     topic = step.get("topic", "telemetry")
-                    clarification = f"Which city or region would you like {topic} for, Sir?"
+                    clarification = f"Which city or region would you like {topic} for, {sal}?"
                     if on_progress_speak:
                         on_progress_speak(clarification)
                     self.task_manager.complete_task(task.task_id, {"status": "clarification", "message": clarification})
@@ -447,6 +538,22 @@ class JarvisCognitiveLoop:
                     res = self.tool_flight_radar()
                     count = res.get("count", 0)
                     obs["result"] = f"ADS-B radar active: {count} military contacts airborne with live transponder telemetry."
+
+                elif action == "annotate":
+                    res = self.tool_annotate_area(
+                        location_or_target=step.get("location", ""),
+                        sector_name=step.get("sector_name", ""),
+                        radius_km=step.get("radius_km", 30.0),
+                        classification=step.get("classification", "DEFENSE ZONE")
+                    )
+                    obs["result"] = res.get("debrief", "Tactical perimeter illuminated.")
+                    self.task_manager.add_finding(task.task_id, TaskFinding(
+                        title=f"Tactical Sector: {res.get('sector_name')}",
+                        url="#world-telemetry",
+                        snippet=f"Radius: {res.get('radius_km')}km | Classification: {res.get('classification')}",
+                        source="tactical_annotation",
+                        extra=res
+                    ))
 
                 elif action == "cockpit":
                     self.bus.emit("control_cockpit", {"action": "enter", "target": step.get("target", "")})
@@ -508,7 +615,7 @@ class JarvisCognitiveLoop:
         summary_text = " ".join(summary_lines)
 
         final_debrief = (
-            f"All operational tasks completed, Sir. {summary_text}"
+            f"All operational tasks completed, {sal}. {summary_text}"
         )
 
         self.task_manager.complete_task(task.task_id, summary=final_debrief[:150])

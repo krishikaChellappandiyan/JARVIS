@@ -417,8 +417,23 @@ KNOWN_COORDS = {
     "tokyo": (35.6762, 139.6503),
     "london": (51.5074, -0.1278),
     "paris": (48.8566, 2.3522),
+    # New York Metropolitan Area & Boroughs
     "new york": (40.7128, -74.0060),
     "nyc": (40.7128, -74.0060),
+    "new york city": (40.7128, -74.0060),
+    "brooklyn": (40.6782, -73.9442),
+    "queens": (40.7282, -73.7949),
+    "manhattan": (40.7831, -73.9712),
+    "staten island": (40.5795, -74.1502),
+    "the bronx": (40.8448, -73.8648),
+    "bronx": (40.8448, -73.8648),
+    "jamaica": (40.7027, -73.7890),
+    "jamaica queens": (40.7027, -73.7890),
+    "south richmond hill": (40.6937, -73.8262),
+    "richmond hill": (40.6958, -73.8324),
+    "south austin park": (40.7161, -73.8340),
+    "austin park": (40.7161, -73.8340),
+    "waterloo": (51.5032, -0.1123),
     "san francisco": (37.7749, -122.4194),
     "sf": (37.7749, -122.4194),
     "los angeles": (34.0522, -118.2437),
@@ -479,9 +494,55 @@ KNOWN_COORDS = {
     "indira gandhi": (28.5562, 77.1000),
     "delhi airport": (28.5562, 77.1000),
     "del": (28.5562, 77.1000),
+
+    # Offline Baseline Landmarks & Sports Complexes
+    "chepauk stadium": (13.0628, 80.2793),
+    "chepak stadium": (13.0628, 80.2793),
+    "chepauk": (13.0628, 80.2793),
+    "ma chidambaram stadium": (13.0628, 80.2793),
+    "m.a. chidambaram stadium": (13.0628, 80.2793),
+    "wankhede stadium": (18.9389, 72.8258),
+    "chinnaswamy stadium": (12.9788, 77.5996),
+    "narendra modi stadium": (23.0924, 72.5975),
+    "eden gardens": (22.5646, 88.3433),
+    "marina beach": (13.0499, 80.2824),
+    "chennai central": (13.0823, 80.2755),
+    "iit madras": (12.9915, 80.2337),
+    "satish dhawan space centre": (13.7199, 80.2305),
+    "sriharikota": (13.7199, 80.2305),
+    "white house": (38.8977, -77.0365),
+    "pentagon": (38.8719, -77.0563),
+    "eiffel tower": (48.8584, 2.2945),
 }
 
-def resolve_geospatial_coordinates(candidate: str) -> tuple[float, float, str] | None:
+GEO_CACHE_FILE = os.path.expanduser("~/.jarvis/geocache.json")
+_GEO_CACHE_DATA = None
+
+def _get_geo_cache() -> dict:
+    global _GEO_CACHE_DATA
+    if _GEO_CACHE_DATA is not None:
+        return _GEO_CACHE_DATA
+    try:
+        if os.path.exists(GEO_CACHE_FILE):
+            with open(GEO_CACHE_FILE, "r", encoding="utf-8") as f:
+                _GEO_CACHE_DATA = json.load(f)
+                return _GEO_CACHE_DATA
+    except Exception:
+        pass
+    _GEO_CACHE_DATA = {}
+    return _GEO_CACHE_DATA
+
+def _set_geo_cache(key: str, lat: float, lon: float, name: str):
+    cache = _get_geo_cache()
+    cache[key] = {"lat": lat, "lon": lon, "name": name}
+    try:
+        os.makedirs(os.path.dirname(GEO_CACHE_FILE), exist_ok=True)
+        with open(GEO_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(cache, f, indent=2)
+    except Exception:
+        pass
+
+def resolve_geospatial_coordinates(candidate: str, bias_lat: float = None, bias_lon: float = None, context_name: str = None) -> tuple[float, float, str] | None:
     if not candidate:
         return None
     clean = re.sub(r"[\u2010\u2011\u2012\u2013\u2014\u2015]", "-", candidate)
@@ -492,17 +553,47 @@ def resolve_geospatial_coordinates(candidate: str) -> tuple[float, float, str] |
         lon = float(coord_m.group(2))
         return lat, lon, f"{lat:.4f}°N, {lon:.4f}°E"
 
-    # Phonetic alias mapping for Indian cities frequently misheard by STT
+    # Phonetic alias mapping for Indian cities and landmarks frequently misheard by STT
     if clean in ("quimatur", "quimador", "quimatore", "coimbator", "coimbathur", "kovai"):
         clean = "coimbatore"
     elif clean in ("channel", "chenai", "chenna") and "english" not in clean:
         clean = "chennai"
+    if "chepak" in clean:
+        clean = clean.replace("chepak", "chepauk")
 
-    # 1. Exact match first
+    # High-priority contextual disambiguation
+    if clean == "jamaica":
+        if (context_name and any(c in context_name.lower() for c in ["new york", "nyc", "queens", "brooklyn", "usa", "us"])) or (bias_lat is not None and 35.0 <= bias_lat <= 45.0 and -80.0 <= bias_lon <= -70.0):
+            return 40.7027, -73.7890, "Jamaica, Queens, NY"
+        if context_name and any(c in context_name.lower() for c in ["caribbean", "island", "country", "kingston"]):
+            return 18.1096, -77.2975, "Jamaica"
+        return 40.7027, -73.7890, "Jamaica, Queens, NY"
+
+    if clean == "brooklyn":
+        return 40.6782, -73.9442, "Brooklyn, NY"
+
+    if clean == "waterloo":
+        if (bias_lat is not None and 48.0 <= bias_lat <= 54.0 and 2.0 <= bias_lon <= 7.0) or (context_name and "belgium" in context_name.lower()):
+            return 50.7174, 4.3990, "Waterloo, Belgium"
+        if (context_name and any(c in context_name.lower() for c in ["canada", "ontario", "toronto"])) or (bias_lat is not None and 42.0 <= bias_lat <= 46.0 and -82.0 <= bias_lon <= -78.0):
+            return 43.4643, -80.5204, "Waterloo, Ontario"
+        return 51.5032, -0.1123, "Waterloo, London"
+
+    # 1. Persistent dynamic geocache
+    cache = _get_geo_cache()
+    cache_key = f"{clean}@{round(bias_lat,1)},{round(bias_lon,1)}" if (bias_lat is not None and bias_lon is not None) else clean
+    if cache_key in cache:
+        c = cache[cache_key]
+        return c["lat"], c["lon"], c["name"]
+    if clean in cache:
+        c = cache[clean]
+        return c["lat"], c["lon"], c["name"]
+
+    # 2. Exact match in baseline dictionary
     if clean in KNOWN_COORDS:
         return KNOWN_COORDS[clean][0], KNOWN_COORDS[clean][1], clean.title()
 
-    # 2. Specific key match (longer, boundary-aware matches win over short substrings)
+    # 3. Specific key match (longer, boundary-aware matches win over short substrings)
     matching_keys = [k for k in KNOWN_COORDS if k == clean or (len(k) >= 3 and re.search(r"\b" + re.escape(k) + r"\b", clean)) or (len(clean) >= 4 and clean in k)]
     if matching_keys:
         best_k = max(matching_keys, key=len)
@@ -514,10 +605,36 @@ def resolve_geospatial_coordinates(candidate: str) -> tuple[float, float, str] |
         coords = KNOWN_COORDS[close_keys[0]]
         return coords[0], coords[1], close_keys[0].title()
 
+    # 4. Dynamic Map Geocoding via Photon (OSM-backed, ultra-fast, worldwide coverage with viewport proximity bias)
     try:
         import urllib.request
         import urllib.parse
         q = urllib.parse.quote(clean)
+        photon_url = f"https://photon.komoot.io/api/?q={q}&limit=1"
+        if bias_lat is not None and bias_lon is not None:
+            photon_url += f"&lat={bias_lat}&lon={bias_lon}"
+        req = urllib.request.Request(photon_url, headers={"User-Agent": "JARVIS-Tactical-Console/2.0"})
+        with urllib.request.urlopen(req, timeout=2.5) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            features = data.get("features", [])
+            if features:
+                f0 = features[0]
+                coords = f0.get("geometry", {}).get("coordinates", [])
+                if len(coords) >= 2:
+                    lon, lat = float(coords[0]), float(coords[1])
+                    props = f0.get("properties", {})
+                    name = props.get("name") or props.get("city") or clean.title()
+                    _set_geo_cache(cache_key, lat, lon, name)
+                    return lat, lon, name
+    except Exception:
+        pass
+
+    # 5. Dynamic Map Geocoding Fallback via OpenStreetMap Nominatim
+    try:
+        import urllib.request
+        import urllib.parse
+        search_query = f"{clean}, {context_name}" if (context_name and len(clean.split()) <= 2 and context_name.lower() not in clean) else clean
+        q = urllib.parse.quote(search_query)
         url = f"https://nominatim.openstreetmap.org/search?q={q}&format=json&limit=1"
         req = urllib.request.Request(url, headers={"User-Agent": "JARVIS-Tactical-Console/2.0"})
         with urllib.request.urlopen(req, timeout=2.5) as resp:
@@ -526,6 +643,7 @@ def resolve_geospatial_coordinates(candidate: str) -> tuple[float, float, str] |
                 lat = float(data[0]["lat"])
                 lon = float(data[0]["lon"])
                 name = data[0].get("display_name", clean).split(",")[0].strip().title()
+                _set_geo_cache(cache_key, lat, lon, name)
                 return lat, lon, name
     except Exception:
         pass
@@ -597,12 +715,28 @@ class JarvisAPI:
         self._tts_turn_lock = threading.Lock()
         self._tts_turn_id = 0
         self._current_tts_proc = None
+        self._pending_debriefs = []
+        self._debrief_lock = threading.Lock()
+        self._debrief_timer = None
+        self._groq_stt_cooldown_until = 0.0
         self._telemetry_last_net = None
         self._telemetry_last_time = None
         self._last_nav_target = ""
         self._last_nav_time = 0.0
+        self._active_geo_lat = 40.7128
+        self._active_geo_lon = -74.0060
+        self._active_geo_label = "New York"
         self._shared_audio_queue = queue.Queue(maxsize=150)
         self._cfg = self._load_config()
+
+    def resolve_coords(self, candidate: str) -> tuple[float, float, str] | None:
+        """Context-aware geospatial coordinate resolver biased to the active viewport/city."""
+        return resolve_geospatial_coordinates(
+            candidate,
+            bias_lat=getattr(self, '_active_geo_lat', None),
+            bias_lon=getattr(self, '_active_geo_lon', None),
+            context_name=getattr(self, '_active_geo_label', None)
+        )
 
         # Rolling Short-Term Conversational Context Manager
         try:
@@ -678,7 +812,7 @@ class JarvisAPI:
         dur = getattr(self, '_follow_up_window_sec', 10.0)
         self._follow_up_active = True
         self._follow_up_expires = time.time() + dur
-        if self._wake_engine:
+        if getattr(self, '_wake_engine', None):
             try:
                 self._wake_engine.start_follow_up_window(dur)
             except Exception as e:
@@ -901,6 +1035,16 @@ class JarvisAPI:
             self._emit("annotate_map", {"action": "clear"})
             return
 
+        # 0. Current view area annotation (e.g. "annotate this area")
+        if any(k in raw.lower() for k in ("this area", "current", "here", "annotate this", "mark this")):
+            self._emit("annotate_map", {
+                "action": "ring_current",
+                "label": "ANNOTATED SECTOR",
+                "radius_km": 25.0,
+                "color": "#00F0FF"
+            })
+            return
+
         # 1. Range Ring: e.g. ring Kotagiri radius=50 label="DEFENSE PERIMETER"
         if any(raw.lower().startswith(k) for k in ("ring", "perimeter", "zone", "circle")):
             rad_m = re.search(r'radius=(\d+(?:\.\d+)?)', raw, re.IGNORECASE)
@@ -932,18 +1076,18 @@ class JarvisAPI:
 
         # 2. Ballistic Arc / Air Corridor: e.g. arc from=Kotagiri to=Bengaluru label="AIR CORRIDOR"
         if any(raw.lower().startswith(k) for k in ("arc", "route", "corridor", "vector", "line")):
-            from_m = re.search(r'from=[\"\']?([^\"\'\s,]+)[\"\']?', raw, re.IGNORECASE)
-            to_m = re.search(r'to=[\"\']?([^\"\'\s,]+)[\"\']?', raw, re.IGNORECASE)
+            from_m = re.search(r'from=(?:["\']([^"\']+)["\']|([^\s,]+))', raw, re.IGNORECASE)
+            to_m = re.search(r'to=(?:["\']([^"\']+)["\']|([^\s,]+))', raw, re.IGNORECASE)
             lbl_m = re.search(r'label=[\"\']([^\"\']+)[\"\']', raw, re.IGNORECASE)
             color_m = re.search(r'color=[\"\']([^\"\']+)[\"\']', raw, re.IGNORECASE)
 
-            origin = from_m.group(1) if from_m else "Kotagiri"
-            destination = to_m.group(1) if to_m else "Bengaluru"
-            label = lbl_m.group(1) if lbl_m else f"{origin.upper()} \u2794 {destination.upper()}"
+            origin = (from_m.group(1) or from_m.group(2)).strip() if from_m else "Kotagiri"
+            destination = (to_m.group(1) or to_m.group(2)).strip() if to_m else "Bengaluru"
+            label = lbl_m.group(1) if lbl_m else f"{origin.upper()} ➔ {destination.upper()}"
             color = color_m.group(1) if color_m else "#38BDF8"
 
-            coords1 = resolve_geospatial_coordinates(origin)
-            coords2 = resolve_geospatial_coordinates(destination)
+            coords1 = self.resolve_coords(origin) or resolve_geospatial_coordinates(origin)
+            coords2 = self.resolve_coords(destination) or resolve_geospatial_coordinates(destination)
             if coords1 and coords2:
                 self._emit("annotate_map", {
                     "action": "arc",
@@ -956,26 +1100,43 @@ class JarvisAPI:
                     "label": label,
                     "color": color
                 })
+                self._active_geo_lat = coords2[0]
+                self._active_geo_lon = coords2[1]
+                self._active_geo_label = coords2[2]
             return
 
-        # 3. Pin: e.g. pin Kotagiri label="OPERATIONS BASE"
+        # 3. Pin: e.g. pin Kotagiri label="OPERATIONS BASE" or pin Chennai label="Chepak Stadium"
         if any(raw.lower().startswith(k) for k in ("pin", "marker", "beacon")):
             lbl_m = re.search(r'label=[\"\']([^\"\']+)[\"\']', raw, re.IGNORECASE)
             color_m = re.search(r'color=[\"\']([^\"\']+)[\"\']', raw, re.IGNORECASE)
-            label = lbl_m.group(1) if lbl_m else "TACTICAL PIN"
+            label = lbl_m.group(1).strip() if lbl_m else "TACTICAL PIN"
             color = color_m.group(1) if color_m else "#EF4444"
 
             target = re.sub(r'^(?:pin|marker|beacon)\s*', '', raw, flags=re.IGNORECASE)
             target = re.sub(r'label=[\"\'][^\"\']+[\"\']', '', target, flags=re.IGNORECASE)
             target = re.sub(r'color=[\"\'][^\"\']+[\"\']', '', target, flags=re.IGNORECASE).strip()
 
-            coords = resolve_geospatial_coordinates(target or "Kotagiri")
+            coords = None
+            generic_labels = ("tactical pin", "pin", "marker", "beacon", "target", "poi", "waypoint")
+            is_specific_label = bool(label and label.lower() not in generic_labels)
+
+            if is_specific_label:
+                if target:
+                    coords = resolve_geospatial_coordinates(f"{label}, {target}")
+                if not coords:
+                    coords = resolve_geospatial_coordinates(label)
+
+            if not coords:
+                coords = resolve_geospatial_coordinates(target or "Kotagiri")
+
             if coords:
+                display_label = label if is_specific_label else coords[2]
+                full_label = f"{display_label} ({coords[2]})" if is_specific_label and coords[2].lower() not in display_label.lower() else display_label
                 self._emit("annotate_map", {
                     "action": "pin",
                     "lat": coords[0],
                     "lon": coords[1],
-                    "label": f"{label} ({coords[2]})",
+                    "label": full_label,
                     "color": color
                 })
             return
@@ -1223,9 +1384,12 @@ class JarvisAPI:
                 self._run_ask(loc_prompt)
             return True
 
-        resolved = resolve_geospatial_coordinates(candidate)
+        resolved = self.resolve_coords(candidate) or resolve_geospatial_coordinates(candidate)
         if resolved:
             lat, lon, matched_name = resolved
+            self._active_geo_lat = lat
+            self._active_geo_lon = lon
+            self._active_geo_label = matched_name
             print(f"[desktop] Location target acquired: {matched_name} ({lat:.4f}°N, {lon:.4f}°E). Gliding 3D camera to Earth globe...")
             self._emit("glide_to_location", {
                 "lat": lat,
@@ -1240,6 +1404,74 @@ class JarvisAPI:
                     f"User Question: {text}"
                 )
                 self._run_ask(loc_prompt)
+            return True
+        return False
+
+    def _resolve_and_plot_route(self, text: str) -> bool:
+        """Detect route / transit corridor directives and project them on the 3D globe."""
+        t_clean = (text or "").strip()
+        if any(w in t_clean.lower() for w in ["what is the route", "who took the route", "tell me about the route"]):
+            return False
+
+        route_pat = r'\b(?:(?:show|draw|project|plot|display)\s+(?:(?:me|us)\s+)?(?:a\s+)?(?:route|path|transit|corridor|corridor\s+arc)|route|transit|path|connect|corridor)\s+(?:from\s+)?([a-zA-Z0-9\s,\.\-]{2,40}?)\s+(?:to|and)\s+([a-zA-Z0-9\s,\.\-]{2,40})\b'
+        m = re.search(route_pat, t_clean, re.IGNORECASE)
+        if not m:
+            return False
+
+        origin_raw = m.group(1).strip()
+        dest_raw = m.group(2).strip()
+
+        origin_clean = re.sub(r'\b(?:the|city|town|borough|area)\b', '', origin_raw, flags=re.IGNORECASE).strip()
+        dest_clean = re.sub(r'\b(?:the|city|town|borough|area|please|now|thanks|sir)\b', '', dest_raw, flags=re.IGNORECASE).strip()
+
+        if not origin_clean or not dest_clean:
+            return False
+
+        c1 = self.resolve_coords(origin_clean) or resolve_geospatial_coordinates(origin_clean)
+        c2 = self.resolve_coords(dest_clean) or resolve_geospatial_coordinates(dest_clean)
+
+        if c1 and c2:
+            from_lat, from_lon, from_name = c1
+            to_lat, to_lon, to_name = c2
+
+            print(f"[desktop] Route acquired: {from_name} ({from_lat:.4f}, {from_lon:.4f}) -> {to_name} ({to_lat:.4f}, {to_lon:.4f})")
+            import math
+            dlat = math.radians(to_lat - from_lat)
+            dlon = math.radians(to_lon - from_lon)
+            a = math.sin(dlat/2)**2 + math.cos(math.radians(from_lat)) * math.cos(math.radians(to_lat)) * math.sin(dlon/2)**2
+            dist_km = max(1, round(6371.0 * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))))
+
+            label = f"{from_name.upper()} ➔ {to_name.upper()}"
+            self._emit("annotate_map", {
+                "action": "arc",
+                "from_lat": from_lat,
+                "from_lon": from_lon,
+                "to_lat": to_lat,
+                "to_lon": to_lon,
+                "from_label": from_name,
+                "to_label": to_name,
+                "label": label,
+                "color": "#00F0FF" if dist_km <= 80 else "#38BDF8"
+            })
+            self._emit("jarvis_play_sfx", {"effect": "target_lock"})
+
+            self._active_geo_lat = to_lat
+            self._active_geo_lon = to_lon
+            self._active_geo_label = to_name
+
+            sal = "Sir"
+            try:
+                from core.jarvis_memory import JarvisMemory
+                sal = JarvisMemory().get_salutation() or "Sir"
+            except Exception:
+                pass
+
+            mode_desc = "tactical surface transit corridor" if dist_km <= 80 else "ballistic flight corridor"
+            confirm_msg = f"Projecting {mode_desc} from {from_name} to {to_name} across {dist_km} kilometers, {sal}."
+            self._emit("jarvis_stream_chunk", {"chunk": confirm_msg})
+            self._emit("jarvis_answer", {"text": confirm_msg, "mode": "tactical"})
+            self._speak_and_suppress_echo(confirm_msg)
+            self._start_follow_up_window()
             return True
         return False
 
@@ -1280,6 +1512,10 @@ class JarvisAPI:
                 self._run_ask(f"[DIRECTIVE: Sir requested to glide to World Telemetry (Screen 3). Confirm with crisp J.A.R.V.I.S. cadence that 3D planetary telemetry and multi-domain surveillance are active.]\nUser: {text}")
                 return
 
+            # Fast-path check: route and transit corridor directives
+            if self._resolve_and_plot_route(text):
+                return
+
             # Fast-path check: location and navigation commands trigger 3D Globe camera glide
             if self._resolve_and_glide_location(text):
                 return
@@ -1307,43 +1543,9 @@ class JarvisAPI:
                     )
                     self._run_ask(sat_prompt)
                     return
-            # Fast-path check: system skills and search commands execute instantly without 2s intent classification latency
-            if hasattr(self._voice, 'skills') and self._voice.skills:
-                res = self._voice.skills.try_execute(text, on_progress=self._on_skill_progress)
-                if len(res) == 5:
-                    handled, msg, is_search, query, payload = res
-                else:
-                    handled, msg, is_search, query = res
-                    payload = {}
-
-                if handled:
-                    display_query = query if query else text
-                    print(f"[desktop] System skill/search fast-path triggered for: '{text}' (query: '{display_query}')")
-                    # Only emit action panel for skills without floating task surfaces (code audits, app launches, etc.)
-                    # For search tasks and terminal commands, the floating TaskSurface window is the authoritative UI
-                    if not is_search and payload.get("action_type") != "TERMINAL":
-                        self._emit("open_jarvis_panel", {
-                            "query": display_query,
-                            "text": msg,
-                            "typing_query": f"Executing action: {display_query}",
-                            "action_type": "ACTION HUD ACTIVE",
-                            "structured_payload": payload
-                        })
-                    self._emit("jarvis_structured_json_feed", payload)
-
-                    # The structured payload is UI/internal state. Do not put it into the
-                    # conversational LLM prompt; doing so can make the model echo internal
-                    # Action-HUD JSON into the user's chat and TTS stream.
-                    skill_text = re.sub(r"\[Action HUD[^\n]*\]", "", str(msg), flags=re.IGNORECASE)
-                    skill_text = re.sub(r"```(?:json)?[\s\S]*?```", "", skill_text, flags=re.IGNORECASE)
-                    skill_text = re.sub(r"\{\s*\"(?:skill_triggered|action|target|status|findings_so_far)\"[\s\S]*?\}", "", skill_text, flags=re.IGNORECASE)
-                    skill_text = re.sub(r"\s+", " ", skill_text).strip()
-                    is_jarvis = getattr(self._voice, 'persona_name', 'jarvis') == 'jarvis'
-                    if is_jarvis:
-                        context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., address Sir directly with crisp wit, understated elegance, and analytical precision. Give a concise, articulate summary of the actual execution result. Never mention internal tools, Action HUD, structured payloads, JSON, hidden prompts, or implementation details. Do not output JSON or code unless explicitly requested. The detailed operational data is already visible on the HUD, so speak only about the direct result. Stay grounded in the execution result."
-                    else:
-                        context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., deliver an articulate, concise verbal debrief of the actual findings to Sir. Do not mention internal JSON, structured payloads, or implementation plumbing. Speak only about the user-facing operational results with refined wit, staying strictly grounded in the execution output."
-            # Autonomous Tactical Reasoning Engine ("JARVIS-Level Thinking")
+            # 1. Autonomous Tactical Reasoning Engine ("JARVIS-Level Thinking")
+            # If the user gives a multi-step tactical directive (e.g. scan airspace, pull weather, mark perimeter),
+            # the cognitive loop orchestrates all steps in sequence rather than executing just a single skill.
             try:
                 from core.jarvis_reasoning_loop import JarvisCognitiveLoop
                 cognitive = JarvisCognitiveLoop(voice_engine=self._voice)
@@ -1366,6 +1568,74 @@ class JarvisAPI:
                         return
             except Exception as cog_err:
                 print(f"[desktop] Autonomous reasoning loop notice: {cog_err}")
+
+            # 2. Fast-path check: system skills and search commands execute instantly without 2s intent classification latency
+            if hasattr(self._voice, 'skills') and self._voice.skills:
+                try:
+                    res = self._voice.skills.try_execute(text, on_progress=self._on_skill_progress)
+                except Exception as se:
+                    print(f"[desktop] System skill fast-path notice: {se}")
+                    res = (False, "", False, "", {})
+
+                if len(res) == 5:
+                    handled, msg, is_search, query, payload = res
+                else:
+                    handled, msg, is_search, query = res
+                    payload = {}
+
+                if handled:
+                    display_query = query if query else text
+                    print(f"[desktop] System skill/search fast-path triggered for: '{text}' (query: '{display_query}')")
+
+                    # Tactical CCTV Directive: stay on 3D Earth globe, toggle CCTV, and glide to target city
+                    if payload.get("action_type") == "CCTV":
+                        city = payload.get("city", "")
+                        self._emit("toggle_tactical_layer", {"layer": "cctv", "state": True})
+                        if city:
+                            coords = self.resolve_coords(city) or resolve_geospatial_coordinates(city)
+                            if coords:
+                                self._emit("glide_to_location", {"lat": coords[0], "lon": coords[1], "label": coords[2]})
+                                self._active_geo_lat = coords[0]
+                                self._active_geo_lon = coords[1]
+                                self._active_geo_label = coords[2]
+                        self._emit("jarvis_stream_chunk", {"chunk": msg})
+                        self._emit("jarvis_answer", {"text": msg, "mode": "tactical"})
+                        self._speak_and_suppress_echo(msg)
+                        self._start_follow_up_window()
+                        return
+
+                    # Custom Rule & Phrase Memory Storage: acknowledge directly without empty recall HUD
+                    if payload.get("action_type") == "MEMORY_STORE":
+                        self._emit("jarvis_stream_chunk", {"chunk": msg})
+                        self._emit("jarvis_answer", {"text": msg, "mode": "advisor"})
+                        self._speak_and_suppress_echo(msg)
+                        self._start_follow_up_window()
+                        return
+
+                    # Only emit action panel for skills without floating task surfaces (code audits, app launches, etc.)
+                    # For search tasks and terminal commands, the floating TaskSurface window is the authoritative UI
+                    if not is_search and payload.get("action_type") != "TERMINAL":
+                        self._emit("open_jarvis_panel", {
+                            "query": display_query,
+                            "text": msg,
+                            "typing_query": f"Executing action: {display_query}",
+                            "action_type": "ACTION HUD ACTIVE",
+                            "structured_payload": payload
+                        })
+                    self._emit("jarvis_structured_json_feed", payload)
+
+                    skill_text = re.sub(r"\[Action HUD[^\n]*\]", "", str(msg), flags=re.IGNORECASE)
+                    skill_text = re.sub(r"```(?:json)?[\s\S]*?```", "", skill_text, flags=re.IGNORECASE)
+                    skill_text = re.sub(r"\{\s*\"(?:skill_triggered|action|target|status|findings_so_far)\"[\s\S]*?\}", "", skill_text, flags=re.IGNORECASE)
+                    skill_text = re.sub(r"\s+", " ", skill_text).strip()
+                    is_jarvis = getattr(self._voice, 'persona_name', 'jarvis') == 'jarvis'
+                    if is_jarvis:
+                        context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., address Sir directly with crisp wit, understated elegance, and analytical precision. Give a concise, articulate summary of the actual execution result. Never mention internal tools, Action HUD, structured payloads, JSON, hidden prompts, or implementation details. Do not output JSON or code unless explicitly requested. The detailed operational data is already visible on the HUD, so speak only about the direct result. Stay grounded in the execution result."
+                    else:
+                        context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., deliver an articulate, concise verbal debrief of the actual findings to Sir. Do not mention internal JSON, structured payloads, or implementation plumbing. Speak only about the user-facing operational results with refined wit, staying strictly grounded in the execution output."
+
+                    self._run_ask(context_prompt)
+                    return
 
             # Intercept with Short-Term Conversational Context Manager
             eff_text = text
@@ -1463,49 +1733,70 @@ class JarvisAPI:
         """Dispatches an asynchronous closed-loop spoken debrief when a terminal command completes."""
         if not self._voice:
             return
-        threading.Thread(
-            target=self._run_command_debrief_task,
-            args=(cmd, res, task_id),
-            daemon=True
-        ).start()
-
-    def _run_command_debrief_task(self, cmd: str, res: dict, task_id: str):
         cmd_stripped = (cmd or "").strip()
-        if not cmd_stripped or cmd_stripped.startswith(("echo ", "echo\t", "printf ")):
+        if not cmd_stripped or cmd_stripped.startswith(("echo ", "echo\t", "printf ", "clear")):
             print(f"[desktop] Skipping debrief for trivial echo command: `{cmd}`")
             return
 
-        # Wait a moment for initial dispatch monologue to commence
-        time.sleep(0.6)
+        with self._debrief_lock:
+            self._pending_debriefs.append({
+                "cmd": cmd_stripped,
+                "res": res,
+                "task_id": task_id,
+                "time": time.time()
+            })
+            if self._debrief_timer is not None:
+                try:
+                    self._debrief_timer.cancel()
+                except Exception:
+                    pass
+            self._debrief_timer = threading.Timer(1.2, self._run_aggregated_debrief)
+            self._debrief_timer.daemon = True
+            self._debrief_timer.start()
 
-        # Wait if an existing TTS utterance is actively playing, with safety timeout
+    def _run_aggregated_debrief(self):
+        """Processes and debriefs completed commands in a single unified prompt, strictly waiting for speech completion."""
+        # Wait until previous voice playback (monologue or primary answer) finishes
         wait_start = time.time()
-        while getattr(self, '_current_tts_proc', None) is not None and (time.time() - wait_start) < 14.0:
+        while (time.time() < getattr(self, '_tts_playback_until', 0.0) or getattr(self, '_current_tts_proc', None) is not None) and (time.time() - wait_start) < 20.0:
             time.sleep(0.3)
 
-        stdout_tail = (res.get("stdout") or "").strip()
-        stderr_tail = (res.get("stderr") or "").strip()
+        with self._debrief_lock:
+            items = list(self._pending_debriefs)
+            self._pending_debriefs.clear()
+            self._debrief_timer = None
 
-        if stdout_tail:
-            lines = [l for l in stdout_tail.splitlines() if l.strip()]
-            output_sample = "\n".join(lines[-8:])[:700]
-        elif stderr_tail:
-            lines = [l for l in stderr_tail.splitlines() if l.strip()]
-            output_sample = "\n".join(lines[-8:])[:700]
-        else:
-            output_sample = "Command executed with no output."
+        if not items:
+            return
 
-        exit_code = res.get("exit_code", 0)
-        status_word = "SUCCESS (exit 0)" if res.get("success") else f"FAILED (exit {exit_code})"
+        # Build aggregated debrief prompt
+        summaries = []
+        for it in items:
+            cmd = it["cmd"]
+            res = it["res"]
+            stdout_tail = (res.get("stdout") or "").strip()
+            stderr_tail = (res.get("stderr") or "").strip()
+            if stdout_tail:
+                lines = [l for l in stdout_tail.splitlines() if l.strip()]
+                sample = "\n".join(lines[-6:])[:500]
+            elif stderr_tail:
+                lines = [l for l in stderr_tail.splitlines() if l.strip()]
+                sample = "\n".join(lines[-6:])[:500]
+            else:
+                sample = "Command executed with no output."
+            exit_code = res.get("exit_code", 0)
+            status_word = "SUCCESS (exit 0)" if res.get("success") else f"FAILED (exit {exit_code})"
+            summaries.append(f"- Command: `{cmd}` ({status_word})\nTail Output:\n{sample}")
 
+        combined_text = "\n\n".join(summaries)
         is_jarvis = getattr(self._voice, 'persona_name', 'jarvis') == 'jarvis'
         if is_jarvis:
             persona_instructions = (
                 f"Persona Spoken Instructions:\n"
-                f"Give a short, crisp 1-2 sentence J.A.R.V.I.S. spoken debrief to Sir about the actual result.\n"
+                f"Give a short, crisp 1-2 sentence J.A.R.V.I.S. spoken debrief to Sir summarizing the operational outcome.\n"
                 f"Stay in character — articulate, dryly witty, unflappable, addressing Sir directly.\n"
-                f"If it succeeded, report the outcome with understated satisfaction and tactical precision.\n"
-                f"If it failed or had nothing to report, inform Sir candidly and factually without making excuses.\n"
+                f"If succeeded, report the outcome with understated satisfaction and tactical precision.\n"
+                f"If failed or had nothing to report, inform Sir candidly and factually without making excuses.\n"
                 f"Never output markdown code blocks, never output [CMD] directives. Output pure spoken dialogue only."
             )
         else:
@@ -1513,20 +1804,19 @@ class JarvisAPI:
                 f"Persona Spoken Instructions:\n"
                 f"Give a short, punchy 1-2 sentence J.A.R.V.I.S. spoken debrief to Sir about the actual result.\n"
                 f"Stay in character — understated British elegance, dry wit, and mathematical precision.\n"
-                f"If it succeeded, concisely summarize the outcome with quiet confidence.\n"
-                f"If it failed or had nothing to report, inform Sir clearly and directly of the status.\n"
+                f"If succeeded, concisely summarize the outcome with quiet confidence.\n"
+                f"If failed or had nothing to report, inform Sir clearly and directly of the status.\n"
                 f"Never output markdown code blocks, never output [CMD] directives. Output pure spoken dialogue only."
             )
 
         debrief_prompt = (
             f"[COMMAND_DEBRIEF]\n"
-            f"You previously fired command: `{cmd}`\n"
-            f"Execution Status: {status_word}\n"
-            f"Terminal Output Tail:\n{output_sample}\n\n"
+            f"Executed Commands Summary ({len(items)} items):\n"
+            f"{combined_text}\n\n"
             f"{persona_instructions}"
         )
 
-        print(f"[desktop] Closed-loop command debrief triggered for `{cmd}` ({status_word})")
+        print(f"[desktop] Closed-loop aggregated command debrief triggered ({len(items)} commands)")
         self._run_ask(debrief_prompt)
 
     def false_positive(self, platform: str, context: str = "general"):
@@ -3147,18 +3437,51 @@ class JarvisAPI:
 
         return {"success": False, "error": f"Failed starting microphone recording: {last_err[:150]}"}
 
+    def _transcribe_audio_offline_whisper(self, wav_path: str) -> str:
+        """Offline Whisper speech transcription fallback (supports faster-whisper and whisper)."""
+        # 1. Try faster-whisper (CTranslate2, ultra-fast CPU/CUDA)
+        try:
+            if not hasattr(self, '_faster_whisper_model'):
+                from faster_whisper import WhisperModel
+                self._faster_whisper_model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+            if getattr(self, '_faster_whisper_model', None):
+                segments, _ = self._faster_whisper_model.transcribe(wav_path, beam_size=1)
+                res = " ".join(s.text for s in segments).strip()
+                if res:
+                    print(f"[desktop] Transcribed via offline faster-whisper: '{res}'")
+                    return res
+        except Exception:
+            self._faster_whisper_model = None
+
+        # 2. Try standard openai whisper
+        try:
+            if not hasattr(self, '_whisper_model'):
+                import whisper
+                self._whisper_model = whisper.load_model("tiny.en")
+            if getattr(self, '_whisper_model', None):
+                res = self._whisper_model.transcribe(wav_path)
+                txt = (res.get("text") or "").strip()
+                if txt:
+                    print(f"[desktop] Transcribed via offline whisper: '{txt}'")
+                    return txt
+        except Exception:
+            self._whisper_model = None
+
+        return ""
+
     def _transcribe_audio_fast(self, wav_path: str) -> str:
-        """Fast low-latency speech transcription with Groq Whisper primary and socket-capped Google STT fallback."""
+        """Fast low-latency speech transcription with Groq Whisper primary, offline Whisper fallback, and socket-capped Google STT."""
         groq_key = (
             getattr(getattr(self, '_voice', None), 'groq_key', '')
             or os.environ.get("GROQ_API_KEY", "")
         )
-        if groq_key:
+        groq_cooldown = time.time() < getattr(self, '_groq_stt_cooldown_until', 0.0)
+        if groq_key and not groq_cooldown:
             try:
                 with open(wav_path, "rb") as f:
                     wav_bytes = f.read()
                 boundary = "----WebKitFormBoundary" + hex(int(time.time() * 1000))[2:]
-                bias_prompt = "J.A.R.V.I.S., Sir, tactical intelligence, system diagnostics, Coimbatore, Chennai, Bengaluru, Delhi, Mumbai, Hyderabad, Kolkata, radar, telemetry, screen analysis."
+                bias_prompt = "J.A.R.V.I.S., Sir, tactical intelligence, system diagnostics, Chepauk Stadium, Coimbatore, Chennai, Bengaluru, Delhi, Mumbai, Hyderabad, Kolkata, radar, telemetry, screen analysis."
                 body = (
                     f"--{boundary}\r\n"
                     f'Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
@@ -3190,32 +3513,44 @@ class JarvisAPI:
                         text = (payload.get("text") or "").strip()
                         if text:
                             return self._sanitize_transcribed_speech(text)
+            except urllib.error.HTTPError as he:
+                if he.code == 429:
+                    self._groq_stt_cooldown_until = time.time() + 20.0
+                    print("[desktop] Groq Whisper STT rate-limited (429). Switching to offline Whisper / backup STT.")
+                else:
+                    print(f"[desktop] Groq Whisper turbo notice ({he.code}): {he}")
             except Exception as e:
                 print(f"[desktop] Groq Whisper turbo fallback: {e}")
 
-        # Fallback: Google Speech Recognition with strict socket timeout
-        try:
-            import socket
-            old_timeout = socket.getdefaulttimeout()
-            socket.setdefaulttimeout(3.5)
+        # Fallback 1: Local Offline Whisper (faster-whisper / whisper)
+        offline_txt = self._transcribe_audio_offline_whisper(wav_path)
+        if offline_txt:
+            return self._sanitize_transcribed_speech(offline_txt)
+
+        # Fallback 2: Google Speech Recognition with strict socket timeout
+        if sr is not None:
             try:
-                recognizer = sr.Recognizer()
-                with sr.AudioFile(wav_path) as source:
-                    audio_data = recognizer.record(source)
-                    try:
-                        raw = recognizer.recognize_google(audio_data, language="en-IN").strip()
-                        return self._sanitize_transcribed_speech(raw)
-                    except sr.UnknownValueError:
+                import socket
+                old_timeout = socket.getdefaulttimeout()
+                socket.setdefaulttimeout(3.5)
+                try:
+                    recognizer = sr.Recognizer()
+                    with sr.AudioFile(wav_path) as source:
+                        audio_data = recognizer.record(source)
                         try:
-                            raw = recognizer.recognize_google(audio_data, language="en-US").strip()
+                            raw = recognizer.recognize_google(audio_data, language="en-IN").strip()
                             return self._sanitize_transcribed_speech(raw)
-                        except Exception:
-                            return ""
-            finally:
-                socket.setdefaulttimeout(old_timeout)
-        except Exception as ge:
-            print(f"[desktop] Google STT fallback error: {ge}")
-            return ""
+                        except sr.UnknownValueError:
+                            try:
+                                raw = recognizer.recognize_google(audio_data, language="en-US").strip()
+                                return self._sanitize_transcribed_speech(raw)
+                            except Exception:
+                                return ""
+                finally:
+                    socket.setdefaulttimeout(old_timeout)
+            except Exception as ge:
+                print(f"[desktop] Google STT fallback error: {ge}")
+        return ""
 
     @staticmethod
     def _sanitize_transcribed_speech(text: str) -> str:
@@ -3224,6 +3559,8 @@ class JarvisAPI:
             return ""
         # Coimbatore phonetic variants
         text = re.sub(r'\b(?:quimatur|quimador|quimatore|coimbator|coimbathur)\b', 'Coimbatore', text, flags=re.IGNORECASE)
+        # Chepauk stadium phonetic variants
+        text = re.sub(r'\b(?:chepak|chepaku)\b', 'Chepauk', text, flags=re.IGNORECASE)
         # Chennai navigation variants (e.g. "take me to channel" -> "take me to Chennai")
         text = re.sub(r'\b(take\s+(?:me\s+)?to|navigate\s+to|go\s+to|fly\s+to|heading\s+to)\s+channel\b', r'\1 Chennai', text, flags=re.IGNORECASE)
         # "our system" -> "how is the system" / "how is our system"
@@ -3950,45 +4287,47 @@ class JarvisDesktop:
             _snap_hud_window_to_top_center(hud_w, hud_h)
         # Background voice listener will activate cleanly once the frontend signals pywebviewready
 
-        # Patch pywebview PyQt6 permission policy enum bug (int vs QWebEnginePage.PermissionPolicy)
+        # Patch pywebview PyQt6 permission policy enum bug (only when Qt is available)
         try:
-            import webview.platforms.qt as qt_mod
-            from qtpy.QtWebEngineWidgets import QWebEnginePage
-            policy_cls = getattr(QWebEnginePage, "PermissionPolicy", None)
-            granted = getattr(policy_cls, "PermissionGrantedByUser", 1) if policy_cls else 1
-            denied = getattr(policy_cls, "PermissionDeniedByUser", 2) if policy_cls else 2
+            import importlib.util
+            if importlib.util.find_spec("qtpy") is not None and importlib.util.find_spec("webview.platforms.qt") is not None:
+                import webview.platforms.qt as qt_mod
+                from qtpy.QtWebEngineWidgets import QWebEnginePage
+                policy_cls = getattr(QWebEnginePage, "PermissionPolicy", None)
+                granted = getattr(policy_cls, "PermissionGrantedByUser", 1) if policy_cls else 1
+                denied = getattr(policy_cls, "PermissionDeniedByUser", 2) if policy_cls else 2
 
-            def _safe_onFeaturePermissionRequested(self, url, feature):
-                feat_name = getattr(feature, "name", str(feature))
-                if "Audio" in feat_name or "Video" in feat_name or "Geolocation" in feat_name:
-                    self.setFeaturePermission(url, feature, granted)
-                else:
-                    self.setFeaturePermission(url, feature, denied)
+                def _safe_onFeaturePermissionRequested(self, url, feature):
+                    feat_name = getattr(feature, "name", str(feature))
+                    if "Audio" in feat_name or "Video" in feat_name or "Geolocation" in feat_name:
+                        self.setFeaturePermission(url, feature, granted)
+                    else:
+                        self.setFeaturePermission(url, feature, denied)
 
-            def _terminal_javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
-                msg_level = getattr(QWebEnginePage, "JavaScriptConsoleMessageLevel", None)
-                level_str = "LOG"
-                color = "\033[36m"
-                reset = "\033[0m"
-                if msg_level:
-                    if level == getattr(msg_level, "WarningMessageLevel", 1):
-                        level_str = "WARN"
-                        color = "\033[33m"
-                    elif level == getattr(msg_level, "ErrorMessageLevel", 2):
-                        level_str = "ERROR"
-                        color = "\033[31;1m"
-                    elif level == getattr(msg_level, "InfoMessageLevel", 0):
-                        level_str = "INFO"
-                        color = "\033[34m"
+                def _terminal_javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
+                    msg_level = getattr(QWebEnginePage, "JavaScriptConsoleMessageLevel", None)
+                    level_str = "LOG"
+                    color = "\033[36m"
+                    reset = "\033[0m"
+                    if msg_level:
+                        if level == getattr(msg_level, "WarningMessageLevel", 1):
+                            level_str = "WARN"
+                            color = "\033[33m"
+                        elif level == getattr(msg_level, "ErrorMessageLevel", 2):
+                            level_str = "ERROR"
+                            color = "\033[31;1m"
+                        elif level == getattr(msg_level, "InfoMessageLevel", 0):
+                            level_str = "INFO"
+                            color = "\033[34m"
 
-                src = os.path.basename(sourceID) if sourceID else "app.html"
-                print(f"{color}[js:{level_str}]{reset} ({src}:{lineNumber}) {message}", flush=True)
+                    src = os.path.basename(sourceID) if sourceID else "app.html"
+                    print(f"{color}[js:{level_str}]{reset} ({src}:{lineNumber}) {message}", flush=True)
 
-            if hasattr(qt_mod, "BrowserView") and hasattr(qt_mod.BrowserView, "WebPage"):
-                qt_mod.BrowserView.WebPage.onFeaturePermissionRequested = _safe_onFeaturePermissionRequested
-                qt_mod.BrowserView.WebPage.javaScriptConsoleMessage = _terminal_javaScriptConsoleMessage
-        except Exception as e:
-            print(f"[desktop] Qt permission/console patch notice: {e}")
+                if hasattr(qt_mod, "BrowserView") and hasattr(qt_mod.BrowserView, "WebPage"):
+                    qt_mod.BrowserView.WebPage.onFeaturePermissionRequested = _safe_onFeaturePermissionRequested
+                    qt_mod.BrowserView.WebPage.javaScriptConsoleMessage = _terminal_javaScriptConsoleMessage
+        except Exception:
+            pass
 
         # Patch pywebview GTK backend to dock HUD window to exact top-center
         try:
@@ -3998,6 +4337,29 @@ class JarvisDesktop:
             orig_gtk_init = gtk_mod.BrowserView.__init__
             def _patched_gtk_init(self, *args, **kwargs):
                 orig_gtk_init(self, *args, **kwargs)
+                # Ensure WebKit2GTK settings allow HTML5 local storage, database, and webgl
+                try:
+                    if hasattr(self, "webview") and self.webview:
+                        settings = self.webview.get_settings()
+                        if hasattr(settings, "set_enable_html5_local_storage"):
+                            settings.set_enable_html5_local_storage(True)
+                        if hasattr(settings, "set_enable_html5_database"):
+                            settings.set_enable_html5_database(True)
+                        if hasattr(settings, "set_enable_webgl"):
+                            settings.set_enable_webgl(True)
+                        if hasattr(settings, "set_enable_media_stream"):
+                            settings.set_enable_media_stream(True)
+                        if hasattr(settings, "set_enable_mediasource"):
+                            settings.set_enable_mediasource(True)
+                        if hasattr(settings, "set_enable_webaudio"):
+                            settings.set_enable_webaudio(True)
+                        if hasattr(settings, "set_allow_file_access_from_file_urls"):
+                            settings.set_allow_file_access_from_file_urls(True)
+                        if hasattr(settings, "set_allow_universal_access_from_file_urls"):
+                            settings.set_allow_universal_access_from_file_urls(True)
+                except Exception as we:
+                    print(f"[desktop] WebKit settings configuration notice: {we}")
+
                 if is_hud:
                     try:
                         self.window.set_position(Gtk.WindowPosition.NONE)

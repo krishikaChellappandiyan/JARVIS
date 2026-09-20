@@ -4,10 +4,52 @@ import shutil
 import subprocess
 import urllib.parse
 import webbrowser
+from typing import Any
 from core.jarvis_memory import JarvisMemory
 from core.structured_hud_engine import StructuredHUDEngine
 
 SKILLS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "skills")
+
+
+def _format_flight_alt(alt: Any) -> str:
+    """Safely format flight altitude without throwing ValueError when alt is 'ground' or string."""
+    if alt is None or alt == "":
+        return "N/A"
+    s_alt = str(alt).strip()
+    if s_alt.lower() == "ground":
+        return "Ground"
+    try:
+        val = int(float(s_alt))
+        return f"{val:,} ft"
+    except (ValueError, TypeError):
+        return f"{s_alt} ft"
+
+
+def _format_flight_speed(gs: Any) -> str:
+    """Safely format ground speed in knots."""
+    if gs is None or gs == "":
+        return "0 kts"
+    try:
+        val = float(gs)
+        if val.is_integer():
+            return f"{int(val)} kts"
+        return f"{val:.1f} kts"
+    except (ValueError, TypeError):
+        return f"{gs} kts"
+
+
+def _format_flight_track(track: Any) -> str:
+    """Safely format flight bearing/track in degrees."""
+    if track is None or track == "":
+        return "0°"
+    try:
+        val = float(track)
+        if val.is_integer():
+            return f"{int(val)}°"
+        return f"{val:.1f}°"
+    except (ValueError, TypeError):
+        return f"{track}°"
+
 
 class SystemSkillEngine:
     def __init__(self):
@@ -298,23 +340,37 @@ class SystemSkillEngine:
                     )
                     return True, f"Executed `{cmd_str}` (exit {res['exit_code']}):\n{output_display[:600]}", False, "", payload
 
+                elif task.type == "memory_store":
+                    rule_text = task.data.get("rule", "")
+                    self.memory.store_custom_rule(rule_text)
+                    sal = self.memory.get_salutation()
+                    task_mgr.complete_task(task.task_id, summary=f"Rule committed to persistent memory: {rule_text}")
+                    msg = f"I have committed that rule to persistent memory, {sal}."
+                    return True, msg, False, "", {"action_type": "MEMORY_STORE", "rule": rule_text}
+
                 elif task.type == TaskType.MEMORY_RECALL.value:
                     task_mgr.update_progress(task.task_id, 40, "Retrieving memory entries...")
                     mem_history = self.memory.get_recent_speech_patterns(limit=5)
-                    msg = f"Retrieved {len(mem_history)} recent context logs from memory."
-                    raw_results = []
-                    for idx, entry in enumerate(mem_history, 1):
-                        f_item = {"title": f"Memory Context #{idx}", "snippet": entry, "url": "memory://log"}
-                        raw_results.append(f_item)
-                        task_mgr.add_finding(task.task_id, TaskFinding(
-                            title=f"Memory Context #{idx}",
-                            url="memory://log",
-                            snippet=entry,
-                            source="memory"
-                        ))
-                    task_mgr.complete_task(task.task_id, summary=msg)
-                    payload = self.hud_engine.build_structured_payload("Memory Recall", "MEMORY", raw_results, msg)
-                    return True, msg, False, "", payload
+                    sal = self.memory.get_salutation()
+                    if mem_history:
+                        msg = f"Retrieved {len(mem_history)} recent context logs from memory, {sal}."
+                        raw_results = []
+                        for idx, entry in enumerate(mem_history, 1):
+                            f_item = {"title": f"Memory Context #{idx}", "snippet": entry, "url": "memory://log"}
+                            raw_results.append(f_item)
+                            task_mgr.add_finding(task.task_id, TaskFinding(
+                                title=f"Memory Context #{idx}",
+                                url="memory://log",
+                                snippet=entry,
+                                source="memory"
+                            ))
+                        task_mgr.complete_task(task.task_id, summary=msg)
+                        payload = self.hud_engine.build_structured_payload("Memory Recall", "MEMORY", raw_results, msg)
+                        return True, msg, False, "", payload
+                    else:
+                        msg = f"No prior memory records found for that context, {sal}."
+                        task_mgr.complete_task(task.task_id, summary=msg)
+                        return True, msg, False, "", {}
 
                 elif task.type == TaskType.FLIGHT_INTEL.value:
                     task_mgr.update_progress(task.task_id, 30, "Scanning ADS-B and military transponder feeds...")
@@ -327,7 +383,11 @@ class SystemSkillEngine:
                     for f in flights:
                         flight_label = f.get('flight') or f.get('hex') or 'Unknown'
                         desc = f.get('desc') or f.get('t') or 'Military Airframe'
-                        snip = f"Alt: {f.get('alt_baro', 0):,} ft | Speed: {f.get('gs', 0)} kts | Track: {f.get('track', 0)}° | Squawk: {f.get('squawk', 'N/A')}"
+                        alt_str = _format_flight_alt(f.get('alt_baro', 0))
+                        speed_str = _format_flight_speed(f.get('gs', 0))
+                        track_str = _format_flight_track(f.get('track', 0))
+                        squawk_str = f.get('squawk') or 'N/A'
+                        snip = f"Alt: {alt_str} | Speed: {speed_str} | Track: {track_str} | Squawk: {squawk_str}"
                         url = f"https://globe.adsb.lol/?icao={f.get('hex', '')}"
                         f_item = {"title": f"{flight_label} - {desc}", "snippet": snip, "url": url, "extra": f}
                         raw_results.append(f_item)
@@ -415,12 +475,11 @@ class SystemSkillEngine:
                     return True, debrief_msg, False, "", payload
 
                 elif task.type == TaskType.BROWSER_SURF.value and task.data.get("cctv"):
-                    # Tactical CCTV requests are routed directly to God's Eye 3D Earth console
-                    # instead of popping up legacy Action HUD JSON panels.
                     city = task.data.get("city", "")
-                    debrief_msg = f"Deploying God's Eye tactical surveillance feeds for {city.title() if city else 'global sectors'}, Sir."
-                    task_mgr.complete_task(task.task_id, summary=f"CCTV optical layers online")
-                    return False, debrief_msg, False, "", {}
+                    sal = self.memory.get_salutation()
+                    debrief_msg = f"Deploying God's Eye tactical surveillance feeds for {city.title() if city else 'active sector'}, {sal}."
+                    task_mgr.complete_task(task.task_id, summary="CCTV optical layers online")
+                    return True, debrief_msg, False, "", {"action_type": "CCTV", "city": city}
 
                 elif task.type == TaskType.SITUATIONAL_BRIEFING.value:
                     task_mgr.update_progress(task.task_id, 30, "Compiling multi-source situational briefing...")
@@ -980,7 +1039,10 @@ class SystemSkillEngine:
             for f in flights:
                 flight_label = f.get('flight') or f.get('hex') or 'Unknown'
                 desc = f.get('desc') or f.get('t') or 'Military Airframe'
-                snip = f"Alt: {f.get('alt_baro', 0):,} ft | Speed: {f.get('gs', 0)} kts | Track: {f.get('track', 0)}°"
+                alt_str = _format_flight_alt(f.get('alt_baro', 0))
+                speed_str = _format_flight_speed(f.get('gs', 0))
+                track_str = _format_flight_track(f.get('track', 0))
+                snip = f"Alt: {alt_str} | Speed: {speed_str} | Track: {track_str}"
                 raw.append({"title": f"{flight_label} - {desc}", "snippet": snip, "url": f"https://globe.adsb.lol/?icao={f.get('hex', '')}", "extra": f})
             payload = self.hud_engine.build_structured_payload("Military Radar", "RADAR", raw, msg)
             try:
@@ -1017,8 +1079,10 @@ class SystemSkillEngine:
         # 13. System Hardware Diagnostic Telemetry
         if any(kw in text_lower for kw in [
             "system diagnostic", "hardware diagnostic", "system status", "hardware status",
-            "system telemetry", "hardware stats", "system stats", "cpu load", "battery status",
-            "thermal status", "thermals", "resource monitor"
+            "system telemetry", "hardware stats", "system stats", "cpu load", "cpu usage", "battery status",
+            "thermal status", "thermals", "resource monitor", "how is the system", "system resources",
+            "where we are in the resources", "how are our resources", "how are the resources",
+            "check resources", "ram usage", "memory usage", "disk usage", "hardware health", "our resources"
         ]):
             from modules.system_diagnostics import SystemDiagnosticsEngine
             diag = SystemDiagnosticsEngine()

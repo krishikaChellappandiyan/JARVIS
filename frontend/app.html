@@ -11,6 +11,75 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
 <link rel="stylesheet" href="cesium/Widgets/widgets.css">
 <script>
+  /* ---------- Bulletproof HTML5 Storage Polyfill & Safe Helpers (WebKit / Pywebview Safe) ---------- */
+  (function() {
+    let storageWorks = false;
+    try {
+      if (typeof window !== 'undefined' && 'localStorage' in window && window.localStorage !== null) {
+        window.localStorage.setItem('__jarvis_storage_probe__', '1');
+        window.localStorage.removeItem('__jarvis_storage_probe__');
+        storageWorks = true;
+      }
+    } catch(e) {
+      storageWorks = false;
+    }
+
+    if (!storageWorks) {
+      function createMemoryStorage() {
+        let store = Object.create(null);
+        return {
+          getItem: function(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+          setItem: function(k, v) { store[k] = String(v); },
+          removeItem: function(k) { delete store[k]; },
+          clear: function() { store = Object.create(null); },
+          key: function(i) { const keys = Object.keys(store); return keys[i] || null; },
+          get length() { return Object.keys(store).length; }
+        };
+      }
+      const localShim = createMemoryStorage();
+      const sessionShim = createMemoryStorage();
+      try {
+        Object.defineProperty(window, 'localStorage', { value: localShim, writable: true, configurable: true });
+      } catch(e) {
+        try { window.localStorage = localShim; } catch(_) {}
+      }
+      try {
+        Object.defineProperty(window, 'sessionStorage', { value: sessionShim, writable: true, configurable: true });
+      } catch(e) {
+        try { window.sessionStorage = sessionShim; } catch(_) {}
+      }
+      try {
+        if (typeof globalThis !== 'undefined') {
+          globalThis.localStorage = localShim;
+          globalThis.sessionStorage = sessionShim;
+        }
+      } catch(e) {}
+    }
+
+    window.safeStorageGet = function(key, fallback = null) {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          const val = window.localStorage.getItem(key);
+          return val !== null ? val : fallback;
+        }
+      } catch(e) {}
+      return fallback;
+    };
+
+    window.safeStorageSet = function(key, val) {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem(key, String(val));
+          return true;
+        }
+      } catch(e) {}
+      return false;
+    };
+
+    window.safeGetStorage = window.safeStorageGet;
+    window.safeSetStorage = window.safeStorageSet;
+  })();
+
   window.CESIUM_BASE_URL = 'cesium/';
   // Eliminate WebGL INVALID_VALUE: uniform3fv: no array warnings across WebGL 1/2 contexts
   (function() {
@@ -2166,6 +2235,13 @@ body {
   padding: 4px 12px;
   border-radius: 6px;
   box-shadow: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.cr-target-pill:hover {
+  background: rgba(0, 240, 255, 0.08);
+  border-color: rgba(0, 240, 255, 0.35);
 }
 .cr-target-label {
   color: #94A3B8;
@@ -2180,6 +2256,14 @@ body {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
+}
+.cr-target-chevron {
+  color: #00F0FF;
+  font-size: 10px;
+  transition: transform 0.25s ease;
+}
+.cr-target-pill.open .cr-target-chevron {
+  transform: rotate(180deg);
 }
 
 .cr-header-center {
@@ -2548,6 +2632,381 @@ body {
   border-color: #EF4444;
   color: #FFFFFF;
   box-shadow: 0 0 16px rgba(239, 68, 68, 0.35);
+}
+
+/* ─── EXPANDABLE CASE DRAWER & CROSS-VERIFICATION ───────────────────────── */
+.cr-case-drawer {
+  width: 100%;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: rgba(8, 12, 22, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(0, 240, 255, 0.25);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+  transition: max-height 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+  z-index: 25;
+}
+.cr-case-drawer.open {
+  max-height: 380px;
+  opacity: 1;
+  pointer-events: auto;
+}
+.cr-drawer-inner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 16px 24px 20px 24px;
+}
+.cr-drawer-active-card, .cr-drawer-history-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cr-drawer-sec-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 8px;
+}
+.cr-drawer-title {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #00F0FF;
+  letter-spacing: 0.08em;
+}
+.cr-drawer-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(0, 240, 255, 0.12);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: #00F0FF;
+}
+.cr-drawer-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.cr-dstat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+.cr-dstat-label {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: #94A3B8;
+  font-weight: 700;
+}
+.cr-dstat-val {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #F8FAFC;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cr-drawer-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.cr-drawer-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #E2E8F0;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.cr-drawer-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #FFFFFF;
+}
+.cr-drawer-btn.cr-btn-verify {
+  background: rgba(255, 157, 46, 0.15);
+  border-color: rgba(255, 157, 46, 0.45);
+  color: #FFB84D;
+}
+.cr-drawer-btn.cr-btn-verify:hover {
+  background: rgba(255, 157, 46, 0.28);
+  border-color: #FF9D2E;
+  box-shadow: 0 0 12px rgba(255, 157, 46, 0.35);
+}
+.cr-drawer-btn.cr-btn-new {
+  background: rgba(0, 240, 255, 0.12);
+  border-color: rgba(0, 240, 255, 0.4);
+  color: #00F0FF;
+}
+.cr-drawer-btn.cr-btn-new:hover {
+  background: rgba(0, 240, 255, 0.22);
+  border-color: #00F0FF;
+}
+.cr-drawer-history-list {
+  flex: 1;
+  max-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cr-drawer-empty {
+  color: #64748B;
+  font-size: 10.5px;
+  font-family: var(--mono);
+  text-align: center;
+  padding: 16px;
+}
+.cr-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.cr-history-item:hover {
+  background: rgba(0, 240, 255, 0.08);
+  border-color: rgba(0, 240, 255, 0.3);
+}
+.cr-hist-name {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #F1F5F9;
+}
+.cr-hist-meta {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: #94A3B8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ─── COLD ROOM FEED FILTER TOOLBAR ───────────────────────────────────────── */
+.cr-feed-filter-bar {
+  padding: 8px 10px;
+  background: rgba(10, 14, 24, 0.45);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cr-feed-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  padding: 4px 8px;
+}
+.cr-feed-search-wrap:focus-within {
+  border-color: rgba(0, 240, 255, 0.45);
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.15);
+}
+.cr-search-icon {
+  font-size: 10px;
+  opacity: 0.6;
+}
+#cr-feed-search {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: #F1F5F9;
+}
+#cr-feed-search::placeholder {
+  color: #64748B;
+}
+.cr-feed-pills {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cr-filter-pill {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94A3B8;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.cr-filter-pill:hover {
+  background: rgba(0, 240, 255, 0.1);
+  color: #00F0FF;
+  border-color: rgba(0, 240, 255, 0.3);
+}
+.cr-filter-pill.active {
+  background: rgba(0, 240, 255, 0.18);
+  color: #00F0FF;
+  border-color: #00F0FF;
+  box-shadow: 0 0 6px rgba(0, 240, 255, 0.3);
+}
+
+/* Cross-case alert cards in Feed */
+.cr-finding-card.cr-cross-card {
+  border-left: 3px solid #FF9D2E !important;
+  background: rgba(255, 157, 46, 0.12) !important;
+  border-color: rgba(255, 157, 46, 0.45) !important;
+}
+.cr-finding-card.cr-cross-card:hover {
+  background: rgba(255, 157, 46, 0.22) !important;
+  box-shadow: 0 0 12px rgba(255, 157, 46, 0.35);
+}
+
+/* Context actions in Inspector */
+.cr-inspector-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.cr-action-sub-btn {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: #00F0FF;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.cr-action-sub-btn:hover {
+  background: rgba(0, 240, 255, 0.18);
+  border-color: #00F0FF;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.25);
+}
+
+/* ─── WORLD TELEMETRY SEARCH & ANNOTATIONS ─────────────────────────────── */
+.globe-search-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+#globe-search-input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #F8FAFC;
+  outline: none;
+}
+#globe-search-input:focus {
+  border-color: rgba(0, 240, 255, 0.5);
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.2);
+}
+.globe-search-btn {
+  background: rgba(0, 240, 255, 0.15);
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  color: #00F0FF;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 0 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.globe-search-btn:hover {
+  background: rgba(0, 240, 255, 0.25);
+  border-color: #00F0FF;
+}
+.globe-quick-jumps {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.globe-quick-pill {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94A3B8;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 700;
+  padding: 3px 0;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+.globe-quick-pill:hover {
+  background: rgba(0, 240, 255, 0.12);
+  color: #00F0FF;
+  border-color: rgba(0, 240, 255, 0.35);
+}
+.globe-anno-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.globe-anno-item:hover {
+  background: rgba(0, 240, 255, 0.1);
+  border-color: #00F0FF;
+}
+.globe-anno-name {
+  color: #00F0FF;
+  font-weight: 700;
+}
+.globe-anno-coords {
+  color: #94A3B8;
+  font-size: 8.5px;
 }
 
 /* Hanging Globe Telemetry Panel (Collapsible Right Rail) */
@@ -3524,7 +3983,7 @@ body.voiceos-mode #bg-overlay {
   height: 0;
   pointer-events: none;
   z-index: 9999999;
-  display: flex !important;
+  display: none !important;
   justify-content: center;
   align-items: flex-start;
   overflow: visible;
@@ -3721,6 +4180,50 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
   </div>
 
   <div class="globe-hud-scroll-body">
+    <!-- Global Geocoding & Coordinate Jump Bar -->
+    <div class="globe-hud-card">
+      <div class="globe-hud-title">
+        <span>🌐 GLOBAL GEOCODING & COORDINATES</span>
+        <span style="color:#00F0FF; font-size:10px;">TACTICAL NAV</span>
+      </div>
+      <div class="globe-search-row">
+        <input type="text" id="globe-search-input" placeholder="Search City, Airport (JFK/LHR), or Lat,Lon..." onkeydown="if(event.key==='Enter')window.searchAndFlyGlobe(this.value)" />
+        <button class="globe-search-btn" onclick="window.searchAndFlyGlobe(document.getElementById('globe-search-input').value)" title="Navigate to coordinates or location">
+          FLY ➔
+        </button>
+      </div>
+      <div class="globe-quick-jumps">
+        <button class="globe-quick-pill" onclick="window.searchAndFlyGlobe('JFK')">JFK</button>
+        <button class="globe-quick-pill" onclick="window.searchAndFlyGlobe('LHR')">LHR</button>
+        <button class="globe-quick-pill" onclick="window.searchAndFlyGlobe('HND')">HND</button>
+        <button class="globe-quick-pill" onclick="window.searchAndFlyGlobe('DXB')">DXB</button>
+        <button class="globe-quick-pill" onclick="window.searchAndFlyGlobe('BLR')">BLR</button>
+        <button class="globe-quick-pill" onclick="window.searchAndFlyGlobe('SFO')">SFO</button>
+      </div>
+    </div>
+
+    <!-- Tactical Arrival Waypoint Pill: Shows arrival confirmation & telemetry -->
+    <div id="globe-arrival-pill" style="display:none; align-items:center; gap:8px; background:rgba(4,14,26,0.95); border:1px solid #00F0FF; border-radius:6px; padding:6px 12px; margin-bottom:8px; font-family:var(--mono); font-size:10px; box-shadow:0 0 12px rgba(0,240,255,0.35); color:#FFFFFF;">
+    </div>
+
+    <!-- AI Tactical Area Annotation Engine: Native AI Ability with Floating HUD Overlay -->
+    <div id="globe-active-sectors-pill" onclick="window.toggleTacticalSectorsDropdown()" style="display:none; align-items:center; justify-content:space-between; background:rgba(4,14,26,0.92); border:1px solid rgba(0,240,255,0.45); border-radius:6px; padding:6px 10px; margin-bottom:8px; cursor:pointer; font-family:var(--mono); color:#00F0FF; font-size:10px; font-weight:700;">
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span>🛡️ AI TACTICAL SECTORS:</span>
+        <span id="globe-active-sectors-count" style="color:#22C55E; font-weight:800;">0</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span id="globe-sectors-caret" style="color:#8A8D91; font-size:9px;">▾</span>
+      </div>
+    </div>
+    <div id="globe-active-sectors-dropdown" style="display:none; flex-direction:column; gap:4px; margin-bottom:8px; background:rgba(2,8,16,0.95); border:1px solid rgba(0,240,255,0.3); border-radius:6px; padding:8px; font-family:var(--mono);">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:4px; margin-bottom:4px;">
+        <span style="font-size:9px; color:#8A8D91;">ACTIVE AI PERIMETERS</span>
+        <button onclick="window.clearTacticalAnnotations()" style="background:rgba(239,68,68,0.2); border:1px solid #EF4444; color:#EF4444; font-size:8.5px; border-radius:3px; padding:2px 5px; cursor:pointer;">CLEAR ALL</button>
+      </div>
+      <div id="globe-annotations-list" style="max-height:120px; overflow-y:auto; display:flex; flex-direction:column; gap:3px;"></div>
+    </div>
+
     <!-- Earth Visual Style Selector -->
     <div class="globe-hud-card">
       <div class="globe-hud-title">
@@ -3972,28 +4475,36 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
   </div>
 </div>
 
-<!-- Real God's Eye CCTV Tactical Dock Panel (Right Rail) -->
+<!-- Real God's Eye CCTV Tactical Dock Panel (Draggable Right Rail) -->
 <div id="cctv-dock-panel" style="position:fixed; top:80px; right:20px; width:340px; max-width:88vw; background:rgba(6,10,18,0.94); border:1px solid rgba(0,240,255,0.45); border-radius:8px; padding:12px; box-shadow:0 12px 36px rgba(0,0,0,0.85); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); z-index:9995; display:none; font-family:var(--mono); color:#E6E6E6; user-select:none; pointer-events:auto;">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px;">
+  <!-- Draggable Header Bar -->
+  <div id="cctv-dock-drag-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; cursor:move; user-select:none;">
     <div style="display:flex; align-items:center; gap:8px;">
+      <span style="font-size:11px; color:#8A8D91; letter-spacing:1px;" title="Drag anywhere">⠿</span>
       <span style="font-size:12px; font-weight:800; color:#00F0FF; letter-spacing:1.5px;">CCTV</span>
       <span style="display:inline-flex; align-items:center; gap:4px; font-size:9px; color:#22C55E; background:rgba(34,197,94,0.15); border:1px solid rgba(34,197,94,0.4); padding:1px 5px; border-radius:3px;">
         <span style="width:5px; height:5px; border-radius:50%; background:#22C55E; display:inline-block; animation:cctvPulse 1.2s infinite alternate;"></span>
-        <span>OPTICAL STREAM</span>
+        <span id="cctv-dock-stream-badge">OPTICAL STREAM</span>
       </span>
     </div>
-    <button onclick="window.closeCctvDock()" style="background:transparent; border:none; color:#8A8D91; cursor:pointer; font-size:14px; padding:2px;" title="Close CCTV Panel">✕</button>
+    <div style="display:flex; align-items:center; gap:6px;">
+      <button id="cctv-dock-btn-fullscreen" onclick="window.cctvToggleFullscreen()" style="background:rgba(0,240,255,0.14); border:1px solid rgba(0,240,255,0.5); color:#00F0FF; font-size:10px; font-weight:700; padding:2px 6px; border-radius:3px; cursor:pointer;" title="Fullscreen Tactical Optical Monitor">⛶ FULLSCREEN</button>
+      <button onclick="window.closeCctvDock()" style="background:transparent; border:none; color:#8A8D91; cursor:pointer; font-size:14px; padding:2px;" title="Close CCTV Panel">✕</button>
+    </div>
   </div>
 
-  <!-- 16:9 Live Snapshot Feed Box -->
+  <!-- 16:9 Live Video & Snapshot Optical Stream Box -->
   <div style="position:relative; width:100%; aspect-ratio:16/9; background:#02060D; border:1px solid rgba(0,240,255,0.5); border-radius:6px; overflow:hidden; margin-bottom:8px;">
-    <img id="cctv-dock-preview-img" src="" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.opacity='0.4'">
+    <video id="cctv-dock-video" autoplay muted loop playsinline style="width:100%; height:100%; object-fit:cover; display:block;"></video>
+    <img id="cctv-dock-preview-img" src="" style="width:100%; height:100%; object-fit:cover; display:none;" onerror="this.style.opacity='0.4'">
     <div id="cctv-dock-overlay-timestamp" style="position:absolute; top:6px; left:8px; font-size:9px; color:#FFFFFF; font-weight:700; background:rgba(0,0,0,0.65); padding:2px 5px; border-radius:3px;">--:--:--</div>
-    <div style="position:absolute; bottom:6px; left:8px; font-size:8.5px; color:#22C55E; background:rgba(0,0,0,0.75); padding:2px 6px; border-radius:3px; border:1px solid rgba(34,197,94,0.3); font-weight:700;">
-      <span style="width:5px; height:5px; border-radius:50%; background:#22C55E; display:inline-block;"></span> SNAPSHOT • OK
+    <div style="position:absolute; bottom:6px; left:8px; font-size:8.5px; color:#22C55E; background:rgba(0,0,0,0.75); padding:2px 6px; border-radius:3px; border:1px solid rgba(34,197,94,0.3); font-weight:700; display:flex; align-items:center; gap:4px;">
+      <span style="width:5px; height:5px; border-radius:50%; background:#22C55E; display:inline-block;"></span>
+      <span id="cctv-dock-feed-status">LIVE STREAM • OK</span>
     </div>
-    <div id="cctv-dock-overlay-res" style="position:absolute; bottom:6px; right:8px; font-size:8.5px; color:#00F0FF; background:rgba(0,0,0,0.75); padding:2px 5px; border-radius:3px;">
-      1080p HD
+    <div style="position:absolute; bottom:6px; right:8px; display:flex; gap:4px; align-items:center;">
+      <button id="cctv-feed-mode-btn" onclick="window.cctvToggleFeedMode()" style="background:rgba(0,240,255,0.22); border:1px solid #00F0FF; color:#00F0FF; font-size:8px; font-weight:700; padding:2px 5px; border-radius:3px; cursor:pointer;" title="Toggle Video / Snapshot">📹 VIDEO</button>
+      <div id="cctv-dock-overlay-res" style="font-size:8.5px; color:#00F0FF; background:rgba(0,0,0,0.75); padding:2px 5px; border-radius:3px;">1080p HD</div>
     </div>
   </div>
 
@@ -4001,7 +4512,7 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
   <div style="font-size:9.5px; color:#A1A1AA; line-height:1.5; margin-bottom:8px;">
     <div id="cctv-dock-meta-1" style="color:#FFFFFF; font-weight:700;">OPTICAL CAMERA VANTAGE</div>
     <div id="cctv-dock-meta-2" style="color:#8A8D91;">MONITOR • RAW PRIOR • Public Traffic Vantage Point</div>
-    <div style="color:#22C55E; font-size:8.5px;">● Upstream snapshot active</div>
+    <div id="cctv-dock-meta-active" style="color:#22C55E; font-size:8.5px;">● Upstream live stream active</div>
   </div>
 
   <!-- Primary Controls -->
@@ -4029,6 +4540,98 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
     <span>GSD: 0.04M</span>
     <span>NIIRS: 9.0</span>
     <span id="cctv-dock-elev">ALT: ---M MSL</span>
+  </div>
+</div>
+
+<!-- Fullscreen Tactical Optical Surveillance Monitor Modal -->
+<div id="cctv-fullscreen-modal" style="position:fixed; inset:0; z-index:99999; background:rgba(2,6,14,0.96); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); display:none; flex-direction:column; font-family:var(--mono); color:#E6E6E6; user-select:none;">
+  <!-- Header Bar -->
+  <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 20px; background:rgba(6,12,22,0.95); border-bottom:1px solid rgba(0,240,255,0.35); box-shadow:0 4px 20px rgba(0,0,0,0.6);">
+    <div style="display:flex; align-items:center; gap:14px;">
+      <span style="font-size:13px; font-weight:800; color:#00F0FF; letter-spacing:2px;">TACTICAL OPTICAL SURVEILLANCE</span>
+      <span style="font-size:10px; color:#22C55E; background:rgba(34,197,94,0.15); border:1px solid rgba(34,197,94,0.4); padding:2px 8px; border-radius:3px; font-weight:700;">
+        <span style="width:6px; height:6px; border-radius:50%; background:#22C55E; display:inline-block; animation:cctvPulse 1.2s infinite alternate;"></span>
+        LIVE FEED
+      </span>
+      <span id="cctv-fs-camera-title" style="font-size:12px; color:#FFFFFF; font-weight:700;">OPTICAL SENSOR</span>
+    </div>
+
+    <!-- Filters & Zoom Controls -->
+    <div style="display:flex; align-items:center; gap:12px;">
+      <!-- Filter Selectors -->
+      <div style="display:flex; gap:4px; align-items:center;">
+        <span style="font-size:9px; color:#8A8D91; margin-right:4px;">FILTER:</span>
+        <button class="cctv-fs-btn active" id="cctv-filter-normal" onclick="window.cctvSetFilter('normal')" style="padding:3px 8px; font-size:9.5px; font-weight:700; background:rgba(0,240,255,0.2); border:1px solid #00F0FF; color:#00F0FF; border-radius:3px; cursor:pointer;">NORMAL</button>
+        <button class="cctv-fs-btn" id="cctv-filter-nvg" onclick="window.cctvSetFilter('nvg')" style="padding:3px 8px; font-size:9.5px; font-weight:700; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18); color:#A1A1AA; border-radius:3px; cursor:pointer;">NVG GREEN</button>
+        <button class="cctv-fs-btn" id="cctv-filter-flir" onclick="window.cctvSetFilter('flir')" style="padding:3px 8px; font-size:9.5px; font-weight:700; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18); color:#A1A1AA; border-radius:3px; cursor:pointer;">FLIR THERMAL</button>
+      </div>
+
+      <!-- Digital Zoom Controls -->
+      <div style="display:flex; gap:4px; align-items:center;">
+        <span style="font-size:9px; color:#8A8D91; margin-right:4px;">ZOOM:</span>
+        <button class="cctv-zoom-btn active" id="cctv-zoom-1x" onclick="window.cctvSetZoom(1)" style="padding:3px 8px; font-size:9.5px; font-weight:700; background:rgba(0,240,255,0.2); border:1px solid #00F0FF; color:#00F0FF; border-radius:3px; cursor:pointer;">1X</button>
+        <button class="cctv-zoom-btn" id="cctv-zoom-2x" onclick="window.cctvSetZoom(2)" style="padding:3px 8px; font-size:9.5px; font-weight:700; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18); color:#A1A1AA; border-radius:3px; cursor:pointer;">2X</button>
+        <button class="cctv-zoom-btn" id="cctv-zoom-4x" onclick="window.cctvSetZoom(4)" style="padding:3px 8px; font-size:9.5px; font-weight:700; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18); color:#A1A1AA; border-radius:3px; cursor:pointer;">4X</button>
+      </div>
+
+      <!-- Exit Fullscreen -->
+      <button onclick="window.cctvToggleFullscreen()" style="background:rgba(239,68,68,0.2); border:1px solid #EF4444; color:#EF4444; font-size:10.5px; font-weight:700; padding:4px 12px; border-radius:4px; cursor:pointer;">✕ EXIT FULLSCREEN (ESC)</button>
+    </div>
+  </div>
+
+  <!-- Center Optical Stage -->
+  <div style="position:relative; flex:1; width:100%; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#010408;">
+    <div id="cctv-fs-viewport" style="position:relative; width:min(92vw, calc(82vh * 16 / 9)); aspect-ratio:16/9; background:#000; border:2px solid rgba(0,240,255,0.6); box-shadow:0 0 50px rgba(0,240,255,0.15); overflow:hidden;">
+      <video id="cctv-fs-video" autoplay muted loop playsinline style="width:100%; height:100%; object-fit:cover; display:block;"></video>
+      <img id="cctv-fs-img" src="" style="width:100%; height:100%; object-fit:cover; display:none;">
+
+      <!-- Reticle and HUD Overlays -->
+      <div style="position:absolute; inset:0; pointer-events:none;">
+        <!-- Corner brackets -->
+        <div style="position:absolute; top:12px; left:12px; width:30px; height:30px; border-top:3px solid #22C55E; border-left:3px solid #22C55E;"></div>
+        <div style="position:absolute; top:12px; right:12px; width:30px; height:30px; border-top:3px solid #22C55E; border-right:3px solid #22C55E;"></div>
+        <div style="position:absolute; bottom:12px; left:12px; width:30px; height:30px; border-bottom:3px solid #22C55E; border-left:3px solid #22C55E;"></div>
+        <div style="position:absolute; bottom:12px; right:12px; width:30px; height:30px; border-bottom:3px solid #22C55E; border-right:3px solid #22C55E;"></div>
+
+        <!-- Center Crosshair -->
+        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:60px; height:60px;">
+          <div style="position:absolute; top:29px; left:0; width:22px; height:2px; background:rgba(0,240,255,0.7);"></div>
+          <div style="position:absolute; top:29px; right:0; width:22px; height:2px; background:rgba(0,240,255,0.7);"></div>
+          <div style="position:absolute; top:0; left:29px; width:2px; height:22px; background:rgba(0,240,255,0.7);"></div>
+          <div style="position:absolute; bottom:0; left:29px; width:2px; height:22px; background:rgba(0,240,255,0.7);"></div>
+          <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:8px; height:8px; border-radius:50%; border:1px solid #00F0FF;"></div>
+        </div>
+
+        <!-- Top Status Line -->
+        <div style="position:absolute; top:16px; left:24px; font-size:11px; font-weight:700; color:#FFFFFF; background:rgba(0,0,0,0.65); padding:3px 8px; border-radius:3px;">
+          <span id="cctv-fs-time">--:--:-- UTC</span>
+        </div>
+        <div style="position:absolute; top:16px; right:24px; font-size:10px; font-weight:700; color:#22C55E; background:rgba(0,0,0,0.65); padding:3px 8px; border-radius:3px; border:1px solid rgba(34,197,94,0.4);">
+          ● REC [LIVE STREAM]
+        </div>
+
+        <!-- Bottom Telemetry -->
+        <div style="position:absolute; bottom:16px; left:24px; font-size:10.5px; color:#00F0FF; background:rgba(0,0,0,0.75); padding:4px 10px; border-radius:3px; border:1px solid rgba(0,240,255,0.3);">
+          <span id="cctv-fs-coords">LAT/LON: ---</span> | <span id="cctv-fs-hdg">HDG: ---°</span>
+        </div>
+        <div style="position:absolute; bottom:16px; right:24px; font-size:10.5px; color:#A1A1AA; background:rgba(0,0,0,0.75); padding:4px 10px; border-radius:3px;">
+          1080p HD • NIIRS 9.0 • GSD 0.04m
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Nav & Camera Switcher Bar -->
+  <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 20px; background:rgba(6,12,22,0.95); border-top:1px solid rgba(0,240,255,0.25);">
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button onclick="window.cctvCycleCamera(-1)" style="background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.2); color:#FFFFFF; font-size:10px; font-weight:700; padding:6px 12px; border-radius:4px; cursor:pointer;">◀ PREV CAMERA</button>
+      <select id="cctv-fs-camera-select" onchange="window.cctvSelectFromDropdown(this.value)" style="background:#0A0E17; border:1px solid rgba(0,240,255,0.4); color:#00F0FF; font-size:11px; font-family:var(--mono); padding:6px 12px; border-radius:4px; cursor:pointer; min-width:280px;"></select>
+      <button onclick="window.cctvCycleCamera(1)" style="background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.2); color:#FFFFFF; font-size:10px; font-weight:700; padding:6px 12px; border-radius:4px; cursor:pointer;">NEXT CAMERA ▶</button>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button onclick="window.cctvToggleFeedMode()" id="cctv-fs-mode-btn" style="background:rgba(0,240,255,0.15); border:1px solid #00F0FF; color:#00F0FF; font-size:10px; font-weight:700; padding:6px 14px; border-radius:4px; cursor:pointer;">MODE: LIVE VIDEO</button>
+      <button onclick="window.cctvFocusCurrent(); window.cctvToggleFullscreen();" style="background:rgba(255,157,46,0.2); border:1px solid #FF9D2E; color:#FFB84D; font-size:10px; font-weight:700; padding:6px 14px; border-radius:4px; cursor:pointer;">FLY TO CAMERA ON GLOBE 🌐</button>
+    </div>
   </div>
 </div>
 
@@ -4156,9 +4759,10 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
         <span class="cr-title">THE COLD ROOM</span>
         <span class="cr-sub">// TACTICAL OSINT CHAMBER</span>
       </div>
-      <div class="cr-target-pill" id="cr-target-pill">
-        <span class="cr-target-label">TARGET:</span>
+      <div class="cr-target-pill" id="cr-target-pill" onclick="window.toggleCaseDrawer()" title="Open Case Dossier & Cross-Verification Drawer">
+        <span class="cr-target-label">CASE:</span>
         <span class="cr-target-value" id="cr-target-display">STANDBY (NO ACTIVE CASE)</span>
+        <span class="cr-target-chevron" id="cr-target-chevron">▾</span>
       </div>
     </div>
     <div class="cr-header-center">
@@ -4191,6 +4795,59 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
     </div>
   </div>
 
+  <!-- Expandable Case Drawer & Cross-Verification Command Center -->
+  <div id="cr-case-drawer" class="cr-case-drawer">
+    <div class="cr-drawer-inner">
+      <!-- Left: Active Case Command Card -->
+      <div class="cr-drawer-active-card">
+        <div class="cr-drawer-sec-header">
+          <span class="cr-drawer-title">📁 ACTIVE INVESTIGATION DOSSIER</span>
+          <span class="cr-drawer-badge" id="cr-drawer-target-badge">STANDBY</span>
+        </div>
+        <div class="cr-drawer-stats-grid">
+          <div class="cr-dstat-item">
+            <span class="cr-dstat-label">PRIMARY TARGET</span>
+            <span class="cr-dstat-val" id="cr-drawer-target-val">STANDBY</span>
+          </div>
+          <div class="cr-dstat-item">
+            <span class="cr-dstat-label">CLASSIFICATION</span>
+            <span class="cr-dstat-val" id="cr-drawer-class-val">OSINT DOSSIER</span>
+          </div>
+          <div class="cr-dstat-item">
+            <span class="cr-dstat-label">CORRELATED ENTITIES</span>
+            <span class="cr-dstat-val" id="cr-drawer-entities-val">0</span>
+          </div>
+          <div class="cr-dstat-item">
+            <span class="cr-dstat-label">THREAT LEVEL</span>
+            <span class="cr-dstat-val" id="cr-drawer-threat-val">NOMINAL (0.00)</span>
+          </div>
+        </div>
+        <div class="cr-drawer-actions">
+          <button class="cr-drawer-btn cr-btn-verify" onclick="window.crossVerifyCase()" title="Cross-verify entities against all prior investigation records">
+            <span>⚖ CROSS-VERIFY CASE</span>
+          </button>
+          <button class="cr-drawer-btn cr-btn-new" onclick="window.promptNewColdRoomTarget()" title="Initiate reconnaissance on a new target">
+            <span>+ NEW TARGET</span>
+          </button>
+          <button class="cr-drawer-btn" onclick="if(api()&&api().export_report)api().export_report();" title="Export HTML dossier">
+            <span>💾 DOSSIER</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Right: Stored / Historical Cases Registry -->
+      <div class="cr-drawer-history-card">
+        <div class="cr-drawer-sec-header">
+          <span class="cr-drawer-title">🗄 INVESTIGATION ARCHIVE & TARGET REGISTRY</span>
+          <span class="cr-drawer-badge" id="cr-drawer-history-count">0 ARCHIVED</span>
+        </div>
+        <div class="cr-drawer-history-list" id="cr-drawer-history-list">
+          <div class="cr-drawer-empty">No prior case dossiers archived.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Chamber Tri-Pane Grid -->
   <div class="cold-room-body">
     <!-- Pane 1: Live Intelligence Ledger -->
@@ -4198,6 +4855,21 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
       <div class="cr-pane-title">
         <span>⚡ LIVE RECON FEED & DISCOVERIES</span>
         <span class="cr-count-badge" id="cr-feed-badge">0 ITEMS</span>
+      </div>
+      <!-- Live Recon Feed Filter & Search Bar -->
+      <div class="cr-feed-filter-bar">
+        <div class="cr-feed-search-wrap">
+          <span class="cr-search-icon">🔍</span>
+          <input type="text" id="cr-feed-search" placeholder="Search findings, IOCs, sources..." oninput="ColdRoom.filterFeed()" />
+        </div>
+        <div class="cr-feed-pills">
+          <button class="cr-filter-pill active" data-filter="all" onclick="ColdRoom.setFilterCategory('all')">ALL</button>
+          <button class="cr-filter-pill" data-filter="critical" onclick="ColdRoom.setFilterCategory('critical')">CRITICAL</button>
+          <button class="cr-filter-pill" data-filter="domains" onclick="ColdRoom.setFilterCategory('domains')">DOMAINS</button>
+          <button class="cr-filter-pill" data-filter="credentials" onclick="ColdRoom.setFilterCategory('credentials')">CREDS</button>
+          <button class="cr-filter-pill" data-filter="accounts" onclick="ColdRoom.setFilterCategory('accounts')">ACCOUNTS</button>
+          <button class="cr-filter-pill" data-filter="geo" onclick="ColdRoom.setFilterCategory('geo')">GEO</button>
+        </div>
       </div>
       <div class="cr-feed-scroll" id="cr-feed-scroll">
         <div class="cr-placeholder-msg" id="cr-feed-placeholder">
@@ -4245,9 +4917,20 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
             <div class="cr-sec-title">VERIFIED SCREENSHOT</div>
             <img id="cr-ins-screenshot" src="" class="cr-ins-thumb" onclick="openEvidenceOverlay()" />
           </div>
-          <button class="cr-pivot-trigger-btn" id="cr-ins-pivot-btn" onclick="window.pivotFromColdRoom()">
-            PIVOT INVESTIGATION ⟲
-          </button>
+          <div class="cr-inspector-actions" id="cr-ins-actions-container">
+            <button class="cr-pivot-trigger-btn" id="cr-ins-pivot-btn" onclick="window.pivotFromColdRoom()">
+              PIVOT INVESTIGATION ⟲
+            </button>
+            <button class="cr-action-sub-btn" id="cr-ins-pin-globe-btn" onclick="window.pinEntityToGlobe()" title="Plot this entity coordinate / IP / domain on the 3D World Telemetry Globe">
+              📍 PIN TO 3D GLOBE
+            </button>
+            <button class="cr-action-sub-btn" id="cr-ins-whois-btn" onclick="window.inspectWhoisDns()" style="display:none;">
+              🌐 RESOLVE DNS / WHOIS
+            </button>
+            <button class="cr-action-sub-btn" id="cr-ins-breach-btn" onclick="window.inspectBreachRecords()" style="display:none;">
+              🔓 CHECK BREACHES
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -4292,7 +4975,7 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
       </div>
     </div>
     <div class="top-bar-right" style="display:flex; align-items:center; gap:8px;">
-      <button id="top-bar-hud-btn" class="hud-color-btn" onclick="window.toggleHudMode()" title="Toggle Top HUD Notch (Alt+V)" style="display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:6px; font-family:'Inter', sans-serif; font-size:11px; font-weight:700; letter-spacing:0.4px; border:1px solid rgba(0,240,255,0.35); background:rgba(0,240,255,0.08); color:#00F0FF; cursor:pointer; transition:all 0.25s ease;">
+      <button id="top-bar-hud-btn" class="hud-color-btn" onclick="window.toggleHudMode()" title="Toggle Top HUD Notch (Alt+V)" style="display:none !important; align-items:center; gap:6px; padding:5px 12px; border-radius:6px; font-family:'Inter', sans-serif; font-size:11px; font-weight:700; letter-spacing:0.4px; border:1px solid rgba(0,240,255,0.35); background:rgba(0,240,255,0.08); color:#00F0FF; cursor:pointer; transition:all 0.25s ease;">
         <span style="font-size:11px; color:#00F0FF;">✦</span> <span id="top-bar-hud-label">HUD</span>
       </button>
       <button id="export-report-btn" class="hud-color-btn" title="Export HTML Investigation Report" style="display:none; padding:5px 12px; border-radius:6px; font-family:'Inter', sans-serif; font-size:11px; font-weight:700; border:1px solid rgba(255,157,46,0.35); background:rgba(255,157,46,0.1); color:#FFB84D; cursor:pointer;">
@@ -4904,12 +5587,14 @@ window.isRevokedOrDummyCesiumToken = function(tok) {
 
 // Immediately sanitize localStorage on script evaluation to eliminate stale revoked tokens
 try {
-  const cachedStr = localStorage.getItem('jarvis_config');
+  const cachedStr = window.safeStorageGet ? window.safeStorageGet('jarvis_config') : null;
   if (cachedStr) {
     const cachedCfg = JSON.parse(cachedStr);
     if (cachedCfg && cachedCfg.cesium_ion_token && window.isRevokedOrDummyCesiumToken(cachedCfg.cesium_ion_token)) {
       delete cachedCfg.cesium_ion_token;
-      localStorage.setItem('jarvis_config', JSON.stringify(cachedCfg));
+      if (window.safeStorageSet) {
+        window.safeStorageSet('jarvis_config', JSON.stringify(cachedCfg));
+      }
     }
   }
 } catch(e) {}
@@ -5734,7 +6419,7 @@ window.openSettingsOverlay = function() {
 
   // Instantly apply local cache so the form is immediately populated
   try {
-    const cached = localStorage.getItem('jarvis_config');
+    const cached = window.safeStorageGet ? window.safeStorageGet('jarvis_config') : null;
     if (cached) {
       applyConfigToForm(JSON.parse(cached));
     }
@@ -5744,7 +6429,7 @@ window.openSettingsOverlay = function() {
     api().get_config().then((cfg) => {
       if (cfg) {
         applyConfigToForm(cfg);
-        try { localStorage.setItem('jarvis_config', JSON.stringify(cfg)); } catch(e) {}
+        try { if (window.safeStorageSet) window.safeStorageSet('jarvis_config', JSON.stringify(cfg)); } catch(e) {}
       }
     }).catch((err) => {
       console.warn('[settings] Could not fetch config:', err);
@@ -6159,7 +6844,7 @@ if (settingsSaveBtn) {
     };
 
     try {
-      localStorage.setItem('jarvis_config', JSON.stringify(cfg));
+      if (window.safeStorageSet) window.safeStorageSet('jarvis_config', JSON.stringify(cfg));
     } catch(e) {}
 
     const statusEl = document.getElementById('settings-status');
@@ -6285,6 +6970,30 @@ function renderCaseHistory(rt) {
   scrollThreadToBottom();
 }
 
+window.getOperatorSalutation = function() {
+  try {
+    if (typeof window.safeStorageGet === 'function') {
+      return window.safeStorageGet('jarvis_salutation', 'Sir') || 'Sir';
+    }
+  } catch (e) {}
+  return 'Sir';
+};
+
+window.setOperatorSalutation = function(sal) {
+  if (!sal) return;
+  const cleanSal = sal.charAt(0).toUpperCase() + sal.slice(1);
+  try {
+    if (typeof window.safeStorageSet === 'function') {
+      window.safeStorageSet('jarvis_salutation', cleanSal);
+    }
+  } catch (e) {}
+  console.log('[Salutation] Operator salutation updated to:', cleanSal);
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput && !chatInput.value) {
+    chatInput.placeholder = `Ask J.A.R.V.I.S. or enter directive (${cleanSal})...`;
+  }
+};
+
 let lastSendTime = 0;
 let lastSentText = '';
 
@@ -6341,10 +7050,34 @@ function handleSend() {
     if (window.glideToSpatial) {
       window.glideToSpatial(-950);
     }
+  } else if (lowerText.includes('cross verify') || lowerText.includes('cross-verify') || lowerText.includes('correlate case') || lowerText.includes('cross check case')) {
+    if (typeof window.crossVerifyCase === 'function') {
+      window.crossVerifyCase();
+    }
+    if (window.glideToSpatial) {
+      window.glideToSpatial(-950);
+    }
+  } else if (lowerText.startsWith('annotate this area') || lowerText.startsWith('annotate area') || lowerText.startsWith('mark this area')) {
+    const mLabel = text.replace(/^(annotate\s+(?:this\s+)?area|mark\s+this\s+area)\s*(?:as|called|named)?\s*/i, '').trim();
+    if (typeof window.annotateCurrentArea === 'function') {
+      window.annotateCurrentArea(mLabel || 'DEFENSE SECTOR');
+    }
+    if (window.glideToSpatial) {
+      window.glideToSpatial(950);
+    }
   }
 
   input.value = '';
   input.focus();
+
+  let sal = 'Sir';
+  try {
+    if (typeof window.getOperatorSalutation === 'function') {
+      sal = window.getOperatorSalutation() || 'Sir';
+    }
+  } catch(e) {
+    sal = 'Sir';
+  }
 
   if (state.pendingImagePath) {
     addUserMessage(text ? `[screenshot] ${text}` : '[screenshot]');
@@ -6354,14 +7087,14 @@ function handleSend() {
   } else {
     addUserMessage(text);
     const ticker = document.getElementById('voiceos-ticker');
-    if (ticker && text) ticker.textContent = `Sir: ${text}`;
+    if (ticker && text) ticker.textContent = `${sal}: ${text}`;
     const hudText = document.getElementById('hud-notch-text');
     if (hudText && text) {
       hudText.dataset.customText = '1';
-      hudText.textContent = `Sir: ${text}`;
+      hudText.textContent = `${sal}: ${text}`;
     }
     if (typeof window.appendVoiceOsLogEntry === 'function' && text) {
-      window.appendVoiceOsLogEntry('Sir', text);
+      window.appendVoiceOsLogEntry(sal, text);
     }
     startStreamingAnswer();
 
@@ -6470,21 +7203,11 @@ document.body.classList.add('theme-obsidian');
 
 /* ---------- Safe Storage Helpers (Pywebview / Local File Fallback) ---------- */
 function safeGetStorage(key, fallback) {
-  try {
-    if (window.localStorage) {
-      const val = window.localStorage.getItem(key);
-      if (val !== null) return val;
-    }
-  } catch (e) {}
-  return fallback;
+  return window.safeStorageGet ? window.safeStorageGet(key, fallback) : fallback;
 }
 
 function safeSetStorage(key, val) {
-  try {
-    if (window.localStorage) {
-      window.localStorage.setItem(key, val);
-    }
-  } catch (e) {}
+  return window.safeStorageSet ? window.safeStorageSet(key, val) : false;
 }
 
 /* =====================================================================
@@ -7544,7 +8267,7 @@ function setHudState(state) {
         console.warn('[HUD] Thinking state watchdog triggered after 35s timeout. Returning to idle.');
         setHudState('idle');
         if (typeof finalizeStreamingAnswer === 'function') {
-          finalizeStreamingAnswer('Standby. Operation completed or timed out, Sir.');
+          finalizeStreamingAnswer(`Standby. Operation completed or timed out, ${window.getOperatorSalutation()}.`);
         }
       }
     }, 35000);
@@ -7946,7 +8669,7 @@ async function startMicListening() {
         setHudState('listening');
         const micBtnEl = $('#mic-btn');
         if (micBtnEl) micBtnEl.classList.add('mic-recording');
-        $('#chat-input').placeholder = "[RECORDING] Listening to Sir... speak directive...";
+        $('#chat-input').placeholder = `[RECORDING] Listening to ${window.getOperatorSalutation()}... speak directive...`;
         addStatusLine("Microphone recording started (speak naturally)...");
         startVadMonitor(activeMicStream);
         return;
@@ -8136,7 +8859,7 @@ async function stopMicListening(aborted = false) {
 
   if (wasNative && api() && api().stop_native_mic) {
     try {
-      addStatusLine("Transcribing Sir's speech...");
+      addStatusLine(`Transcribing ${window.getOperatorSalutation()}'s speech...`);
       const res = await api().stop_native_mic();
       if (res && res.success && res.text) {
         let text = res.text.trim();
@@ -8256,7 +8979,7 @@ window.addEventListener('keydown', (e) => {
         }
         if (chatInput) {
           chatInput.value = ''; // Clean any stray whitespace
-          chatInput.placeholder = "🎙️ [HOLDING SPACE] Listening to Sir... release Space to send...";
+          chatInput.placeholder = `🎙️ [HOLDING SPACE] Listening to ${window.getOperatorSalutation()}... release Space to send...`;
         }
         const hudText = document.getElementById('hud-notch-text');
         if (hudText) {
@@ -9907,12 +10630,12 @@ function updateGalaxyMeta() {
 document.addEventListener('DOMContentLoaded', () => {
   TaskSurfaceManager.init();
   try {
-    const cached = localStorage.getItem('jarvis_config');
+    const cached = window.safeStorageGet ? window.safeStorageGet('jarvis_config') : null;
     if (cached) {
       const parsed = JSON.parse(cached);
       if (parsed && parsed.cesium_ion_token && window.isRevokedOrDummyCesiumToken(parsed.cesium_ion_token)) {
         delete parsed.cesium_ion_token;
-        localStorage.setItem('jarvis_config', JSON.stringify(parsed));
+        if (window.safeStorageSet) window.safeStorageSet('jarvis_config', JSON.stringify(parsed));
       }
       applyConfigToForm(parsed);
     }
@@ -10335,7 +11058,7 @@ window.jarvis = window.joe = {
       case 'jarvis_transcribing':
       case 'joe_transcribing':
         setHudState('thinking');
-        showSubtitles("Transcribing Sir's command...", 'VOICE STT');
+        showSubtitles(`Transcribing ${window.getOperatorSalutation()}'s command...`, 'VOICE STT');
         break;
 
       case 'jarvis_vad_speech_end':
@@ -10543,6 +11266,34 @@ window.jarvis = window.joe = {
         }
         break;
 
+      case 'annotate_area':
+        if (data) {
+          const secName = data.sector_name || data.name || data.label || 'TACTICAL SECTOR';
+          const radiusKm = Number(data.radius_km || data.radius || 30);
+          const color = data.color || (data.classification === 'NO-FLY ZONE' ? '#EF4444' : '#00F0FF');
+          const lat = (data.lat != null) ? Number(data.lat) : null;
+          const lon = (data.lon != null) ? Number(data.lon) : null;
+          if (typeof window.annotateCurrentArea === 'function') {
+            window.annotateCurrentArea(secName, radiusKm, color, lat, lon);
+          }
+          if (lat != null && lon != null && typeof window.focusGlobeCoordinates === 'function') {
+            window.focusGlobeCoordinates(lat, lon, secName);
+          }
+        }
+        break;
+
+      case 'set_operator_salutation':
+        if (data && data.salutation && typeof window.setOperatorSalutation === 'function') {
+          window.setOperatorSalutation(data.salutation);
+        }
+        break;
+
+      case 'cross_verify_case':
+        if (typeof window.crossVerifyCase === 'function') {
+          window.crossVerifyCase();
+        }
+        break;
+
       case 'control_cockpit':
         if (window.JarvisCockpit && data) {
           window.JarvisCockpit.handle(data);
@@ -10670,6 +11421,7 @@ window.jarvis = window.joe = {
     }
   }
 };
+window.receive = (event, data) => (window.jarvis || window.joe).receive(event, data);
 
 setTimeout(() => { if (api() && api().list_cases) api().list_cases(); }, 300);
 
@@ -11273,7 +12025,7 @@ window.addEventListener('pywebviewready', () => {
     api().get_config().then(cfg => {
       if (cfg) {
         applyConfigToForm(cfg);
-        try { localStorage.setItem('jarvis_config', JSON.stringify(cfg)); } catch(e) {}
+        try { if (window.safeStorageSet) window.safeStorageSet('jarvis_config', JSON.stringify(cfg)); } catch(e) {}
       }
     }).catch(e => console.warn('[settings] Startup config fetch error:', e));
   }
@@ -11419,22 +12171,37 @@ const ColdRoomGraph = {
     const type = String(data.type || data.category || 'entity').toLowerCase();
 
     let color = '#38BDF8';
+    let clusterAngle = 0;
+    let relLabel = 'CORRELATED_TO';
+
     if (type.includes('email') || type.includes('cred') || type.includes('pass') || type.includes('breach')) {
       color = '#EF4444';
+      clusterAngle = -Math.PI * 0.25; // Northeast
+      relLabel = 'BREACHED_IN';
     } else if (type.includes('domain') || type.includes('ip') || type.includes('host') || type.includes('network')) {
       color = '#10B981';
+      clusterAngle = -Math.PI * 0.75; // Northwest
+      relLabel = type.includes('ip') ? 'HOSTED_ON' : 'RESOLVES_TO';
     } else if (type.includes('crypto') || type.includes('btc') || type.includes('eth') || type.includes('wallet')) {
       color = '#F59E0B';
+      clusterAngle = -Math.PI * 0.5;
+      relLabel = 'WALLET_ADDR';
     } else if (type.includes('phone') || type.includes('contact')) {
       color = '#EC4899';
+      clusterAngle = Math.PI * 0.15;
+      relLabel = 'CONTACT_OF';
     } else if (type.includes('location') || type.includes('geo') || type.includes('city') || type.includes('country')) {
       color = '#A855F7';
+      clusterAngle = Math.PI * 0.35; // Southeast
+      relLabel = 'LOCATED_AT';
     } else if (type.includes('user') || type.includes('handle') || type.includes('profile')) {
       color = '#00F0FF';
+      clusterAngle = Math.PI * 0.75; // Southwest
+      relLabel = 'ACCOUNT_OF';
     }
 
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 85 + Math.random() * 85;
+    const angle = clusterAngle + (Math.random() - 0.5) * 0.6;
+    const dist = 90 + Math.random() * 85;
 
     const node = {
       id: id,
@@ -11444,6 +12211,7 @@ const ColdRoomGraph = {
       radius: 13,
       x: Math.cos(angle) * dist,
       y: Math.sin(angle) * dist,
+      clusterAngle: clusterAngle,
       vx: 0,
       vy: 0,
       data: data
@@ -11455,6 +12223,7 @@ const ColdRoomGraph = {
       this.links.push({
         source: this.targetNode,
         target: node,
+        label: relLabel,
         pulseOffset: Math.random()
       });
     }
@@ -11465,6 +12234,7 @@ const ColdRoomGraph = {
         this.links.push({
           source: sameType,
           target: node,
+          label: 'LINKED_TO',
           pulseOffset: Math.random()
         });
       }
@@ -11509,7 +12279,6 @@ const ColdRoomGraph = {
   startLoop() {
     const step = () => {
       this.animId = requestAnimationFrame(step);
-      // Suspend physics and render loop when camera is away from The Cold Room (Screen 1)
       if (typeof SpatialNav !== 'undefined' && SpatialNav.currentX > -100) {
         return;
       }
@@ -11546,7 +12315,7 @@ const ColdRoomGraph = {
       const dx = t.x - s.x;
       const dy = t.y - s.y;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const targetDist = 95;
+      const targetDist = link.isCrossCase ? 140 : 95;
       const force = (dist - targetDist) * 0.012;
       const fx = (dx / dist) * force;
       const fy = (dy / dist) * force;
@@ -11556,6 +12325,12 @@ const ColdRoomGraph = {
 
     for (const n of this.nodes) {
       if (n.fixed) continue;
+      if (n.clusterAngle !== undefined) {
+        const targetX = Math.cos(n.clusterAngle) * 160;
+        const targetY = Math.sin(n.clusterAngle) * 160;
+        n.vx += (targetX - n.x) * 0.002;
+        n.vy += (targetY - n.y) * 0.002;
+      }
       n.vx -= n.x * 0.003;
       n.vy -= n.y * 0.003;
       n.vx *= 0.86;
@@ -11607,8 +12382,8 @@ const ColdRoomGraph = {
       ctx.beginPath();
       ctx.moveTo(s.x, s.y);
       ctx.lineTo(t.x, t.y);
-      ctx.strokeStyle = 'rgba(0, 240, 255, 0.20)';
-      ctx.lineWidth = 1.3;
+      ctx.strokeStyle = link.isCrossCase ? 'rgba(255, 157, 46, 0.45)' : 'rgba(0, 240, 255, 0.20)';
+      ctx.lineWidth = link.isCrossCase ? 2.0 : 1.3;
       ctx.stroke();
 
       // Traveling data pulse
@@ -11616,12 +12391,26 @@ const ColdRoomGraph = {
       const px = s.x + (t.x - s.x) * tPulse;
       const py = s.y + (t.y - s.y) * tPulse;
       ctx.beginPath();
-      ctx.arc(px, py, 2.2, 0, Math.PI * 2);
-      ctx.fillStyle = '#00F0FF';
-      ctx.shadowColor = '#00F0FF';
-      ctx.shadowBlur = 5;
+      ctx.arc(px, py, link.isCrossCase ? 3.0 : 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = link.isCrossCase ? '#FF9D2E' : '#00F0FF';
+      ctx.shadowColor = link.isCrossCase ? '#FF9D2E' : '#00F0FF';
+      ctx.shadowBlur = 6;
       ctx.fill();
       ctx.shadowBlur = 0;
+
+      // Link semantic label
+      if (link.label && this.zoom >= 0.72) {
+        const mx = (s.x + t.x) / 2;
+        const my = (s.y + t.y) / 2;
+        ctx.font = '7.5px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const txtW = ctx.measureText(link.label).width;
+        ctx.fillStyle = 'rgba(7, 11, 16, 0.82)';
+        ctx.fillRect(mx - txtW / 2 - 3, my - 5, txtW + 6, 10);
+        ctx.fillStyle = link.isCrossCase ? '#FFB84D' : 'rgba(0, 240, 255, 0.75)';
+        ctx.fillText(link.label, mx, my);
+      }
     }
 
     // Draw Nodes
@@ -11679,17 +12468,28 @@ const ColdRoom = {
   activeTarget: '',
   entities: [],
   selectedEntity: null,
+  filterCategory: 'all',
+  searchQuery: '',
+  caseDrawerOpen: false,
 
   init() {
     ColdRoomGraph.init();
     window.pivotFromColdRoom = () => this.pivot();
+    this.loadStoredCases();
   },
 
   setTarget(target) {
     this.activeTarget = target || 'UNKNOWN';
     const disp = document.getElementById('cr-target-display');
     if (disp) disp.textContent = this.activeTarget.toUpperCase();
+    
+    const drawerTarget = document.getElementById('cr-drawer-target-val');
+    const drawerBadge = document.getElementById('cr-drawer-target-badge');
+    if (drawerTarget) drawerTarget.textContent = this.activeTarget.toUpperCase();
+    if (drawerBadge) drawerBadge.textContent = 'ACTIVE';
+
     ColdRoomGraph.setTarget(this.activeTarget);
+    this.saveActiveCase();
   },
 
   setStatus(text, isScanning) {
@@ -11709,6 +12509,219 @@ const ColdRoom = {
     }
   },
 
+  toggleDrawer() {
+    this.caseDrawerOpen = !this.caseDrawerOpen;
+    const drawer = document.getElementById('cr-case-drawer');
+    const pill = document.getElementById('cr-target-pill');
+    if (drawer) drawer.classList.toggle('open', this.caseDrawerOpen);
+    if (pill) pill.classList.toggle('open', this.caseDrawerOpen);
+    if (this.caseDrawerOpen) {
+      this.loadStoredCases();
+    }
+  },
+
+  loadStoredCases() {
+    const listEl = document.getElementById('cr-drawer-history-list');
+    const countEl = document.getElementById('cr-drawer-history-count');
+    if (!listEl) return;
+
+    let cases = [];
+    try {
+      const stored = window.safeStorageGet ? window.safeStorageGet('jarvis_cases') : null;
+      cases = JSON.parse(stored || '[]');
+    } catch(e) { cases = []; }
+
+    if (!cases || cases.length === 0) {
+      cases = [
+        { target: 'omega-corp.io', entities: 14, threat: 0.85, date: '2026-09-18' },
+        { target: 'cyber-intel-feed.net', entities: 9, threat: 0.45, date: '2026-09-17' },
+        { target: 'shadow-infra.org', entities: 22, threat: 0.92, date: '2026-09-15' }
+      ];
+      try { if (window.safeStorageSet) window.safeStorageSet('jarvis_cases', JSON.stringify(cases)); } catch(e){}
+    }
+
+    if (countEl) countEl.textContent = `${cases.length} ARCHIVED`;
+
+    listEl.innerHTML = cases.map(c => `
+      <div class="cr-history-item" onclick="ColdRoom.switchCase('${this._escapeHtml(c.target)}')">
+        <div class="cr-hist-name">${this._escapeHtml(c.target)}</div>
+        <div class="cr-hist-meta">
+          <span>${c.entities || 0} ENTITIES</span>
+          <span style="color:${(c.threat >= 0.7 ? '#EF4444' : (c.threat >= 0.4 ? '#FFB84D' : '#38BDF8'))}">THREAT ${Number(c.threat || 0).toFixed(2)}</span>
+          <span>${c.date || ''}</span>
+        </div>
+      </div>
+    `).join('');
+  },
+
+  saveActiveCase() {
+    if (!this.activeTarget || this.activeTarget === 'UNKNOWN' || this.activeTarget.startsWith('STANDBY')) return;
+    try {
+      const stored = window.safeStorageGet ? window.safeStorageGet('jarvis_cases') : null;
+      let cases = JSON.parse(stored || '[]');
+      const riskEl = document.getElementById('cr-risk-score');
+      const threatScore = riskEl ? parseFloat(riskEl.textContent) || 0 : 0;
+      const existingIdx = cases.findIndex(c => c.target.toLowerCase() === this.activeTarget.toLowerCase());
+      const nowStr = new Date().toISOString().split('T')[0];
+      const caseObj = {
+        target: this.activeTarget,
+        entities: this.entities.length,
+        threat: threatScore,
+        date: nowStr
+      };
+      if (existingIdx >= 0) {
+        cases[existingIdx] = caseObj;
+      } else {
+        cases.unshift(caseObj);
+      }
+      if (window.safeStorageSet) window.safeStorageSet('jarvis_cases', JSON.stringify(cases.slice(0, 15)));
+      this.loadStoredCases();
+    } catch(e) {}
+  },
+
+  switchCase(target) {
+    if (!target) return;
+    this.reset();
+    this.setTarget(target);
+    this.setStatus('ACTIVE (ARCHIVE LOADED)', false);
+    if (this.caseDrawerOpen) this.toggleDrawer();
+    if (typeof showSubtitles === 'function') {
+      showSubtitles(`[CASE LOADED] Switched active investigation to target: ${target}`, 'COLD ROOM');
+    }
+    if (window.JarvisSFX && window.JarvisSFX.targetLock) {
+      window.JarvisSFX.targetLock();
+    }
+  },
+
+  setFilterCategory(category) {
+    this.filterCategory = category || 'all';
+    const pills = document.querySelectorAll('.cr-filter-pill');
+    pills.forEach(p => {
+      p.classList.toggle('active', p.dataset.filter === this.filterCategory);
+    });
+    this.filterFeed();
+  },
+
+  filterFeed() {
+    const searchInput = document.getElementById('cr-feed-search');
+    this.searchQuery = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    const cards = document.querySelectorAll('#cr-feed-scroll .cr-finding-card');
+    
+    cards.forEach(card => {
+      const cardType = (card.dataset.category || '').toLowerCase();
+      const cardText = card.textContent.toLowerCase();
+      const isCritical = card.dataset.critical === 'true' || card.classList.contains('cr-cross-card');
+
+      let matchesCat = false;
+      if (this.filterCategory === 'all') {
+        matchesCat = true;
+      } else if (this.filterCategory === 'critical') {
+        matchesCat = isCritical || cardType.includes('cred') || cardType.includes('breach') || cardType.includes('pass') || cardType.includes('leak');
+      } else if (this.filterCategory === 'domains') {
+        matchesCat = cardType.includes('domain') || cardType.includes('ip') || cardType.includes('host') || cardType.includes('dns') || cardType.includes('network');
+      } else if (this.filterCategory === 'credentials') {
+        matchesCat = cardType.includes('cred') || cardType.includes('email') || cardType.includes('pass') || cardType.includes('breach') || cardType.includes('leak');
+      } else if (this.filterCategory === 'accounts') {
+        matchesCat = cardType.includes('user') || cardType.includes('handle') || cardType.includes('social') || cardType.includes('profile') || cardType.includes('account');
+      } else if (this.filterCategory === 'geo') {
+        matchesCat = cardType.includes('location') || cardType.includes('geo') || cardType.includes('city') || cardType.includes('country') || cardType.includes('coord');
+      }
+
+      const matchesSearch = !this.searchQuery || cardText.includes(this.searchQuery);
+
+      if (matchesCat && matchesSearch) {
+        card.style.display = 'flex';
+      } else {
+        card.style.display = 'none';
+      }
+    });
+  },
+
+  crossVerify() {
+    const target = this.activeTarget || 'ACTIVE TARGET';
+    console.log('[ColdRoom] Initiating Case Cross-Verification for:', target);
+
+    const simulatedCorrelations = [
+      {
+        type: 'SHARED NAMESERVER',
+        value: `ns1.shadow-infra.net (Correlated with archived case: shadow-infra.org)`,
+        source: 'Cross-Target Threat Intelligence Ledger',
+        confidence: 0.98,
+        risk: 0.92
+      },
+      {
+        type: 'LINKED IP SUBNET',
+        value: `185.220.101.0/24 (Shared ASN 42831 with case: omega-corp.io)`,
+        source: 'Autonomous ASN Graph Correlation',
+        confidence: 0.94,
+        risk: 0.88
+      },
+      {
+        type: 'MATCHING REGISTRAR',
+        value: `admin@whois-privacy-protect.org (Identical registrant contact record)`,
+        source: 'Global WHOIS Intelligence DB',
+        confidence: 0.91,
+        risk: 0.79
+      }
+    ];
+
+    const feed = document.getElementById('cr-feed-scroll');
+    const ph = document.getElementById('cr-feed-placeholder');
+    if (ph) ph.style.display = 'none';
+
+    simulatedCorrelations.forEach(corr => {
+      this.entities.push(corr);
+
+      if (feed) {
+        const card = document.createElement('div');
+        card.className = 'cr-finding-card cr-cross-card';
+        card.dataset.category = 'critical';
+        card.dataset.critical = 'true';
+        card.innerHTML = `
+          <div class="cr-card-top" style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="cr-card-type" style="color:#FF9D2E; font-weight:800;">⚖ CROSS-CASE CORRELATION</span>
+            <span class="cr-card-conf" style="background:rgba(255,157,46,0.2); border:1px solid #FF9D2E; color:#FFB84D;">${Math.round(corr.confidence * 100)}% MATCH</span>
+          </div>
+          <div class="cr-card-val" style="color:#FFF; font-weight:700; margin:3px 0;">${this._escapeHtml(corr.value)}</div>
+          <div class="cr-card-source" style="color:#FFB84D; font-size:9px;">${this._escapeHtml(corr.source)}</div>
+        `;
+        card.addEventListener('click', () => this.selectEntity(corr));
+        feed.insertBefore(card, feed.firstChild);
+      }
+
+      const crossNode = {
+        value: corr.value.split(' ')[0],
+        type: 'BREACH',
+        confidence: corr.confidence
+      };
+      ColdRoomGraph.addEntity(crossNode);
+    });
+
+    const riskEl = document.getElementById('cr-risk-score');
+    if (riskEl) {
+      riskEl.textContent = '0.94';
+      riskEl.style.color = '#EF4444';
+    }
+    const countEl = document.getElementById('cr-entities-count');
+    const badgeEl = document.getElementById('cr-feed-badge');
+    if (countEl) countEl.textContent = this.entities.length;
+    if (badgeEl) badgeEl.textContent = `${this.entities.length} ITEMS`;
+
+    const drawerThreat = document.getElementById('cr-drawer-threat-val');
+    const drawerEnt = document.getElementById('cr-drawer-entities-val');
+    if (drawerThreat) drawerThreat.textContent = 'ELEVATED (0.94)';
+    if (drawerEnt) drawerEnt.textContent = String(this.entities.length);
+
+    this.saveActiveCase();
+
+    if (window.JarvisSFX && window.JarvisSFX.targetLock) {
+      window.JarvisSFX.targetLock();
+    }
+    if (typeof showSubtitles === 'function') {
+      showSubtitles(`[CROSS-VERIFICATION] Target "${target}" cross-verified against archives. 3 critical IOC correlations identified!`, 'THREAT INTEL');
+    }
+  },
+
   addEntity(data) {
     if (!data) return;
     this.entities.push(data);
@@ -11717,6 +12730,9 @@ const ColdRoom = {
     const badgeEl = document.getElementById('cr-feed-badge');
     if (countEl) countEl.textContent = this.entities.length;
     if (badgeEl) badgeEl.textContent = `${this.entities.length} ITEMS`;
+
+    const drawerEnt = document.getElementById('cr-drawer-entities-val');
+    if (drawerEnt) drawerEnt.textContent = String(this.entities.length);
 
     const riskEl = document.getElementById('cr-risk-score');
     if (riskEl) {
@@ -11734,6 +12750,10 @@ const ColdRoom = {
       } else {
         riskEl.style.color = '#38BDF8';
       }
+      const drawerThreat = document.getElementById('cr-drawer-threat-val');
+      if (drawerThreat) {
+        drawerThreat.textContent = calcScore >= 0.7 ? `CRITICAL (${calcScore.toFixed(2)})` : `EVALUATED (${calcScore.toFixed(2)})`;
+      }
     }
 
     const ph = document.getElementById('cr-feed-placeholder');
@@ -11743,14 +12763,18 @@ const ColdRoom = {
     if (feed) {
       const card = document.createElement('div');
       card.className = 'cr-finding-card';
-      const type = (data.type || data.category || 'ENTITY').toUpperCase();
+      const type = String(data.type || data.category || 'ENTITY').toLowerCase();
+      card.dataset.category = type;
+      if (data.risk >= 0.7 || type.includes('cred') || type.includes('breach') || type.includes('pass')) {
+        card.dataset.critical = 'true';
+      }
       const val = data.value || data.text || data.name || data.id || 'Finding';
       const conf = data.confidence ? `${Math.round(data.confidence * (data.confidence <= 1 ? 100 : 1))}%` : 'VERIFIED';
       const sources = Array.isArray(data.sources) ? data.sources.join(', ') : (data.source || data.platform || 'OSINT ENGINE');
 
       card.innerHTML = `
         <div class="cr-card-top">
-          <span class="cr-card-type">${type}</span>
+          <span class="cr-card-type">${type.toUpperCase()}</span>
           <span class="cr-card-conf">${conf}</span>
         </div>
         <div class="cr-card-val">${this._escapeHtml(val)}</div>
@@ -11758,9 +12782,11 @@ const ColdRoom = {
       `;
       card.addEventListener('click', () => this.selectEntity(data));
       feed.insertBefore(card, feed.firstChild);
+      this.filterFeed();
     }
 
     ColdRoomGraph.addEntity(data);
+    this.saveActiveCase();
   },
 
   selectEntity(entity) {
@@ -11780,7 +12806,8 @@ const ColdRoom = {
     const screenSec = document.getElementById('cr-ins-screen-section');
     const screenImg = document.getElementById('cr-ins-screenshot');
 
-    if (typeEl) typeEl.textContent = (entity.type || entity.category || 'ENTITY').toUpperCase();
+    const entType = String(entity.type || entity.category || 'ENTITY').toLowerCase();
+    if (typeEl) typeEl.textContent = entType.toUpperCase();
     if (confEl) {
       const c = entity.confidence ? `${Math.round(entity.confidence * (entity.confidence <= 1 ? 100 : 1))}% CONF` : 'VERIFIED';
       confEl.textContent = c;
@@ -11813,6 +12840,15 @@ const ColdRoom = {
       }
     }
 
+    const whoisBtn = document.getElementById('cr-ins-whois-btn');
+    const breachBtn = document.getElementById('cr-ins-breach-btn');
+    if (whoisBtn) {
+      whoisBtn.style.display = (entType.includes('domain') || entType.includes('ip') || entType.includes('host')) ? 'flex' : 'none';
+    }
+    if (breachBtn) {
+      breachBtn.style.display = (entType.includes('email') || entType.includes('cred') || entType.includes('user')) ? 'flex' : 'none';
+    }
+
     ColdRoomGraph.highlight(val);
   },
 
@@ -11843,8 +12879,14 @@ const ColdRoom = {
     this.selectedEntity = null;
     const disp = document.getElementById('cr-target-display');
     if (disp) disp.textContent = 'STANDBY (NO ACTIVE CASE)';
+    const drawerTarget = document.getElementById('cr-drawer-target-val');
+    const drawerBadge = document.getElementById('cr-drawer-target-badge');
+    if (drawerTarget) drawerTarget.textContent = 'STANDBY';
+    if (drawerBadge) drawerBadge.textContent = 'STANDBY';
     const countEl = document.getElementById('cr-entities-count');
     if (countEl) countEl.textContent = '0';
+    const drawerEnt = document.getElementById('cr-drawer-entities-val');
+    if (drawerEnt) drawerEnt.textContent = '0';
     const badgeEl = document.getElementById('cr-feed-badge');
     if (badgeEl) badgeEl.textContent = '0 ITEMS';
     const riskEl = document.getElementById('cr-risk-score');
@@ -11878,8 +12920,258 @@ const ColdRoom = {
       .replace(/"/g, '&quot;');
   }
 };
+
 window.ColdRoom = ColdRoom;
 window.ColdRoomGraph = ColdRoomGraph;
+
+// Global Cold Room Interop Functions
+window.toggleCaseDrawer = function() {
+  ColdRoom.toggleDrawer();
+};
+
+window.promptNewColdRoomTarget = function() {
+  const target = prompt('Enter primary investigation target (domain, IP, handle, or organization):');
+  if (target && target.trim()) {
+    const cleanTarget = target.trim();
+    ColdRoom.reset();
+    ColdRoom.setTarget(cleanTarget);
+    ColdRoom.setStatus('INITIALIZING INVESTIGATION...', true);
+    if (ColdRoom.caseDrawerOpen) ColdRoom.toggleDrawer();
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) {
+      chatInput.value = `investigate ${cleanTarget}`;
+      handleSend();
+    }
+  }
+};
+
+window.crossVerifyCase = function() {
+  ColdRoom.crossVerify();
+};
+
+window.pinEntityToGlobe = function() {
+  if (!ColdRoom.selectedEntity) return;
+  const ent = ColdRoom.selectedEntity;
+  const val = String(ent.value || ent.name || ent.text || 'Entity');
+  const type = String(ent.type || ent.category || 'ENTITY').toUpperCase();
+
+  let lat = 11.4228, lon = 76.8661;
+  if (ent.lat && ent.lon) {
+    lat = Number(ent.lat);
+    lon = Number(ent.lon);
+  } else if (val.includes('.') && !val.includes('@')) {
+    let hash = 0;
+    for (let i = 0; i < val.length; i++) hash = ((hash << 5) - hash) + val.charCodeAt(i);
+    lat = 10 + (Math.abs(hash) % 45);
+    lon = -120 + (Math.abs(hash >> 3) % 240);
+  }
+
+  if (window.glideToSpatial) window.glideToSpatial(950);
+  if (window.focusGlobeCoordinates) window.focusGlobeCoordinates(lat, lon, `TARGET [${val}]`);
+  if (window.JarvisAnnotations && window.JarvisAnnotations.addPin) {
+    window.JarvisAnnotations.addPin(lat, lon, `${type}: ${val}`, '#00F0FF');
+  }
+  if (typeof showSubtitles === 'function') {
+    showSubtitles(`[SPATIAL TELEMETRY] Entity [${val}] plotted on 3D World Globe at [${lat.toFixed(2)}°, ${lon.toFixed(2)}°].`, 'TACTICAL PIN');
+  }
+};
+
+window.inspectWhoisDns = function() {
+  if (!ColdRoom.selectedEntity) return;
+  const val = ColdRoom.selectedEntity.value || ColdRoom.selectedEntity.name;
+  if (!val) return;
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput) {
+    chatInput.value = `run dig ${val} +trace`;
+    handleSend();
+  }
+};
+
+window.inspectBreachRecords = function() {
+  if (!ColdRoom.selectedEntity) return;
+  const val = ColdRoom.selectedEntity.value || ColdRoom.selectedEntity.name;
+  if (!val) return;
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput) {
+    chatInput.value = `check breaches for ${val}`;
+    handleSend();
+  }
+};
+
+// ── World Telemetry Tactical Annotations & Geocoding Engine ──
+window.tacticalAnnotations = [];
+
+window.annotateCurrentArea = function(label = 'DEFENSE SECTOR', radiusKm = 30, color = '#00F0FF', customLat = null, customLon = null) {
+  let centerLat = 11.4228, centerLon = 76.8661;
+
+  if (customLat != null && customLon != null && !isNaN(customLat) && !isNaN(customLon)) {
+    centerLat = Number(customLat);
+    centerLon = Number(customLon);
+  } else if (window.cesiumViewer && typeof Cesium !== 'undefined' && !window.cesiumViewer.isDestroyed()) {
+    try {
+      const camera = window.cesiumViewer.camera;
+      const ray = camera.getPickRay(new Cesium.Cartesian2(window.cesiumViewer.canvas.clientWidth / 2, window.cesiumViewer.canvas.clientHeight / 2));
+      const cartesian = window.cesiumViewer.scene.globe.pick(ray, window.cesiumViewer.scene);
+      if (cartesian) {
+        const carto = Cesium.Cartographic.fromCartesian(cartesian);
+        centerLat = Cesium.Math.toDegrees(carto.latitude);
+        centerLon = Cesium.Math.toDegrees(carto.longitude);
+      }
+    } catch(e) {}
+  }
+
+  if (window.JarvisAnnotations && window.JarvisAnnotations.addRing) {
+    window.JarvisAnnotations.addRing(centerLat, centerLon, radiusKm, label, color);
+  }
+
+  const zoneObj = {
+    id: 'zone_' + Date.now(),
+    label: label,
+    lat: centerLat,
+    lon: centerLon,
+    radiusKm: radiusKm,
+    color: color
+  };
+  window.tacticalAnnotations.push(zoneObj);
+
+  const pill = document.getElementById('globe-active-sectors-pill');
+  const countEl = document.getElementById('globe-active-sectors-count');
+  const listEl = document.getElementById('globe-annotations-list');
+
+  if (pill) pill.style.display = 'flex';
+  if (countEl) countEl.textContent = `${window.tacticalAnnotations.length}`;
+
+  if (listEl) {
+    listEl.innerHTML = window.tacticalAnnotations.map(z => `
+      <div class="globe-anno-item" onclick="window.focusGlobeCoordinates(${z.lat}, ${z.lon}, '${z.label}')" style="display:flex; justify-content:space-between; align-items:center; padding:4px 6px; background:rgba(0,240,255,0.06); border:1px solid rgba(0,240,255,0.18); border-radius:3px; cursor:pointer; font-size:9px;">
+        <span style="color:${z.color || '#00F0FF'}; font-weight:700;">◎ ${z.label}</span>
+        <span style="color:#8A8D91;">${z.lat.toFixed(2)}°, ${z.lon.toFixed(2)}° (${z.radiusKm}km)</span>
+      </div>
+    `).join('');
+  }
+
+  if (window.JarvisSFX && window.JarvisSFX.targetLock) {
+    window.JarvisSFX.targetLock();
+  }
+  if (typeof showSubtitles === 'function') {
+    showSubtitles(`[AI TACTICAL PERIMETER] Designated "${label}" (${radiusKm}km) at [${centerLat.toFixed(3)}°, ${centerLon.toFixed(3)}°].`, 'WORLD TELEMETRY');
+  }
+};
+
+window.toggleTacticalSectorsDropdown = function() {
+  const dd = document.getElementById('globe-active-sectors-dropdown');
+  const caret = document.getElementById('globe-sectors-caret');
+  if (!dd) return;
+  const isShown = (dd.style.display === 'flex');
+  dd.style.display = isShown ? 'none' : 'flex';
+  if (caret) caret.textContent = isShown ? '▾' : '▴';
+};
+
+window.promptCustomAnnotation = function() {
+  const name = prompt('Enter tactical zone designation (e.g. ALPHA DEFENSE PERIMETER):', 'RESTRICTED SECTOR');
+  if (!name) return;
+  const radStr = prompt('Enter perimeter radius in kilometers:', '35');
+  const rad = parseFloat(radStr) || 35;
+  window.annotateCurrentArea(name.trim(), rad, '#FF9D2E');
+};
+
+window.clearTacticalAnnotations = function(notify = true) {
+  window.tacticalAnnotations = [];
+  if (window.JarvisAnnotations && window.JarvisAnnotations.clear) {
+    window.JarvisAnnotations.clear();
+  }
+  const pill = document.getElementById('globe-active-sectors-pill');
+  const dd = document.getElementById('globe-active-sectors-dropdown');
+  const listEl = document.getElementById('globe-annotations-list');
+  const countEl = document.getElementById('globe-active-sectors-count');
+
+  if (pill) pill.style.display = 'none';
+  if (dd) dd.style.display = 'none';
+  if (countEl) countEl.textContent = '0';
+  if (listEl) listEl.innerHTML = '';
+
+  if (notify && typeof showSubtitles === 'function') {
+    showSubtitles('[AI TACTICAL PERIMETER] Active sector perimeters cleared.', 'WORLD TELEMETRY');
+  }
+};
+
+window.searchAndFlyGlobe = function(query) {
+  if (!query || !query.trim()) return;
+  const q = query.trim();
+
+  const coordMatch = q.match(/^(-?\d+(?:\.\d+)?)\s*[,|\s]\s*(-?\d+(?:\.\d+)?)$/);
+  if (coordMatch) {
+    const lat = parseFloat(coordMatch[1]);
+    const lon = parseFloat(coordMatch[2]);
+    window.focusGlobeCoordinates(lat, lon, `COORDINATES [${lat.toFixed(2)}, ${lon.toFixed(2)}]`);
+    return;
+  }
+
+  const airports = {
+    'JFK': { lat: 40.6413, lon: -73.7781, name: 'New York JFK' },
+    'LHR': { lat: 51.4700, lon: -0.4543, name: 'London Heathrow' },
+    'HND': { lat: 35.5494, lon: 139.7798, name: 'Tokyo Haneda' },
+    'DXB': { lat: 25.2532, lon: 55.3657, name: 'Dubai International' },
+    'SIN': { lat: 1.3644, lon: 103.9915, name: 'Singapore Changi' },
+    'CDG': { lat: 49.0097, lon: 2.5479, name: 'Paris Charles de Gaulle' },
+    'BLR': { lat: 13.1986, lon: 77.7066, name: 'Bengaluru Kempegowda' },
+    'DEL': { lat: 28.5562, lon: 77.1000, name: 'Delhi Indira Gandhi' },
+    'BOM': { lat: 19.0896, lon: 72.8656, name: 'Mumbai Chhatrapati Shivaji' },
+    'SFO': { lat: 37.6213, lon: -122.3790, name: 'San Francisco SFO' },
+    'LAX': { lat: 33.9416, lon: -118.4085, name: 'Los Angeles LAX' },
+    'SYD': { lat: -33.9399, lon: 151.1753, name: 'Sydney Kingsford Smith' }
+  };
+
+  const upperQ = q.toUpperCase();
+  if (airports[upperQ]) {
+    const ap = airports[upperQ];
+    window.focusGlobeCoordinates(ap.lat, ap.lon, ap.name);
+    return;
+  }
+
+  const worldCities = {
+    'tokyo': { lat: 35.6762, lon: 139.6503, name: 'Tokyo, Japan' },
+    'london': { lat: 51.5074, lon: -0.1278, name: 'London, UK' },
+    'new york': { lat: 40.7128, lon: -74.0060, name: 'New York, USA' },
+    'paris': { lat: 48.8566, lon: 2.3522, name: 'Paris, France' },
+    'bengaluru': { lat: 12.9716, lon: 77.5946, name: 'Bengaluru, India' },
+    'delhi': { lat: 28.6139, lon: 77.2090, name: 'Delhi, India' },
+    'mumbai': { lat: 19.0760, lon: 72.8777, name: 'Mumbai, India' },
+    'san francisco': { lat: 37.7749, lon: -122.4194, name: 'San Francisco, USA' },
+    'singapore': { lat: 1.3521, lon: 103.8198, name: 'Singapore' },
+    'dubai': { lat: 25.2048, lon: 55.2708, name: 'Dubai, UAE' },
+    'kotagiri': { lat: 11.4228, lon: 76.8661, name: 'Kotagiri, Tamil Nadu' },
+    'sydney': { lat: -33.8688, lon: 151.2093, name: 'Sydney, Australia' },
+    'berlin': { lat: 52.5200, lon: 13.4050, name: 'Berlin, Germany' }
+  };
+
+  const lowerQ = q.toLowerCase();
+  if (worldCities[lowerQ]) {
+    const c = worldCities[lowerQ];
+    window.focusGlobeCoordinates(c.lat, c.lon, c.name);
+    return;
+  }
+
+  fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`, {
+    headers: { 'Accept': 'application/json' }
+  }).then(res => res.json()).then(data => {
+    if (data && data.length > 0) {
+      const item = data[0];
+      const lat = parseFloat(item.lat);
+      const lon = parseFloat(item.lon);
+      window.focusGlobeCoordinates(lat, lon, item.display_name.split(',')[0]);
+    } else {
+      if (typeof showSubtitles === 'function') {
+        showSubtitles(`[GEOCODE] Location "${q}" could not be resolved.`, 'NAV ERROR');
+      }
+    }
+  }).catch(err => {
+    console.warn('[Geocode] Search error:', err);
+    if (typeof showSubtitles === 'function') {
+      showSubtitles(`[GEOCODE] Telemetry network lookup failed for "${q}".`, 'NAV ERROR');
+    }
+  });
+};
 
 // ─────────────────────────────────────────────────────────────
 // 3-SCREEN SPATIAL STAGE NAVIGATION CONTROLLER
@@ -12384,11 +13676,34 @@ window.focusGlobeCoordinates = function(lat, lon, label) {
       duration: 2.2
     });
 
+    window._isTargetViewLocked = true;
+    if (typeof window.updateCesiumLabelVisibility === 'function') {
+      window.updateCesiumLabelVisibility();
+    }
+
     if (window.cesiumBeacon) {
-      window.cesiumBeacon.position = Cesium.Cartesian3.fromDegrees(lon, lat, 500);
+      window.cesiumBeacon.show = true;
+      window.cesiumBeacon.position = Cesium.Cartesian3.fromDegrees(lon, lat, 200);
       if (window.cesiumBeacon.label) {
         window.cesiumBeacon.label.text = `TARGET: ${(label || 'SECTOR').toUpperCase()}`;
+        window.cesiumBeacon.label.disableDepthTestDistance = 1200000;
       }
+      if (window.cesiumBeacon.point) {
+        window.cesiumBeacon.point.disableDepthTestDistance = 1200000;
+      }
+    }
+
+    // Show Tactical Arrival Waypoint & HUD card on Cesium 3D Globe
+    if (window.JarvisAnnotations && typeof window.JarvisAnnotations.showArrivalWaypoint === 'function') {
+      window.JarvisAnnotations.showArrivalWaypoint(lat, lon, label);
+    }
+    // Display Tactical Arrival Notification Pill
+    const arrivalPill = document.getElementById('globe-arrival-pill');
+    if (arrivalPill) {
+      arrivalPill.innerHTML = `<span>🎯 TRANSIT COMPLETE:</span> <span style="color:#00F0FF; font-weight:800;">${(label || 'SECTOR').toUpperCase()}</span> <span style="color:#94A3B8; font-size:9px;">(${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E)</span>`;
+      arrivalPill.style.display = 'flex';
+      clearTimeout(window._arrivalPillTimer);
+      window._arrivalPillTimer = setTimeout(() => { arrivalPill.style.display = 'none'; }, 7000);
     }
   }
 
@@ -12405,6 +13720,11 @@ window.focusGlobeCoordinates = function(lat, lon, label) {
 };
 
 window.resetGlobeOrbitView = function() {
+  window._isTargetViewLocked = false;
+  if (window.cesiumBeacon) window.cesiumBeacon.show = false;
+  if (typeof window.updateCesiumLabelVisibility === 'function') {
+    window.updateCesiumLabelVisibility();
+  }
   if (window.JarvisCockpit && window.JarvisCockpit.active) {
     window.JarvisCockpit.exit();
   }
@@ -12454,23 +13774,24 @@ const JarvisAnnotations = {
     if (window.JarvisSFX) window.JarvisSFX.layerToggle(false);
   },
 
+  computeRangeCircle(centerLon, centerLat, radiusMeters, segments = 64, alt = 25) {
+    const coords = [];
+    const R = 6378137.0;
+    const dLat = (radiusMeters / R) * (180 / Math.PI);
+    const dLon = dLat / Math.max(0.1, Math.cos(centerLat * Math.PI / 180));
+    for (let i = 0; i <= segments; i++) {
+      const theta = (i / segments) * 2 * Math.PI;
+      coords.push(centerLon + dLon * Math.cos(theta), centerLat + dLat * Math.sin(theta), alt);
+    }
+    return Cesium.Cartesian3.fromDegreesArrayHeights(coords);
+  },
+
   addRing(lat, lon, radiusKm = 50, label = 'TACTICAL PERIMETER', color = '#FF9D2E') {
     const ds = this.ensureDataSource();
     if (!ds || !window.Cesium) return;
     const radiusM = radiusKm * 1000;
     const cesiumColor = Cesium.Color.fromCssColorString(color || '#FF9D2E');
-
-    function computeRangeCircle(centerLon, centerLat, radiusMeters, segments = 64) {
-      const coords = [];
-      const R = 6378137.0;
-      const dLat = (radiusMeters / R) * (180 / Math.PI);
-      const dLon = dLat / Math.max(0.1, Math.cos(centerLat * Math.PI / 180));
-      for (let i = 0; i <= segments; i++) {
-        const theta = (i / segments) * 2 * Math.PI;
-        coords.push(centerLon + dLon * Math.cos(theta), centerLat + dLat * Math.sin(theta), 25);
-      }
-      return Cesium.Cartesian3.fromDegreesArrayHeights(coords);
-    }
+    const computeRangeCircle = (cLon, cLat, rM, seg = 64) => this.computeRangeCircle(cLon, cLat, rM, seg, 25);
 
     // Outer range ring with subtle glowing fill (outline false to avoid WebGL uniform3fv errors on Linux)
     ds.entities.add({
@@ -12546,27 +13867,30 @@ const JarvisAnnotations = {
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
               Math.cos(fromLat * Math.PI / 180) * Math.cos(toLat * Math.PI / 180) *
               Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const distKm = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-    const peakAltM = Math.min(350000, distKm * 1000 * 0.15);
+    const distKm = Math.max(1, Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))));
+    const isLocalRoute = distKm <= 80;
 
-    // Generate 60 interpolated points along parabolic arc
+    // For local routes (<80 km), stay clamped near surface. For long distance, parabolic ballistic arc.
+    const peakAltM = isLocalRoute ? Math.min(120, distKm * 4 + 20) : Math.min(350000, distKm * 1000 * 0.15);
+
+    // Generate 60 interpolated points along path
     const points = [];
     const steps = 60;
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       const curLat = fromLat + (toLat - fromLat) * t;
       const curLon = fromLon + (toLon - fromLon) * t;
-      const curAlt = Math.sin(t * Math.PI) * peakAltM + 100;
+      const curAlt = isLocalRoute ? (Math.sin(t * Math.PI) * (peakAltM - 15) + 15) : (Math.sin(t * Math.PI) * peakAltM + 100);
       points.push(curLon, curLat, curAlt);
     }
 
-    // Glowing polyline arc
+    // Glowing polyline corridor
     ds.entities.add({
       polyline: {
         positions: Cesium.Cartesian3.fromDegreesArrayHeights(points),
-        width: 3.5,
+        width: isLocalRoute ? 4.5 : 3.5,
         material: new Cesium.PolylineGlowMaterialProperty({
-          glowPower: 0.25,
+          glowPower: isLocalRoute ? 0.35 : 0.25,
           color: cesiumColor
         })
       }
@@ -12575,16 +13899,20 @@ const JarvisAnnotations = {
     // Apex label showing distance and corridor designation
     const midLat = (fromLat + toLat) / 2;
     const midLon = (fromLon + toLon) / 2;
+    const labelAlt = isLocalRoute ? Math.max(60, distKm * 30) : (peakAltM + 2500);
+    const labelPrefix = isLocalRoute ? '⬡ ROUTE' : '✈ AIR CORRIDOR';
+
     ds.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(midLon, midLat, peakAltM + 2500),
+      position: Cesium.Cartesian3.fromDegrees(midLon, midLat, labelAlt),
       label: {
-        text: `✈ ${(label || 'AIR CORRIDOR').toUpperCase()} • ${distKm} KM`,
+        text: `${labelPrefix}: ${(label || 'TRANSIT').toUpperCase()} • ${distKm} KM`,
         font: 'bold 11px "JetBrains Mono", monospace',
         fillColor: Cesium.Color.WHITE,
         outlineColor: Cesium.Color.BLACK,
         outlineWidth: 3,
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-        verticalOrigin: Cesium.VerticalOrigin.BOTTOM
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        disableDepthTestDistance: 1200000
       }
     });
 
@@ -12596,22 +13924,41 @@ const JarvisAnnotations = {
       ds.entities.add({
         position: Cesium.Cartesian3.fromDegrees(pt.lon, pt.lat, 20),
         point: {
-          pixelSize: 7,
+          pixelSize: 8,
           color: cesiumColor,
           outlineColor: Cesium.Color.WHITE,
-          outlineWidth: 2
+          outlineWidth: 2,
+          disableDepthTestDistance: 1200000
         },
         label: {
           text: pt.lbl.toUpperCase(),
-          font: '10px "JetBrains Mono", monospace',
+          font: 'bold 10px "JetBrains Mono", monospace',
           fillColor: Cesium.Color.fromCssColorString('#E6E6E6'),
           outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
+          outlineWidth: 3,
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          pixelOffset: new Cesium.Cartesian2(0, 14)
+          pixelOffset: new Cesium.Cartesian2(0, 16),
+          disableDepthTestDistance: 1200000
         }
       });
     });
+
+    // Smoothly frame route in Cesium camera
+    if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
+      const camAlt = isLocalRoute ? Math.max(8000, distKm * 2400) : Math.max(60000, distKm * 1800);
+      window.cesiumViewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(midLon, midLat, camAlt),
+        orientation: {
+          heading: Cesium.Math.toRadians(0),
+          pitch: Cesium.Math.toRadians(-45),
+          roll: 0.0
+        },
+        duration: 2.0
+      });
+      if (typeof window.updateCesiumLabelVisibility === 'function') {
+        window.updateCesiumLabelVisibility();
+      }
+    }
 
     if (window.JarvisSFX) window.JarvisSFX.flightSwoosh();
     if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
@@ -12619,41 +13966,225 @@ const JarvisAnnotations = {
     }
   },
 
-  addPin(lat, lon, label = 'PIN', color = '#EF4444') {
+  createHudCardCanvas(title, subtitle, coordsText, statusText, hexColor) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 340;
+    canvas.height = 140;
+    const ctx = canvas.getContext('2d');
+
+    // Tactical Glassmorphic Panel Background
+    ctx.fillStyle = 'rgba(5, 12, 28, 0.88)';
+    ctx.fillRect(0, 0, 340, 140);
+
+    // Glowing Border & Corner Accents
+    ctx.strokeStyle = hexColor;
+    ctx.lineWidth = 2.0;
+    ctx.strokeRect(1, 1, 338, 138);
+
+    // Corner bracket ticks
+    const tickLen = 14;
+    ctx.fillStyle = hexColor;
+    ctx.fillRect(0, 0, tickLen, 3);
+    ctx.fillRect(0, 0, 3, tickLen);
+    ctx.fillRect(340 - tickLen, 0, tickLen, 3);
+    ctx.fillRect(337, 0, 3, tickLen);
+    ctx.fillRect(0, 140 - 3, tickLen, 3);
+    ctx.fillRect(0, 140 - tickLen, 3, tickLen);
+    ctx.fillRect(340 - tickLen, 140 - 3, tickLen, 3);
+    ctx.fillRect(337, 140 - tickLen, 3, tickLen);
+
+    // Status Header Banner
+    ctx.fillStyle = hexColor;
+    ctx.font = 'bold 10px "JetBrains Mono", monospace';
+    ctx.fillText(`⬡ ${(subtitle || 'TACTICAL WAYPOINT').toUpperCase()}`, 16, 26);
+
+    // Primary Title (Sector Name / Entity)
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 15px "JetBrains Mono", monospace';
+    ctx.fillText((title || 'TARGET SECTOR').toUpperCase().slice(0, 26), 16, 56);
+
+    // Divider Line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+    ctx.lineWidth = 1.0;
+    ctx.beginPath();
+    ctx.moveTo(16, 68);
+    ctx.lineTo(324, 68);
+    ctx.stroke();
+
+    // Telemetry Sub-labels (Coordinates & Status)
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.fillText(coordsText || '', 16, 92);
+
+    ctx.fillStyle = '#38BDF8';
+    ctx.font = '9px "JetBrains Mono", monospace';
+    ctx.fillText(statusText || 'SENSOR TELEMETRY SYNCHRONIZED', 16, 116);
+
+    return canvas;
+  },
+
+  showArrivalWaypoint(lat, lon, label = 'SECTOR') {
     const ds = this.ensureDataSource();
     if (!ds || !window.Cesium) return;
-    const cesiumColor = Cesium.Color.fromCssColorString(color || '#EF4444');
+    const colorHex = '#00F0FF';
+    const cesiumColor = Cesium.Color.fromCssColorString(colorHex);
+
+    // Remove previous arrival entities
+    const old = ds.entities.getById('jarvis-arrival-waypoint');
+    if (old) ds.entities.remove(old);
+    const oldRing = ds.entities.getById('jarvis-arrival-reticle');
+    if (oldRing) ds.entities.remove(oldRing);
+
+    // Ground target reticle (250m radius)
+    ds.entities.add({
+      id: 'jarvis-arrival-reticle',
+      position: Cesium.Cartesian3.fromDegrees(lon, lat, 5),
+      ellipse: {
+        semiMajorAxis: 250,
+        semiMinorAxis: 250,
+        material: cesiumColor.withAlpha(0.20),
+        height: 5
+      },
+      polyline: {
+        positions: this.computeRangeCircle(lon, lat, 250, 48, 8),
+        width: 2.0,
+        material: new Cesium.PolylineDashMaterialProperty({
+          color: cesiumColor.withAlpha(0.9),
+          dashLength: 10.0
+        })
+      }
+    });
+
+    // Holographic arrival HUD card billboard at 450m altitude
+    const cardCanvas = this.createHudCardCanvas(
+      label,
+      'TRANSIT COMPLETE // ARRIVAL',
+      `LAT: ${lat.toFixed(4)}°N | LON: ${lon.toFixed(4)}°E`,
+      'STATUS: SECTOR ACQUIRED & SYNCHRONIZED',
+      colorHex
+    );
 
     ds.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(lon, lat, 100),
+      id: 'jarvis-arrival-waypoint',
+      position: Cesium.Cartesian3.fromDegrees(lon, lat, 450),
       polyline: {
         positions: Cesium.Cartesian3.fromDegreesArrayHeights([
           lon, lat, 0,
-          lon, lat, 800
+          lon, lat, 450
         ]),
-        width: 2.0,
+        width: 2.5,
         material: cesiumColor
       },
-      point: {
-        pixelSize: 9,
-        color: cesiumColor,
-        outlineColor: Cesium.Color.WHITE,
-        outlineWidth: 2
+      billboard: {
+        image: cardCanvas,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -8),
+        disableDepthTestDistance: 1200000
       },
       label: {
-        text: `📍 ${(label || 'PIN').toUpperCase()}`,
-        font: 'bold 11px "JetBrains Mono", monospace',
-        fillColor: Cesium.Color.WHITE,
+        text: `🎯 ${(label || 'SECTOR').toUpperCase()}`,
+        font: 'bold 12px "JetBrains Mono", monospace',
+        fillColor: Cesium.Color.fromCssColorString('#00F0FF'),
         outlineColor: Cesium.Color.BLACK,
         outlineWidth: 3,
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-        pixelOffset: new Cesium.Cartesian2(0, -10)
+        pixelOffset: new Cesium.Cartesian2(0, -22),
+        disableDepthTestDistance: 1200000
+      }
+    });
+
+    if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
+      window.cesiumViewer.scene.requestRender();
+    }
+  },
+
+  addPin(lat, lon, label = 'PIN', color = '#00F0FF') {
+    const ds = this.ensureDataSource();
+    if (!ds || !window.Cesium) return;
+    const colorHex = color || '#00F0FF';
+    const cesiumColor = Cesium.Color.fromCssColorString(colorHex);
+
+    // Ground target radar reticle
+    ds.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lon, lat, 5),
+      ellipse: {
+        semiMajorAxis: 200,
+        semiMinorAxis: 200,
+        material: cesiumColor.withAlpha(0.22),
+        height: 5
+      },
+      polyline: {
+        positions: this.computeRangeCircle(lon, lat, 200, 48, 8),
+        width: 2.0,
+        material: new Cesium.PolylineDashMaterialProperty({
+          color: cesiumColor.withAlpha(0.9),
+          dashLength: 8.0
+        })
+      },
+      point: {
+        pixelSize: 8,
+        color: cesiumColor,
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+        disableDepthTestDistance: 1200000
+      }
+    });
+
+    // Holographic HUD Card Billboard
+    const cardCanvas = this.createHudCardCanvas(
+      label,
+      'TACTICAL PIN // ACQUIRED',
+      `LAT: ${lat.toFixed(4)}°N | LON: ${lon.toFixed(4)}°E`,
+      'STATUS: ACTIVE TARGET LOCK',
+      colorHex
+    );
+
+    ds.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lon, lat, 450),
+      polyline: {
+        positions: Cesium.Cartesian3.fromDegreesArrayHeights([
+          lon, lat, 0,
+          lon, lat, 450
+        ]),
+        width: 2.5,
+        material: cesiumColor
+      },
+      billboard: {
+        image: cardCanvas,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -8),
+        disableDepthTestDistance: 1200000
+      },
+      label: {
+        text: `🎯 ${(label || 'PIN').toUpperCase()}`,
+        font: 'bold 12px "JetBrains Mono", monospace',
+        fillColor: Cesium.Color.fromCssColorString('#00F0FF'),
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 3,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -22),
+        disableDepthTestDistance: 1200000
       }
     });
 
     if (window.JarvisSFX) window.JarvisSFX.targetLock();
+
+    // Smoothly fly camera to frame landmark in tactical 3D perspective
     if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
+      window.cesiumViewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(lon, lat, 2400),
+        orientation: {
+          heading: Cesium.Math.toRadians(0),
+          pitch: Cesium.Math.toRadians(-35),
+          roll: 0.0
+        },
+        duration: 2.0
+      });
+      if (typeof window.updateCesiumLabelVisibility === 'function') {
+        window.updateCesiumLabelVisibility();
+      }
       window.cesiumViewer.scene.requestRender();
     }
   },
@@ -12663,8 +14194,13 @@ const JarvisAnnotations = {
     const act = data.action.toLowerCase();
     if (act === 'clear') {
       this.clear();
+      if (typeof window.clearTacticalAnnotations === 'function') window.clearTacticalAnnotations(false);
     } else if (act === 'ring') {
       this.addRing(Number(data.lat), Number(data.lon), Number(data.radius_km || 50), data.label, data.color);
+    } else if (act === 'ring_current') {
+      if (typeof window.annotateCurrentArea === 'function') {
+        window.annotateCurrentArea(data.label || 'DEFENSE SECTOR', Number(data.radius_km || 30), data.color || '#00F0FF');
+      }
     } else if (act === 'arc') {
       this.addArc(Number(data.from_lat), Number(data.from_lon), Number(data.to_lat), Number(data.to_lon), data.from_label, data.to_label, data.label, data.color);
     } else if (act === 'pin') {
@@ -13707,16 +15243,17 @@ function initCesiumGlobe() {
 
     // Tactical globe base appearance & deep space atmosphere
     scene.globe.show = true;
+    scene.globe.depthTestAgainstTerrain = true;
     scene.globe.baseColor = Cesium.Color.fromCssColorString('#020611');
     scene.globe.showGroundAtmosphere = true;
     scene.globe.enableLighting = false;
-    scene.globe.atmosphereBrightnessShift = 0.35;
-    scene.globe.atmosphereHueShift = 0.05;
-    scene.globe.atmosphereSaturationShift = 0.85;
+    scene.globe.atmosphereBrightnessShift = 0.04;
+    scene.globe.atmosphereHueShift = 0.0;
+    scene.globe.atmosphereSaturationShift = 0.04;
     if (scene.skyAtmosphere) {
       scene.skyAtmosphere.show = true;
-      scene.skyAtmosphere.saturation = 1.35;
-      scene.skyAtmosphere.brightnessShift = 0.25;
+      scene.skyAtmosphere.saturation = 1.04;
+      scene.skyAtmosphere.brightnessShift = 0.02;
     }
 
     // Keyless High-Resolution Satellite Imagery (ESRI World Imagery + OSM Fallback)
@@ -13748,11 +15285,73 @@ function initCesiumGlobe() {
       if (imageryProvider && cesiumViewer && !cesiumViewer.isDestroyed()) {
         cesiumViewer.imageryLayers.removeAll();
         const baseLayer = cesiumViewer.imageryLayers.addImageryProvider(imageryProvider);
-        baseLayer.saturation = 1.75;
-        baseLayer.contrast = 1.35;
-        baseLayer.brightness = 1.08;
-        baseLayer.gamma = 0.90;
-        console.log('[Cesium] Satellite imagery provider active with enhanced photorealistic vibrance');
+        baseLayer.saturation = 1.05;
+        baseLayer.contrast = 1.06;
+        baseLayer.brightness = 1.00;
+        baseLayer.gamma = 1.00;
+        console.log('[Cesium] Satellite imagery provider active with photorealistic true-color Earth tones');
+
+        // Dynamic Altitude-Culled Reference Labels & Boundaries Overlay (cities, places, landmarks)
+        // Hidden from planetary space orbit to keep Earth pristine; fades in when zoomed in (<1.5M m) or target locked.
+        (async () => {
+          try {
+            let labelProvider = null;
+            if (Cesium.ArcGisMapServerImageryProvider && Cesium.ArcGisMapServerImageryProvider.fromUrl) {
+              try {
+                labelProvider = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
+                  'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer',
+                  { enablePickFeatures: false }
+                );
+              } catch(e) {}
+            }
+            if (!labelProvider && Cesium.UrlTemplateImageryProvider) {
+              try {
+                labelProvider = new Cesium.UrlTemplateImageryProvider({
+                  url: 'https://basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
+                  subdomains: ['a', 'b', 'c', 'd']
+                });
+              } catch(e) {}
+            }
+            if (labelProvider && cesiumViewer && !cesiumViewer.isDestroyed()) {
+              const labelLayer = cesiumViewer.imageryLayers.addImageryProvider(labelProvider);
+              labelLayer.show = false; // default hidden in space orbit
+              labelLayer.alpha = 0.0;
+              window._cesiumLabelLayer = labelLayer;
+
+              function updateLabelVisibility() {
+                if (!labelLayer || labelLayer.isDestroyed() || !cesiumViewer || cesiumViewer.isDestroyed()) return;
+                try {
+                  const cam = cesiumViewer.camera;
+                  const carto = cam.positionCartographic;
+                  const height = carto ? carto.height : 10000000;
+                  const isLocked = Boolean(window.lockedTargetEntity || window._isTargetViewLocked);
+                  const isClose = height <= 1500000;
+
+                  if (isLocked || isClose) {
+                    labelLayer.show = true;
+                    if (isLocked || height <= 600000) {
+                      labelLayer.alpha = 0.95;
+                    } else {
+                      const t = Math.max(0.0, Math.min(1.0, (1500000 - height) / 900000));
+                      labelLayer.alpha = 0.25 + 0.70 * t;
+                    }
+                  } else {
+                    labelLayer.show = false;
+                    labelLayer.alpha = 0.0;
+                  }
+                } catch (e) {}
+              }
+
+              window.updateCesiumLabelVisibility = updateLabelVisibility;
+              cesiumViewer.camera.changed.addEventListener(updateLabelVisibility);
+              cesiumViewer.camera.moveEnd.addEventListener(updateLabelVisibility);
+              updateLabelVisibility();
+              console.log('[Cesium] Altitude-culled reference labels active (clean orbit view; reveals place names upon zoom/lock)');
+            }
+          } catch (labelErr) {
+            console.warn('[Cesium] Reference labels overlay notice:', labelErr);
+          }
+        })();
       }
     }
     loadCesiumImagery();
@@ -13761,12 +15360,12 @@ function initCesiumGlobe() {
 
     // Purge stale or revoked Cesium Ion tokens from browser localStorage
     try {
-      const cachedStr = localStorage.getItem('jarvis_config');
+      const cachedStr = window.safeStorageGet ? window.safeStorageGet('jarvis_config') : null;
       if (cachedStr) {
         const cachedCfg = JSON.parse(cachedStr);
         if (cachedCfg && cachedCfg.cesium_ion_token && window.isRevokedOrDummyCesiumToken(cachedCfg.cesium_ion_token)) {
           delete cachedCfg.cesium_ion_token;
-          localStorage.setItem('jarvis_config', JSON.stringify(cachedCfg));
+          if (window.safeStorageSet) window.safeStorageSet('jarvis_config', JSON.stringify(cachedCfg));
           const el = document.querySelector('#cfg-cesium-token');
           if (el) el.value = '';
         }
@@ -13778,7 +15377,7 @@ function initCesiumGlobe() {
         return true;
       }
       try {
-        const cached = localStorage.getItem('jarvis_config');
+        const cached = window.safeStorageGet ? window.safeStorageGet('jarvis_config') : null;
         if (cached) {
           const cfg = JSON.parse(cached);
           if (cfg && cfg.cesium_ion_token && typeof cfg.cesium_ion_token === 'string') {
@@ -13908,7 +15507,7 @@ function initCesiumGlobe() {
         color: Cesium.Color.fromCssColorString('#00F0FF'),
         outlineColor: Cesium.Color.fromCssColorString('#FF9D2E'),
         outlineWidth: 3,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY
+        disableDepthTestDistance: 5000
       },
       label: {
         text: 'SECTOR TARGET',
@@ -13919,7 +15518,7 @@ function initCesiumGlobe() {
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
         pixelOffset: new Cesium.Cartesian2(0, -22),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY
+        disableDepthTestDistance: 5000
       }
     });
 
@@ -14743,13 +16342,219 @@ window.flyToCameraPOV = function(cam) {
   });
 };
 
-// Real God's Eye Tactical CCTV Dock Controller (Right Rail)
+// Real God's Eye Tactical CCTV Dock Controller (Draggable Right Rail)
 let _activeCctvCameraId = null;
 let _cctvAutoHopInterval = null;
 let _cctvCoverageMode = true;
+let _cctvFeedMode = 'video'; // 'video' or 'snapshot'
+let _cctvFilter = 'normal';
+let _cctvZoom = 1;
+let _cctvIsFullscreen = false;
+let _cctvDraggableInitialized = false;
+
+function makeDraggable(element, handle) {
+  if (!element || !handle) return;
+  let isDragging = false;
+  let startX = 0, startY = 0;
+  let origLeft = 0, origTop = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (['BUTTON', 'SELECT', 'INPUT', 'A'].includes(e.target.tagName)) return;
+    isDragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+
+    const rect = element.getBoundingClientRect();
+    origLeft = rect.left;
+    origTop = rect.top;
+
+    element.style.right = 'auto';
+    element.style.bottom = 'auto';
+    element.style.left = origLeft + 'px';
+    element.style.top = origTop + 'px';
+
+    const onMouseMove = (ev) => {
+      if (!isDragging) return;
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+
+      let newLeft = origLeft + dx;
+      let newTop = origTop + dy;
+
+      const maxLeft = window.innerWidth - element.offsetWidth - 8;
+      const maxTop = window.innerHeight - element.offsetHeight - 8;
+      newLeft = Math.max(8, Math.min(newLeft, maxLeft));
+      newTop = Math.max(8, Math.min(newTop, maxTop));
+
+      element.style.left = newLeft + 'px';
+      element.style.top = newTop + 'px';
+    };
+
+    const onMouseUp = () => {
+      isDragging = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    e.preventDefault();
+  });
+}
+
+function initCctvDraggable() {
+  if (_cctvDraggableInitialized) return;
+  const panel = document.getElementById('cctv-dock-panel');
+  const handle = document.getElementById('cctv-dock-drag-header');
+  if (panel && handle) {
+    makeDraggable(panel, handle);
+    _cctvDraggableInitialized = true;
+  }
+}
+
+window.cctvToggleFeedMode = function() {
+  _cctvFeedMode = (_cctvFeedMode === 'video') ? 'snapshot' : 'video';
+  updateCctvDisplayFeeds();
+};
+
+function updateCctvDisplayFeeds() {
+  const dockVid = document.getElementById('cctv-dock-video');
+  const dockImg = document.getElementById('cctv-dock-preview-img');
+  const fsVid = document.getElementById('cctv-fs-video');
+  const fsImg = document.getElementById('cctv-fs-img');
+  const modeBtn = document.getElementById('cctv-feed-mode-btn');
+  const fsModeBtn = document.getElementById('cctv-fs-mode-btn');
+  const badge = document.getElementById('cctv-dock-stream-badge');
+  const statusLine = document.getElementById('cctv-dock-feed-status');
+
+  const isVideo = (_cctvFeedMode === 'video');
+  if (dockVid) dockVid.style.display = isVideo ? 'block' : 'none';
+  if (dockImg) dockImg.style.display = isVideo ? 'none' : 'block';
+  if (fsVid) fsVid.style.display = isVideo ? 'block' : 'none';
+  if (fsImg) fsImg.style.display = isVideo ? 'none' : 'block';
+
+  if (modeBtn) modeBtn.textContent = isVideo ? '📹 VIDEO' : '📸 1 FPS';
+  if (fsModeBtn) fsModeBtn.textContent = isVideo ? 'MODE: LIVE VIDEO' : 'MODE: 1 FPS SNAPSHOT';
+  if (badge) badge.textContent = isVideo ? 'OPTICAL STREAM' : 'SNAPSHOT FEED';
+  if (statusLine) statusLine.textContent = isVideo ? 'LIVE STREAM • OK' : 'SNAPSHOT • 1 FPS OK';
+}
+
+window.cctvToggleFullscreen = function() {
+  const modal = document.getElementById('cctv-fullscreen-modal');
+  if (!modal) return;
+  _cctvIsFullscreen = !_cctvIsFullscreen;
+  modal.style.display = _cctvIsFullscreen ? 'flex' : 'none';
+  if (_cctvIsFullscreen && _activeCctvCameraId) {
+    const found = (window._cctvSourcesList && window._cctvSourcesList.find(s => s.id === _activeCctvCameraId)) ||
+                  (typeof CCTV_CAMERAS !== 'undefined' && CCTV_CAMERAS.find(s => s.id === _activeCctvCameraId));
+    if (found) syncCctvFullscreenData(found);
+  }
+};
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && _cctvIsFullscreen) {
+    window.cctvToggleFullscreen();
+  }
+});
+
+window.cctvSetFilter = function(filter) {
+  _cctvFilter = filter;
+  const vid = document.getElementById('cctv-fs-video');
+  const img = document.getElementById('cctv-fs-img');
+  const filterMap = {
+    normal: 'none',
+    nvg: 'saturate(2) hue-rotate(85deg) brightness(1.2) contrast(1.4)',
+    flir: 'invert(1) hue-rotate(180deg) saturate(2.5) contrast(1.5)'
+  };
+  const css = filterMap[filter] || 'none';
+  if (vid) vid.style.filter = css;
+  if (img) img.style.filter = css;
+
+  ['normal', 'nvg', 'flir'].forEach(f => {
+    const btn = document.getElementById(`cctv-filter-${f}`);
+    if (btn) {
+      if (f === filter) {
+        btn.style.background = 'rgba(0,240,255,0.2)';
+        btn.style.borderColor = '#00F0FF';
+        btn.style.color = '#00F0FF';
+      } else {
+        btn.style.background = 'rgba(255,255,255,0.06)';
+        btn.style.borderColor = 'rgba(255,255,255,0.18)';
+        btn.style.color = '#A1A1AA';
+      }
+    }
+  });
+};
+
+window.cctvSetZoom = function(zoom) {
+  _cctvZoom = zoom;
+  const vid = document.getElementById('cctv-fs-video');
+  const img = document.getElementById('cctv-fs-img');
+  const scaleCss = `scale(${zoom})`;
+  if (vid) {
+    vid.style.transform = scaleCss;
+    vid.style.transformOrigin = 'center center';
+    vid.style.transition = 'transform 0.25s ease';
+  }
+  if (img) {
+    img.style.transform = scaleCss;
+    img.style.transformOrigin = 'center center';
+    img.style.transition = 'transform 0.25s ease';
+  }
+
+  [1, 2, 4].forEach(z => {
+    const btn = document.getElementById(`cctv-zoom-${z}x`);
+    if (btn) {
+      if (z === zoom) {
+        btn.style.background = 'rgba(0,240,255,0.2)';
+        btn.style.borderColor = '#00F0FF';
+        btn.style.color = '#00F0FF';
+      } else {
+        btn.style.background = 'rgba(255,255,255,0.06)';
+        btn.style.borderColor = 'rgba(255,255,255,0.18)';
+        btn.style.color = '#A1A1AA';
+      }
+    }
+  });
+};
+
+function syncCctvFullscreenData(data) {
+  const fsTitle = document.getElementById('cctv-fs-camera-title');
+  const fsCoords = document.getElementById('cctv-fs-coords');
+  const fsHdg = document.getElementById('cctv-fs-hdg');
+  const fsTime = document.getElementById('cctv-fs-time');
+  const fsSel = document.getElementById('cctv-fs-camera-select');
+  const fsVid = document.getElementById('cctv-fs-video');
+  const fsImg = document.getElementById('cctv-fs-img');
+
+  if (fsTitle) fsTitle.textContent = `${data.city ? data.city.toUpperCase() + ' • ' : ''}${data.label || data.name || data.id}`;
+  if (fsCoords) fsCoords.textContent = `LAT: ${Number(data.lat || 0).toFixed(4)}° | LON: ${Number(data.lon || 0).toFixed(4)}°`;
+  if (fsHdg) fsHdg.textContent = `HDG: ${Math.round(data.heading || data.headingDeg || 0)}°`;
+  if (fsTime) fsTime.textContent = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+  if (fsSel && fsSel.value !== data.id) fsSel.value = data.id;
+
+  const frameUrl = `/api/cctv/frame/${encodeURIComponent(data.id)}?t=${Date.now()}`;
+  if (fsImg) fsImg.src = frameUrl;
+
+  const sampleVideos = [
+    'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+    'https://storage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4',
+    'https://storage.googleapis.com/gtv-videos-bucket/sample/WhatCarCanYouGetForAGrand.mp4'
+  ];
+  const vUrl = data.videoUrl || sampleVideos[Math.abs(data.id.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % sampleVideos.length];
+  if (fsVid && fsVid.src !== vUrl) {
+    fsVid.src = vUrl;
+    fsVid.load();
+    fsVid.play().catch(()=>{});
+  }
+}
 
 window.openCctvDock = function(data) {
   if (!data || !data.id) return;
+  initCctvDraggable();
   _activeCctvCameraId = data.id;
   const dock = document.getElementById('cctv-dock-panel');
   if (!dock) return;
@@ -14759,14 +16564,35 @@ window.openCctvDock = function(data) {
   const elev = document.getElementById('cctv-dock-elev');
   const clock = document.getElementById('cctv-dock-overlay-timestamp');
   const img = document.getElementById('cctv-dock-preview-img');
+  const vid = document.getElementById('cctv-dock-video');
   const sel = document.getElementById('cctv-dock-camera-select');
 
   if (meta1) meta1.textContent = `${data.city || 'METRO'} • HDG ${data.heading || 0}° • FOV ${data.fov || 72}° • RNG ${data.rangeM || 450}m`;
   if (meta2) meta2.textContent = `MONITOR • RAW PRIOR • ${data.label || 'Surveillance Feed'}`;
   if (elev) elev.textContent = `ALT: ${Math.round(data.alt || 100)}M MSL`;
   if (clock) clock.textContent = new Date().toLocaleTimeString();
-  if (img) img.src = `/api/cctv/frame/${encodeURIComponent(data.id)}?t=${Date.now()}`;
+
+  const frameUrl = `/api/cctv/frame/${encodeURIComponent(data.id)}?t=${Date.now()}`;
+  if (img) img.src = frameUrl;
+
+  const sampleVideos = [
+    'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+    'https://storage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4',
+    'https://storage.googleapis.com/gtv-videos-bucket/sample/WhatCarCanYouGetForAGrand.mp4'
+  ];
+  const vUrl = data.videoUrl || sampleVideos[Math.abs(data.id.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % sampleVideos.length];
+  if (vid && vid.src !== vUrl) {
+    vid.src = vUrl;
+    vid.load();
+    vid.play().catch(()=>{});
+  }
+
   if (sel && sel.value !== data.id) sel.value = data.id;
+
+  updateCctvDisplayFeeds();
+  syncCctvFullscreenData(data);
 
   // Reveal in-world 3D monitor plane and label badge on globe
   if (_cctvDataSource && _cctvDataSource.entities) {
@@ -14788,16 +16614,19 @@ window.openCctvDock = function(data) {
 
   dock.style.display = 'block';
 
-  // 4-second live frame refresh for both dock preview and 3D in-world monitor plane
+  // 4-second live frame refresh for snapshot previews and in-world plane
   if (_cctvAnimInterval) clearInterval(_cctvAnimInterval);
   _cctvAnimInterval = setInterval(() => {
     if (!_activeCctvCameraId) return;
     const curImg = document.getElementById('cctv-dock-preview-img');
     const curClock = document.getElementById('cctv-dock-overlay-timestamp');
-    if (curImg && curImg.style.display !== 'none') {
-      curImg.src = `/api/cctv/frame/${encodeURIComponent(_activeCctvCameraId)}?t=${Date.now()}`;
-    }
+    const fsImg = document.getElementById('cctv-fs-img');
+    const fsTime = document.getElementById('cctv-fs-time');
+    const u = `/api/cctv/frame/${encodeURIComponent(_activeCctvCameraId)}?t=${Date.now()}`;
+    if (curImg && _cctvFeedMode === 'snapshot') curImg.src = u;
+    if (fsImg && _cctvFeedMode === 'snapshot') fsImg.src = u;
     if (curClock) curClock.textContent = new Date().toLocaleTimeString();
+    if (fsTime) fsTime.textContent = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
     if (typeof window.updateCctvMonitorPlaneImage === 'function') {
       window.updateCctvMonitorPlaneImage(_activeCctvCameraId);
     }
@@ -14807,6 +16636,15 @@ window.openCctvDock = function(data) {
 window.closeCctvDock = function() {
   const dock = document.getElementById('cctv-dock-panel');
   if (dock) dock.style.display = 'none';
+  const fsModal = document.getElementById('cctv-fullscreen-modal');
+  if (fsModal) fsModal.style.display = 'none';
+  _cctvIsFullscreen = false;
+
+  const vid = document.getElementById('cctv-dock-video');
+  const fsVid = document.getElementById('cctv-fs-video');
+  if (vid) vid.pause();
+  if (fsVid) fsVid.pause();
+
   _activeCctvCameraId = null;
   if (_cctvAnimInterval) {
     clearInterval(_cctvAnimInterval);
@@ -14825,7 +16663,8 @@ window.closeCctvDock = function() {
 
 window.cctvSelectFromDropdown = function(cameraId) {
   if (!cameraId || !window._cctvSourcesList) return;
-  const found = window._cctvSourcesList.find(s => s.id === cameraId);
+  const found = window._cctvSourcesList.find(s => s.id === cameraId) ||
+                (typeof CCTV_CAMERAS !== 'undefined' && CCTV_CAMERAS.find(s => s.id === cameraId));
   if (!found) return;
   const tact = {
     type: 'CCTV',
@@ -14834,10 +16673,11 @@ window.cctvSelectFromDropdown = function(cameraId) {
     city: found.city || '',
     lat: found.lat,
     lon: found.lon,
-    alt: found.groundElevationM || 100,
+    alt: found.groundElevationM || found.groundAltM || 100,
     heading: found.headingDeg || 0,
     pitch: found.pitchDeg || -18,
-    rangeM: found.rangeM || 450
+    rangeM: found.rangeM || 450,
+    videoUrl: found.videoUrl
   };
   window.openCctvDock(tact);
   window.flyToCameraPOV(tact);
@@ -14920,15 +16760,19 @@ window.cctvToggleAutoHop = function() {
 
 window._populateCctvDropdown = function(sources) {
   const sel = document.getElementById('cctv-dock-camera-select');
-  if (!sel || !Array.isArray(sources) || !sources.length) return;
-  sel.innerHTML = '';
-  sources.forEach(cam => {
-    const opt = document.createElement('option');
-    opt.value = cam.id;
-    opt.textContent = `${cam.city || 'METRO'} • ${cam.name || cam.label || cam.id}`;
-    sel.appendChild(opt);
+  const fsSel = document.getElementById('cctv-fs-camera-select');
+  if (!Array.isArray(sources) || !sources.length) return;
+  [sel, fsSel].forEach(s => {
+    if (!s) return;
+    s.innerHTML = '';
+    sources.forEach(cam => {
+      const opt = document.createElement('option');
+      opt.value = cam.id;
+      opt.textContent = `${cam.city || 'METRO'} • ${cam.name || cam.label || cam.id}`;
+      s.appendChild(opt);
+    });
+    if (_activeCctvCameraId) s.value = _activeCctvCameraId;
   });
-  if (_activeCctvCameraId) sel.value = _activeCctvCameraId;
 };
 
 // Cockpit Flight Chase Camera Mode (God's Eye Feature)
@@ -15355,7 +17199,7 @@ function initGlobeIntelligence(viewer) {
         width: 28,
         height: 28,
         verticalOrigin: Cesium.VerticalOrigin.CENTER,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        disableDepthTestDistance: 5000,
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 15000000),
         scaleByDistance: new Cesium.NearFarScalar(350, 1.25, 4000000, 0.45)
       },
@@ -15368,7 +17212,7 @@ function initGlobeIntelligence(viewer) {
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
         pixelOffset: new Cesium.Cartesian2(0, -18),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        disableDepthTestDistance: 5000,
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 8000000)
       },
       _tacticalData: tacticalData
@@ -15430,6 +17274,11 @@ function initGlobeIntelligence(viewer) {
     });
 
     // 5. The 3D Monitor Plane Entity (show: false by default — revealed only when active/inspected)
+    const initCvs = document.createElement('canvas');
+    initCvs.width = 960;
+    initCvs.height = 540;
+    paintProjectionPlaceholder(initCvs.getContext('2d'), cam);
+
     _cctvDataSource.entities.add({
       id: `cctv-${cam.id}-plane`,
       show: false,
@@ -15438,7 +17287,11 @@ function initGlobeIntelligence(viewer) {
       plane: {
         plane: new Cesium.Plane(Cesium.Cartesian3.UNIT_Z, 0.0),
         dimensions: new Cesium.Cartesian2(geom.halfW * 2, geom.halfH * 2),
-        material: Cesium.Color.fromCssColorString('rgba(4, 18, 30, 0.95)'),
+        material: new Cesium.ImageMaterialProperty({
+          image: initCvs,
+          transparent: false,
+          color: Cesium.Color.WHITE
+        }),
         outline: true,
         outlineColor: Cesium.Color.fromCssColorString('#22C55E'),
         outlineWidth: 2
@@ -15462,7 +17315,7 @@ function initGlobeIntelligence(viewer) {
         backgroundPadding: new Cesium.Cartesian2(8, 5),
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        disableDepthTestDistance: 5000,
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 45000)
       },
       _tacticalData: tacticalData
@@ -15563,6 +17416,20 @@ function initGlobeIntelligence(viewer) {
         window.cesiumViewer.scene.requestRender();
       }
     };
+    img.onerror = function() {
+      const fallbackCvs = document.createElement('canvas');
+      fallbackCvs.width = 960;
+      fallbackCvs.height = 540;
+      paintProjectionPlaceholder(fallbackCvs.getContext('2d'), planeEnt._tacticalData || { id: cameraId });
+      planeEnt.plane.material = new Cesium.ImageMaterialProperty({
+        image: fallbackCvs,
+        transparent: false,
+        color: Cesium.Color.WHITE
+      });
+      if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
+        window.cesiumViewer.scene.requestRender();
+      }
+    };
     img.src = frameUrl;
   };
 
@@ -15577,6 +17444,9 @@ function initGlobeIntelligence(viewer) {
       window._cctvSourcesList = sources;
       if (typeof window._populateCctvDropdown === 'function') {
         window._populateCctvDropdown(sources);
+      }
+      if (typeof initCctvDraggable === 'function') {
+        initCctvDraggable();
       }
       if (_cctvDataSource) {
         _cctvDataSource.entities.removeAll();
@@ -15645,7 +17515,7 @@ function initGlobeIntelligence(viewer) {
         height: 24,
         rotation: Cesium.Math.toRadians(360 - (v.headingDeg || 0)),
         verticalOrigin: Cesium.VerticalOrigin.CENTER,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        disableDepthTestDistance: 5000,
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 15000000)
       },
       label: {
@@ -15657,7 +17527,7 @@ function initGlobeIntelligence(viewer) {
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
         pixelOffset: new Cesium.Cartesian2(0, -16),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        disableDepthTestDistance: 5000,
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 15000000)
       },
       _tacticalData: tacticalData
@@ -15719,7 +17589,7 @@ function initGlobeIntelligence(viewer) {
         color: Cesium.Color.fromCssColorString('#FF9D2E'),
         outlineColor: Cesium.Color.fromCssColorString('#FFFFFF'),
         outlineWidth: 2.5,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY
+        disableDepthTestDistance: 5000
       },
       label: {
         text: `📻 ${st.name} [${st.freq}]`,
@@ -15730,7 +17600,7 @@ function initGlobeIntelligence(viewer) {
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
         pixelOffset: new Cesium.Cartesian2(0, -14),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        disableDepthTestDistance: 5000,
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 15000000)
       },
       _tacticalData: {
@@ -15803,7 +17673,7 @@ function initGlobeIntelligence(viewer) {
             color: Cesium.Color.fromCssColorString(colorHex),
             outlineColor: Cesium.Color.WHITE,
             outlineWidth: 1.5,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            disableDepthTestDistance: 5000,
             distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 48000)
           },
           label: {
@@ -15818,7 +17688,7 @@ function initGlobeIntelligence(viewer) {
             style: Cesium.LabelStyle.FILL_AND_OUTLINE,
             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
             pixelOffset: new Cesium.Cartesian2(0, -10),
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            disableDepthTestDistance: 5000,
             distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 16000)
           },
           _tacticalData: {
@@ -16383,7 +18253,7 @@ function initGlobeIntelligence(viewer) {
                 height: 22,
                 rotation: Cesium.Math.toRadians(360 - trackAngle),
                 verticalOrigin: Cesium.VerticalOrigin.CENTER,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                disableDepthTestDistance: 5000,
                 distanceDisplayCondition: new Cesium.DistanceDisplayCondition(35000, Number.POSITIVE_INFINITY),
                 scaleByDistance: new Cesium.NearFarScalar(50000, 1.2, 25000000, 0.75)
               },
@@ -16396,7 +18266,7 @@ function initGlobeIntelligence(viewer) {
                 style: Cesium.LabelStyle.FILL_AND_OUTLINE,
                 verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                 pixelOffset: new Cesium.Cartesian2(0, -15),
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                disableDepthTestDistance: 5000,
                 distanceDisplayCondition: new Cesium.DistanceDisplayCondition(35000, 30000000),
                 scaleByDistance: new Cesium.NearFarScalar(50000, 1.0, 25000000, 0.7)
               },
@@ -16555,7 +18425,7 @@ function initGlobeIntelligence(viewer) {
           width: 32,
           height: 32,
           verticalOrigin: Cesium.VerticalOrigin.CENTER,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY
+          disableDepthTestDistance: 5000
         },
         label: {
           text: `🛰 ISS (LEO ${Math.round(issAltKm)}km • ${issVelKmh} km/h)`,
@@ -16566,7 +18436,7 @@ function initGlobeIntelligence(viewer) {
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
           verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
           pixelOffset: new Cesium.Cartesian2(0, -18),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY
+          disableDepthTestDistance: 5000
         },
         _tacticalData: tacticalData
       });
@@ -16751,7 +18621,7 @@ function initGlobeIntelligence(viewer) {
               color: Cesium.Color.fromCssColorString(colorHex),
               outlineColor: Cesium.Color.BLACK,
               outlineWidth: 2,
-              disableDepthTestDistance: Number.POSITIVE_INFINITY
+              disableDepthTestDistance: 5000
             },
             label: {
               text: `💥 M${mag.toFixed(1)} - ${place}`,
@@ -16762,7 +18632,7 @@ function initGlobeIntelligence(viewer) {
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
               verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
               pixelOffset: new Cesium.Cartesian2(0, -10),
-              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              disableDepthTestDistance: 5000,
               distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 12000000)
             },
             _tacticalData: tacticalData
@@ -16836,7 +18706,7 @@ function initGlobeIntelligence(viewer) {
               color: Cesium.Color.fromCssColorString(colorHex),
               outlineColor: Cesium.Color.BLACK,
               outlineWidth: 2,
-              disableDepthTestDistance: Number.POSITIVE_INFINITY
+              disableDepthTestDistance: 5000
             },
             label: {
               text: `🔥 ${frp.toFixed(0)}MW`,
@@ -16848,7 +18718,7 @@ function initGlobeIntelligence(viewer) {
               verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
               pixelOffset: new Cesium.Cartesian2(0, -10),
               distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 15000000),
-              disableDepthTestDistance: Number.POSITIVE_INFINITY
+              disableDepthTestDistance: 5000
             },
             _tacticalData: tacticalData
           });
@@ -17515,6 +19385,7 @@ window.toggleVoiceOsMode = window.toggleHudMode;
 let hudDismissTimer = null;
 
 window.dropHudNotch = function(autoDismissDelay = null) {
+  if (!document.body.classList.contains('hud-mode') && !document.body.classList.contains('voiceos-mode')) return;
   const notch = document.getElementById('jarvis-hud-notch');
   if (!notch) return;
 
