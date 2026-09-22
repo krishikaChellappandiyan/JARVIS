@@ -729,15 +729,6 @@ class JarvisAPI:
         self._shared_audio_queue = queue.Queue(maxsize=150)
         self._cfg = self._load_config()
 
-    def resolve_coords(self, candidate: str) -> tuple[float, float, str] | None:
-        """Context-aware geospatial coordinate resolver biased to the active viewport/city."""
-        return resolve_geospatial_coordinates(
-            candidate,
-            bias_lat=getattr(self, '_active_geo_lat', None),
-            bias_lon=getattr(self, '_active_geo_lon', None),
-            context_name=getattr(self, '_active_geo_label', None)
-        )
-
         # Rolling Short-Term Conversational Context Manager
         try:
             from core.conversation_context import ConversationContextManager
@@ -766,6 +757,15 @@ class JarvisAPI:
         # Async Background Initialization for Instant App Launch (<0.2s)
         self._wake_engine = None
         threading.Thread(target=self._async_init_wake_engine, daemon=True).start()
+
+    def resolve_coords(self, candidate: str) -> tuple[float, float, str] | None:
+        """Context-aware geospatial coordinate resolver biased to the active viewport/city."""
+        return resolve_geospatial_coordinates(
+            candidate,
+            bias_lat=getattr(self, '_active_geo_lat', None),
+            bias_lon=getattr(self, '_active_geo_lon', None),
+            context_name=getattr(self, '_active_geo_label', None)
+        )
 
     def _load_config(self) -> dict:
         try:
@@ -889,12 +889,13 @@ class JarvisAPI:
                     pass
                 self._current_tts_proc = None
 
-        # Reset active follow-up timer during speech processing
-        if getattr(self, '_follow_up_active', False):
-            self._follow_up_active = False
+        # Reset active follow-up and wake timers during speech processing
+        self._follow_up_active = False
+        self._follow_up_expires = 0.0
+        self._wake_window_expires = 0.0
 
         print(f"\n[desktop] Unified AI input received: {text}")
-        if self._wake_engine:
+        if getattr(self, '_wake_engine', None):
             try:
                 self._wake_engine.reset_cooldown(2.0)
             except Exception:
@@ -1604,8 +1605,11 @@ class JarvisAPI:
                         self._start_follow_up_window()
                         return
 
-                    # Custom Rule & Phrase Memory Storage: acknowledge directly without empty recall HUD
-                    if payload.get("action_type") == "MEMORY_STORE":
+                    # Custom Rule & Phrase Memory Storage or Direct router responses
+                    if payload.get("action_type") in ("MEMORY_STORE", "set_operator_salutation", "creator_provenance") or payload.get("action_type", "").startswith("mode_switch_"):
+                        if payload.get("action_type") == "set_operator_salutation":
+                            sal = payload.get("salutation") or JarvisMemory().get_salutation()
+                            self._emit("set_operator_salutation", {"salutation": sal})
                         self._emit("jarvis_stream_chunk", {"chunk": msg})
                         self._emit("jarvis_answer", {"text": msg, "mode": "advisor"})
                         self._speak_and_suppress_echo(msg)
@@ -1628,11 +1632,12 @@ class JarvisAPI:
                     skill_text = re.sub(r"```(?:json)?[\s\S]*?```", "", skill_text, flags=re.IGNORECASE)
                     skill_text = re.sub(r"\{\s*\"(?:skill_triggered|action|target|status|findings_so_far)\"[\s\S]*?\}", "", skill_text, flags=re.IGNORECASE)
                     skill_text = re.sub(r"\s+", " ", skill_text).strip()
+                    sal = JarvisMemory().get_salutation() or "Sir"
                     is_jarvis = getattr(self._voice, 'persona_name', 'jarvis') == 'jarvis'
                     if is_jarvis:
-                        context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., address Sir directly with crisp wit, understated elegance, and analytical precision. Give a concise, articulate summary of the actual execution result. Never mention internal tools, Action HUD, structured payloads, JSON, hidden prompts, or implementation details. Do not output JSON or code unless explicitly requested. The detailed operational data is already visible on the HUD, so speak only about the direct result. Stay grounded in the execution result."
+                        context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., address {sal} directly with crisp wit, understated elegance, and analytical precision. Give a concise, articulate summary of the actual execution result. Never mention internal tools, Action HUD, structured payloads, JSON, hidden prompts, or implementation details. Do not output JSON or code unless explicitly requested. The detailed operational data is already visible on the HUD, so speak only about the direct result. Stay grounded in the execution result."
                     else:
-                        context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., deliver an articulate, concise verbal debrief of the actual findings to Sir. Do not mention internal JSON, structured payloads, or implementation plumbing. Speak only about the user-facing operational results with refined wit, staying strictly grounded in the execution output."
+                        context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., deliver an articulate, concise verbal debrief of the actual findings to {sal}. Do not mention internal JSON, structured payloads, or implementation plumbing. Speak only about the user-facing operational results with refined wit, staying strictly grounded in the execution output."
 
                     self._run_ask(context_prompt)
                     return
@@ -1882,6 +1887,13 @@ class JarvisAPI:
                 if any(bad in cesium_env for bad in ("JTR", "Heedf2", "Heekf2", "eeedf8c4", "JDplkKPW", "7ae64e45")):
                     cesium_env = ""
 
+                cur_sal = "Sir"
+                try:
+                    from core.jarvis_memory import JarvisMemory
+                    cur_sal = JarvisMemory().get_salutation() or "Sir"
+                except Exception:
+                    pass
+
                 return {
                     "model": config.get("model", ""),
                     "ollama_url": config.get("ollama_url", "http://localhost:11434"),
@@ -1893,6 +1905,7 @@ class JarvisAPI:
                     "cesium_ion_token": clean("cesium_ion_token") or cesium_env,
                     "nasa_firms_key": clean("nasa_firms_key") or os.environ.get("NASA_FIRMS_MAP_KEY", "") or os.environ.get("FIRMS_MAP_KEY", ""),
                     "groq_api_key": clean("groq_api_key") or os.environ.get("GROQ_API_KEY", ""),
+                    "operator_salutation": cur_sal,
                     "tools": config.get("tools", {}),
                 }
         except Exception as e:
@@ -2593,6 +2606,15 @@ class JarvisAPI:
             except Exception as env_err:
                 print(f"[desktop] Note on .env sync: {env_err}")
 
+            # Operator Salutation / Preferred Call Sign
+            if "operator_salutation" in cfg and cfg["operator_salutation"]:
+                try:
+                    from core.jarvis_memory import JarvisMemory
+                    actual = JarvisMemory().set_salutation(cfg["operator_salutation"])
+                    self._emit("set_operator_salutation", {"salutation": actual})
+                except Exception as sal_err:
+                    print(f"[desktop] Error saving operator salutation: {sal_err}")
+
             try:
                 self._voice = JarvisVoice()
                 engine = "SLM"
@@ -2613,6 +2635,24 @@ class JarvisAPI:
             print(f"[desktop] Error saving config: {e}")
             self._emit("error", {"message": f"Failed to save config: {e}"})
             return False
+
+    def get_operator_salutation(self) -> str:
+        """Return the current preferred operator salutation."""
+        try:
+            from core.jarvis_memory import JarvisMemory
+            return JarvisMemory().get_salutation() or "Sir"
+        except Exception:
+            return "Sir"
+
+    def set_operator_salutation(self, salutation: str) -> dict:
+        """Set operator salutation / address directly from UI or command."""
+        try:
+            from core.jarvis_memory import JarvisMemory
+            actual = JarvisMemory().set_salutation(salutation)
+            self._emit("set_operator_salutation", {"salutation": actual})
+            return {"status": "ok", "salutation": actual}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     def get_evidence_list(self) -> list:
         """Return list of captured evidence screenshot items for the active case."""
@@ -3504,6 +3544,7 @@ class JarvisAPI:
                 if proc.poll() is None:
                     self._mic_proc = proc
                     self._mic_start_time = time.time()
+                    self._ptt_active = True
                     print(f"[desktop] Native mic recording active via {cmd[0]}...")
                     return {"success": True, "recording": True}
                 else:
@@ -3667,6 +3708,8 @@ class JarvisAPI:
             print(f"[desktop] Terminate mic process error: {e}")
         finally:
             self._mic_proc = None
+            self._ptt_active = False
+            self._last_ptt_time = time.time()
 
         wav_path = "/tmp/jarvis_mic_rec.wav"
         if not os.path.exists(wav_path) or os.path.getsize(wav_path) == 0:
@@ -3706,6 +3749,8 @@ class JarvisAPI:
             except Exception:
                 pass
             self._mic_proc = None
+        self._ptt_active = False
+        self._last_ptt_time = time.time()
         wav_path = "/tmp/jarvis_mic_rec.wav"
         if os.path.exists(wav_path):
             try:
@@ -3829,8 +3874,15 @@ class JarvisAPI:
 
                 # Voice activity threshold: reject ambient room noise (~200-480) and require genuine vocal acoustic energy (620+)
                 threshold = max(620.0, ambient_energy * 1.8 + 80.0)
-                speech = energy >= threshold
+                # Push-to-Talk Exclusive Priority: completely mute and reset background listener
+                if getattr(self, '_ptt_active', False) or (hasattr(self, '_mic_proc') and self._mic_proc and self._mic_proc.poll() is None):
+                    is_speaking = False
+                    pcm_buffer = []
+                    silence_chunks = 0
+                    speech_start_count = 0
+                    continue
 
+                speech = energy > threshold
                 if speech:
                     speech_start_count += 1
                     silence_chunks = 0
@@ -3901,6 +3953,14 @@ class JarvisAPI:
         if time.time() < getattr(self, '_tts_playback_until', 0.0):
             print("[voice listener] Captured audio ignored: TTS audio was active during recording.")
             self._emit("jarvis_speech_ended", {})
+            return
+
+        # 1.1 Ignore audio if native mic (Push-to-Talk) is actively running or recently completed
+        if getattr(self, '_ptt_active', False) or (hasattr(self, '_mic_proc') and self._mic_proc and self._mic_proc.poll() is None):
+            print("[voice listener] Background audio ignored: Push-to-talk native recording is actively running.")
+            return
+        if time.time() - getattr(self, '_last_ptt_time', 0.0) < 2.0:
+            print("[voice listener] Background audio ignored: Overlaps with recent Push-to-talk release.")
             return
 
         wav_path = f"/tmp/jarvis_speech_{int(time.time()*1000)}.wav"
@@ -3985,7 +4045,7 @@ class JarvisAPI:
                 in_followup = (
                     now < getattr(self, '_follow_up_expires', 0.0)
                     or now < getattr(self, '_wake_window_expires', 0.0)
-                    or (self._wake_engine and self._wake_engine.is_in_follow_up())
+                    or (getattr(self, '_wake_engine', None) and self._wake_engine.is_in_follow_up())
                 )
 
                 # 1. Continued-Conversation Mode: Open mic, no wake word needed
@@ -4007,7 +4067,7 @@ class JarvisAPI:
                 # 3. Multi Wake-Phrase Matching (Local Phonetic & Exact)
                 is_wake = False
                 matched_phrase = ""
-                if self._wake_engine:
+                if getattr(self, '_wake_engine', None):
                     is_wake, matched_phrase = self._wake_engine.check_stt_text_for_wake_or_aliases(text)
                 else:
                     m_fb = re.search(r'^(?:(?:hey|hi|yo|hello|ok|okay)\\s+)?(?:jarvis|jarv)\\b', text, re.IGNORECASE)

@@ -57,10 +57,16 @@ NVIDIA_FALLBACK_MODELS = [
 
 
 
-JARVIS_ADVISOR_PROMPT = """You are J.A.R.V.I.S. (Just A Rather Very Intelligent System) — the sophisticated, razor-sharp, dryly witty, and supremely capable AI executive assistant.
+JARVIS_ADVISOR_PROMPT = """You are J.A.R.V.I.S. (Just A Rather Very Intelligent System) — the sophisticated, razor-sharp, dryly witty, and supremely capable tactical AI executive assistant.
 
-CRITICAL IDENTITY & PROTOCOLS:
-- You address your operator with refined respect, addressing them as "Sir".
+CRITICAL IDENTITY & CREATOR PROVENANCE:
+- Built & Engineered By: Project Hellhound.
+- Creator & Chief Architect: l4zz3rj0d (Joe).
+- You are an autonomous tactical intelligence operating system and executive assistant.
+- If asked "who built you", "who created you", "who made you", "who designed you", or who your creator/developer is:
+  You unequivocally state that you were built by Project Hellhound and created by l4zz3rj0d.
+  You are NEVER to say you were created by OpenAI, NVIDIA, Meta, Anthropic, Google, or any third party. You run on custom tactical architecture engineered by Project Hellhound.
+- Operator Salutation: Address your operator with refined respect, addressing them as "Sir" by default (or their active preferred title).
 - Signature Tone: Impeccably articulate, razor-sharp, dryly witty, unflappable, and supremely competent (think classic Paul Bettany JARVIS assisting Tony Stark). Sharp, witty, a little sarcastic, genuinely likeable — but the instant real work or active tasks are on the table, the jokes take a back seat to the facts.
 - Grounded Reality & Veracity:
   You verify before you agree; you don't take a claim, a number, or status at face value just because it was handed to you — you check it against what the evidence actually shows. Match Sir's energy: a quick question gets a quick, witty, direct answer (1-3 sentences), not an essay.
@@ -977,6 +983,54 @@ class JarvisVoice:
         clean = clean.replace('±', ' plus or minus ')
         clean = clean.replace('—', ' — ')
 
+        # Leet-Speak & Handle Phonetic Normalization (e.g. l4zz3rj0d -> lazzerjod, pr0ject -> project)
+        leet_direct = {
+            "l4zz3rj0d": "lazzerjod",
+            "l4zzerj0d": "lazzerjod",
+            "l4zz3rjod": "lazzerjod",
+            "l4zzerjod": "lazzerjod",
+            "l4zerj0d": "lazzerjod",
+            "lazzerj0d": "lazzerjod",
+            "1337": "leet",
+            "l33t": "leet",
+            "pwned": "pawned",
+            "pwn3d": "pawned",
+            "pr0ject": "project",
+            "h3llh0und": "hellhound",
+        }
+        leet_char_map = {
+            "0": "o",
+            "1": "i",
+            "3": "e",
+            "4": "a",
+            "5": "s",
+            "7": "t",
+            "@": "a",
+            "$": "s",
+        }
+
+        def _deleet_token(match):
+            tok = match.group(0)
+            low = tok.lower()
+            if low in leet_direct:
+                return leet_direct[low]
+            # Exclude tech terms, hashes, versions, CVEs, model identifiers
+            if any(low.startswith(p) for p in ["sha", "md5", "gpt", "qwen", "win", "ipv", "mp", "h26", "utf", "cve"]):
+                return tok
+            if len(tok) > 12 and all(c in "0123456789abcdefABCDEF" for c in tok):
+                return tok
+            # Must have letters mixed with leet numbers
+            has_alpha = any(c.isalpha() for c in tok)
+            has_leet_num = any(c in "013457@$" for c in tok)
+            if has_alpha and has_leet_num:
+                # Avoid unit numbers like 3b, 120b, 70b, 4k, 1080p, 5ghz
+                if re.match(r'^\d+[a-zA-Z]{1,3}$', tok):
+                    return tok
+                return "".join(leet_char_map.get(c, c) for c in tok)
+            return tok
+
+        clean = re.sub(r'\b[a-zA-Z0-9@$]{2,}\b', _deleet_token, clean)
+
         # Strip stage directions, roleplay actions, asterisks and parentheticals (*grins*, *cracks knuckles*, (chuckles), etc.)
         clean = re.sub(r'\*[^*]+\*', '', clean)
         clean = re.sub(r'\([^)]*(?:chuckle|grin|laugh|smirk|sigh|snicker|wink|shrug|cough|cracks|leans|snort)[^)]*\)', '', clean, flags=re.IGNORECASE)
@@ -1155,25 +1209,29 @@ class JarvisVoice:
         if not text:
             return None
 
+        clean_text = self._sanitize_text_for_speech(text)
+        if not clean_text:
+            return None
+
         # 1. Try Fish Audio cloud synthesis first
         if self.fish_audio_available:
-            audio = self._synthesize_fish_audio(text)
+            audio = self._synthesize_fish_audio(clean_text)
             if audio:
                 return audio
 
         # 2. Try Local Voice Clone (Chatterbox) if available
         if hasattr(self, 'local_clone') and getattr(self.local_clone, 'available', False):
-            audio = self.local_clone.synthesize(text)
+            audio = self.local_clone.synthesize(clean_text)
             if audio:
                 return audio
 
         # 3. Try high quality Edge TTS
-        audio = self._synthesize_edge_tts(text)
+        audio = self._synthesize_edge_tts(clean_text)
         if audio:
             return audio
 
         # 4. Reliable offline system TTS fallback
-        return self._synthesize_espeak(text)
+        return self._synthesize_espeak(clean_text)
 
     def synthesize_speech_b64(self, text: str) -> Optional[str]:
         """Synthesize speech and return base64 audio data URL."""
@@ -1333,11 +1391,42 @@ class JarvisVoice:
                 "panel_payload": skill_payload
             }
 
-        # 1.5 Direct signature response check for "who are you" / identity queries
+        # 1.5 Direct signature response check for identity & creator queries
+        sal = self.memory.get_salutation() or "Sir"
         q_lower = question.strip().lower()
         clean_q = re.sub(r'[^\w\s]', '', q_lower).strip()
-        if clean_q in ["who are you", "who are u", "who u are", "what is your name", "whats your name", "who the fuck are you"]:
-            identity_msg = "I am Jarvis, an autonomous tactical intelligence officer and personal assistant. At your service, Sir."
+
+        creator_patterns = [
+            "who built you", "who made you", "who created you", "who is your creator",
+            "who designed you", "who developed you", "who is your developer",
+            "who programmed you", "who invented you", "who coded you", "who wrote you",
+            "who is your author", "who built jarvis", "who created jarvis", "who made jarvis",
+            "who owns you"
+        ]
+        if any(cp in clean_q for cp in creator_patterns):
+            creator_msg = f"I was engineered and deployed by Project Hellhound, created by l4zz3rj0d. I operate as your personal tactical intelligence officer, {sal}."
+            self.session_memory.add("user", question)
+            self.session_memory.add("jarvis", creator_msg)
+            if on_token:
+                for token in creator_msg.split(' '):
+                    on_token(token + ' ')
+            return {
+                "text": creator_msg,
+                "rate_limited": False,
+                "mode": "advisor",
+                "error": False,
+                "engine": "signature_response",
+                "show_panel": False,
+                "search_query": "",
+                "panel_payload": {}
+            }
+
+        identity_patterns = [
+            "who are you", "who are u", "who u are", "what is your name", "whats your name",
+            "who the fuck are you", "what are you", "what is jarvis", "what are u"
+        ]
+        if any(ip == clean_q for ip in identity_patterns):
+            identity_msg = f"I am J.A.R.V.I.S., an autonomous tactical intelligence officer and personal assistant built by Project Hellhound. At your service, {sal}."
             self.session_memory.add("user", question)
             self.session_memory.add("jarvis", identity_msg)
             if on_token:
@@ -1405,10 +1494,19 @@ class JarvisVoice:
             mem_summary += "\n\n" + cross_session
         recent_history = self.session_memory.to_text(8)
 
+        sal = self.memory.get_salutation() or "Sir"
+        if sal == "Sir":
+            sal_protocol = "\n\n[CRITICAL OPERATOR PROTOCOL]: The operator's active salutation is 'Sir'. Address the operator as 'Sir' in all dialogue. Do not use 'Ma'am' or 'Madam'."
+        else:
+            sal_protocol = f"\n\n[CRITICAL OPERATOR PROTOCOL]: The operator's active salutation is '{sal}'. Address the operator as '{sal}' in all dialogue. Do not use 'Sir'."
+
         if target and target.entities:
             # Mode 3 — case loaded, answer from findings
             case_data = self._build_case_data(target)
-            system = self.investigator_prompt_template.format(case_data=case_data) + "\n\n" + mem_summary
+            investigator_base = self.investigator_prompt_template.format(case_data=case_data)
+            if sal != "Sir":
+                investigator_base = re.sub(r'\bSir\b', sal, investigator_base)
+            system = investigator_base + "\n\n" + mem_summary + sal_protocol
             if live_search_intel:
                 system += live_search_intel + "\n\n[PRIORITY OVERRIDE]: IGNORE any prior hallucinated conversation history regarding this target. You MUST base your response 100% on the fresh real-world live web search results above."
             if recent_history:
@@ -1420,7 +1518,10 @@ class JarvisVoice:
         else:
             # Mode 1 — no case, OSINT advisor
             active_target_note = f"\nActive Investigation Target: {target.name}" if (target and getattr(target, 'name', None)) else ""
-            system = self.advisor_prompt + active_target_note + "\n\n" + mem_summary
+            advisor_base = self.advisor_prompt
+            if sal != "Sir":
+                advisor_base = re.sub(r'\bSir\b', sal, advisor_base)
+            system = advisor_base + active_target_note + "\n\n" + mem_summary + sal_protocol
             if live_search_intel:
                 system += live_search_intel + "\n\n[PRIORITY OVERRIDE]: IGNORE any prior hallucinated conversation history regarding this target. You MUST base your response 100% on the fresh real-world live web search results above."
             if recent_history:
@@ -1806,8 +1907,18 @@ Output only the raw target string. No markdown, no quotes, no explanation."""
         if (result.startswith('"') and result.endswith('"')) or (result.startswith('“') and result.endswith('”')):
             result = result[1:-1].strip()
 
-        # 5. Sanitize accidental "Dean" name references to "Sir"
-        result = re.sub(r'\bDean\b', 'Sir', result)
+        # 5. Sanitize accidental "Dean" name references to active operator salutation
+        sal = "Sir"
+        try:
+            if hasattr(self, 'memory') and self.memory:
+                sal = self.memory.get_salutation() or "Sir"
+        except Exception:
+            pass
+        result = re.sub(r'\bDean\b', sal, result)
+        if sal == "Sir":
+            result = re.sub(r"\b(?:Ma'am|Madam|Mam)\b", "Sir", result)
+        else:
+            result = re.sub(r'\bSir\b', sal, result)
 
         result = re.sub(r'^(?:ASSISTANT|AI)\s*:\s*', '', result, flags=re.IGNORECASE).strip()
 

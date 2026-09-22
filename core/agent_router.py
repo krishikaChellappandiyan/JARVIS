@@ -29,27 +29,43 @@ class AgentRouter:
 
         sal = self.get_salutation()
 
-        # ── 0A. Salutation / Honorific Directives (Dynamic "Sir" vs "Ma'am" / "Madam") ──
-        m_sal = re.search(r'\b(?:call me|address me as|refer to me as|i am a woman call me|my title is)\s+(ma[\'\s]?am|madam|lady|miss|sir|boss|captain|commander)\b', text_lower)
-        if not m_sal:
-            if any(p in text_lower for p in ["call me madam", "address me as madam"]):
-                m_sal_text = "Madam"
-            elif any(p in text_lower for p in ["call me ma'am", "call me mam", "address me as ma'am", "im a woman", "i am a woman", "my gender is female", "she/her"]):
+        # ── 0A. Salutation / Honorific Directives (Dynamic custom titles, names, handles, or respect call) ──
+        m_sal = re.search(
+            r'\b(?:call me|address me as|refer to me as|my title is|my name is)\s+([a-zA-Z0-9_\'\-]+(?:\s+[a-zA-Z0-9_\'\-]+){0,2})\b',
+            text_strip,
+            re.IGNORECASE
+        )
+        m_sal_text = None
+        if m_sal:
+            raw_sal = m_sal.group(1).strip()
+            # Strip trailing adverbial qualifiers like "from now on", "please", "going forward"
+            raw_sal = re.sub(r'\s+(?:from\s+now(?:\s+on)?|going\s+forward|please|from\s+today)$', '', raw_sal, flags=re.IGNORECASE).strip()
+            disallowed = {
+                "later", "back", "when", "if", "at", "on", "up", "out", "now", "soon",
+                "tomorrow", "tonight", "yesterday", "here", "there", "again", "please", "maybe",
+                "names", "titles", "this", "that", "something", "anything"
+            }
+            raw_lower = raw_sal.lower()
+            if raw_lower not in disallowed and not any(raw_lower.startswith(d + " ") for d in disallowed):
+                low_no_quote = raw_lower.replace("'", "")
+                if low_no_quote == "maam":
+                    m_sal_text = "Ma'am"
+                elif low_no_quote == "mam":
+                    m_sal_text = "Mam"
+                elif low_no_quote in ("madam", "madame"):
+                    m_sal_text = "Madam"
+                elif low_no_quote == "sir":
+                    m_sal_text = "Sir"
+                elif any(c.isdigit() for c in raw_sal) or "_" in raw_sal:
+                    m_sal_text = raw_sal
+                else:
+                    m_sal_text = raw_sal.title()
+
+        if not m_sal_text:
+            if any(p in text_lower for p in ["im a woman", "i am a woman", "my gender is female", "she/her"]):
                 m_sal_text = "Ma'am"
-            elif any(p in text_lower for p in ["call me sir", "address me as sir"]):
+            elif any(p in text_lower for p in ["default salutation", "reset salutation"]):
                 m_sal_text = "Sir"
-            else:
-                m_sal_text = None
-        else:
-            raw_sal = m_sal.group(1).lower().replace("'", "").strip()
-            if raw_sal in ("madam", "madame"):
-                m_sal_text = "Madam"
-            elif raw_sal in ("maam", "lady", "miss"):
-                m_sal_text = "Ma'am"
-            elif raw_sal == "sir":
-                m_sal_text = "Sir"
-            else:
-                m_sal_text = raw_sal.title()
 
         if m_sal_text:
             try:
@@ -59,8 +75,18 @@ class AgentRouter:
             except Exception as e:
                 print(f"[AgentRouter] Error saving salutation: {e}")
             self.event_bus.emit("set_operator_salutation", {"salutation": m_sal_text})
-            ack = f"Understood, {m_sal_text}. My sincere apologies for the oversight—all protocol registers, speech models, and telemetry have been updated."
+            ack = f"Understood, {m_sal_text}. Your preferred address has been set; all protocol registers, speech models, and telemetry have been updated."
             return True, ack, None, "set_operator_salutation"
+
+        # ── 0B. Creator Provenance & Architecture Identity ──────────
+        m_creator = re.search(
+            r'\b(?:who\s+(?:built|created|made|designed|developed|programmed|coded|invented|wrote)\s+(?:you|u|jarvis)|who\s+is\s+your\s+(?:creator|maker|developer|author|architect|engineer))\b',
+            text_lower
+        )
+        if m_creator:
+            sal = self.get_salutation()
+            ack = f"I was engineered and deployed by Project Hellhound, created by l4zz3rj0d. I operate as your personal tactical intelligence officer, {sal}."
+            return True, ack, None, "creator_provenance"
 
         # ── 0. Check for Mode Switch Commands ─────────────────────
         if any(kw in text_lower for kw in ["osint mode", "war room", "recon mode", "tactical mode", "war mode", "warm mode", "warm room", "engage osint", "engage war"]):

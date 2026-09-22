@@ -141,18 +141,22 @@ class JarvisMemory:
         return mem.get("operator_salutation") or "Sir"
 
     def set_salutation(self, salutation: str) -> str:
-        if not salutation:
+        if not salutation or not str(salutation).strip():
             return "Sir"
-        clean_sal = salutation.strip()
-        if clean_sal.lower() in ("ma'am", "maam"):
+        clean_sal = str(salutation).strip()
+        low = clean_sal.lower().replace("'", "")
+        if low == "maam":
             clean_sal = "Ma'am"
-        elif clean_sal.lower() in ("madam", "madame"):
+        elif low == "mam":
+            clean_sal = "Mam"
+        elif low in ("madam", "madame"):
             clean_sal = "Madam"
-        elif clean_sal.lower() in ("lady", "miss"):
-            clean_sal = clean_sal.title()
-        elif clean_sal.lower() == "sir":
+        elif low == "sir":
             clean_sal = "Sir"
-        else:
+        elif any(c.isdigit() for c in clean_sal) or "_" in clean_sal:
+            # Leet words or developer handles (e.g. l4zz3rj0d) preserve exact casing
+            clean_sal = clean_sal
+        elif clean_sal.isalpha() or " " in clean_sal:
             clean_sal = clean_sal.title()
 
         mem = self.load_memory()

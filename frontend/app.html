@@ -5320,6 +5320,37 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
     </div>
     <div class="overlay-body">
       <form id="settings-form" onsubmit="return false;" style="display:flex; flex-direction:column; gap:0; margin:0; padding:0;">
+      <!-- Card 0: Call Settings & Operator Identity -->
+      <div class="collapsible-card settings-card">
+        <div class="collapsible-card-header" onclick="toggleCardCollapse(this)">
+          <div class="collapsible-card-title">
+            <span style="opacity:0.6; font-family:var(--mono); font-size:11px; margin-right:4px;">[ID]</span>
+            <span>Operator Call Settings & Salutation</span>
+          </div>
+          <div class="collapsible-card-badge" id="cfg-salutation-badge">Sir</div>
+          <div class="collapsible-card-chevron">▼</div>
+        </div>
+        <div class="collapsible-card-body">
+          <div class="settings-row">
+            <label>Preferred Title / Call Sign</label>
+            <input type="text" id="cfg-operator-salutation" placeholder="Sir (Default), Ma'am, Boss, l4zz3rj0d..." />
+          </div>
+          <div class="settings-hint" style="margin-bottom:8px;">
+            Set what J.A.R.V.I.S. calls you (e.g. Sir, Ma'am, Mam, Boss, or your handle). You can also set this anytime via voice or chat: <em>"Call me &lt;title&gt;"</em>.
+          </div>
+          <div class="settings-hint" style="color:#FF9D2E; font-size:10.5px; margin-bottom:12px;">
+            ⚡ Leet-Speak Normalization: Handles like <strong>l4zz3rj0d</strong> or general leet words are naturally spoken as standard words (e.g., "lazzerjod") by Fish Audio, Edge TTS, and eSpeak rather than spelled out as numbers.
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin-left:192px; margin-bottom:12px;">
+            <button type="button" class="preset-sal-btn" onclick="document.getElementById('cfg-operator-salutation').value='Sir'; window.setOperatorSalutation('Sir');" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#E6E6E6; border-radius:4px; padding:4px 10px; font-size:11px; font-family:var(--mono); cursor:pointer;">Sir (Default)</button>
+            <button type="button" class="preset-sal-btn" onclick="document.getElementById('cfg-operator-salutation').value='Ma\'am'; window.setOperatorSalutation('Ma\'am');" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#E6E6E6; border-radius:4px; padding:4px 10px; font-size:11px; font-family:var(--mono); cursor:pointer;">Ma'am</button>
+            <button type="button" class="preset-sal-btn" onclick="document.getElementById('cfg-operator-salutation').value='Mam'; window.setOperatorSalutation('Mam');" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#E6E6E6; border-radius:4px; padding:4px 10px; font-size:11px; font-family:var(--mono); cursor:pointer;">Mam</button>
+            <button type="button" class="preset-sal-btn" onclick="document.getElementById('cfg-operator-salutation').value='Boss'; window.setOperatorSalutation('Boss');" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#E6E6E6; border-radius:4px; padding:4px 10px; font-size:11px; font-family:var(--mono); cursor:pointer;">Boss</button>
+            <button type="button" class="preset-sal-btn" onclick="document.getElementById('cfg-operator-salutation').value='l4zz3rj0d'; window.setOperatorSalutation('l4zz3rj0d');" style="background:rgba(255,157,46,0.15); border:1px solid #FF9D2E; color:#FFB84D; border-radius:4px; padding:4px 10px; font-size:11px; font-family:var(--mono); cursor:pointer;">l4zz3rj0d (Creator)</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Card 1: LLM Engine -->
       <div class="collapsible-card settings-card">
         <div class="collapsible-card-header" onclick="toggleCardCollapse(this)">
@@ -5514,8 +5545,8 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
       <span style="letter-spacing:1px; font-weight:700; font-family:var(--sans);">J.A.R.V.I.S. TACTICAL SURFACE</span>
     </div>
     <div style="display:flex; gap:8px; align-items:center;">
-      <button onclick="if(TaskSurfaceManager.activeTaskId) TaskSurfaceManager.minimizeTaskSurface(TaskSurfaceManager.activeTaskId)" style="background:rgba(255,157,46,0.15); border:1px solid #FF9D2E; color:#FFB84D; font-size:9px; font-weight:700; padding:2px 6px; border-radius:3px; cursor:pointer;">[MINIMIZE]</button>
-      <span class="jarvis-panel-close-btn" onclick="if(TaskSurfaceManager.activeTaskId) TaskSurfaceManager.closeTaskSurface(TaskSurfaceManager.activeTaskId); else closeJarvisPanel();" style="cursor:pointer; font-weight:700; color:#8A8D91;">✕</span>
+      <button onclick="if(window.TaskSurfaceManager && TaskSurfaceManager.activeTaskId) TaskSurfaceManager.minimizeTaskSurface(TaskSurfaceManager.activeTaskId); else closeJarvisPanel();" style="background:rgba(255,157,46,0.15); border:1px solid #FF9D2E; color:#FFB84D; font-size:9px; font-weight:700; padding:2px 6px; border-radius:3px; cursor:pointer;">[MINIMIZE]</button>
+      <span class="jarvis-panel-close-btn" onclick="if(window.TaskSurfaceManager && TaskSurfaceManager.activeTaskId) TaskSurfaceManager.closeTaskSurface(TaskSurfaceManager.activeTaskId); else closeJarvisPanel();" style="cursor:pointer; font-weight:700; color:#8A8D91;">✕</span>
     </div>
   </div>
   <div class="jarvis-panel-body">
@@ -6814,6 +6845,15 @@ function applyConfigToForm(cfg) {
   setVal('#cfg-nasa-firms-key', clean(cfg.nasa_firms_key));
   setVal('#cfg-groq-key', clean(cfg.groq_api_key));
 
+  if (cfg.operator_salutation) {
+    setVal('#cfg-operator-salutation', cfg.operator_salutation);
+    const badge = document.getElementById('cfg-salutation-badge');
+    if (badge) badge.textContent = cfg.operator_salutation;
+    if (typeof window.setOperatorSalutation === 'function') {
+      window.setOperatorSalutation(cfg.operator_salutation);
+    }
+  }
+
   if (typeof Cesium !== 'undefined') {
     const cToken = clean(cfg.cesium_ion_token);
     if (cToken && !window.isRevokedOrDummyCesiumToken(cToken)) {
@@ -6847,6 +6887,11 @@ if (settingsSaveBtn) {
       return el ? el.value.trim() : '';
     }
 
+    const salVal = getVal('#cfg-operator-salutation');
+    if (salVal && typeof window.setOperatorSalutation === 'function') {
+      window.setOperatorSalutation(salVal);
+    }
+
     const cfg = {
       model: getVal('#cfg-model'),
       ollama_url: getVal('#cfg-ollama-url'),
@@ -6858,6 +6903,7 @@ if (settingsSaveBtn) {
       cesium_ion_token: getVal('#cfg-cesium-token'),
       nasa_firms_key: getVal('#cfg-nasa-firms-key'),
       groq_api_key: getVal('#cfg-groq-key'),
+      operator_salutation: salVal || 'Sir',
       tools: tools,
     };
 
@@ -6998,8 +7044,8 @@ window.getOperatorSalutation = function() {
 };
 
 window.setOperatorSalutation = function(sal) {
-  if (!sal) return;
-  const cleanSal = sal.charAt(0).toUpperCase() + sal.slice(1);
+  if (!sal || typeof sal !== 'string') return;
+  const cleanSal = sal.trim();
   try {
     if (typeof window.safeStorageSet === 'function') {
       window.safeStorageSet('jarvis_salutation', cleanSal);
@@ -7009,6 +7055,14 @@ window.setOperatorSalutation = function(sal) {
   const chatInput = document.getElementById('chat-input');
   if (chatInput && !chatInput.value) {
     chatInput.placeholder = `Ask J.A.R.V.I.S. or enter directive (${cleanSal})...`;
+  }
+  const salInput = document.getElementById('cfg-operator-salutation');
+  if (salInput && salInput.value !== cleanSal) {
+    salInput.value = cleanSal;
+  }
+  const badge = document.getElementById('cfg-salutation-badge');
+  if (badge) {
+    badge.textContent = cleanSal;
   }
 };
 
@@ -7030,6 +7084,20 @@ function handleSend() {
   if (text) {
     lastSentText = text;
     lastSendTime = now;
+  }
+
+  if (text.startsWith('/call ') || text.startsWith('/salutation ')) {
+    const newSal = text.replace(/^\/(?:call|salutation)\s+/, '').trim();
+    if (newSal) {
+      window.setOperatorSalutation(newSal);
+      if (api() && api().set_operator_salutation) {
+        api().set_operator_salutation(newSal);
+      }
+      appendChatBubble('jarvis', `Understood, ${newSal}. Your preferred address has been set; all protocol registers, speech models, and telemetry have been updated.`);
+      input.value = '';
+      input.focus();
+      return;
+    }
   }
 
   if (text === '/skills') {
@@ -8623,16 +8691,16 @@ function startVadMonitor(stream) {
       if (!vadSpeechDetected) {
         // Track ambient room floor
         vadAmbientFloor = 0.94 * vadAmbientFloor + 0.06 * rms;
-        // Safety timeout: abort if mic was clicked but user remained silent for 6s
-        if (now - vadSpeechStartTime > VAD_SILENCE_ABORT_MS) {
+        // Safety timeout: abort if mic was clicked but user remained silent for 6s (bypassed during Push-to-Talk)
+        if (!isSpacebarPushToTalk && (now - vadSpeechStartTime > VAD_SILENCE_ABORT_MS)) {
           console.log('[VAD] Silence timeout without speech. Auto-aborting to standby.');
           stopMicListening(true);
           return;
         }
       } else {
-        // User has spoken! Check silence hangover
+        // User has spoken! Check silence hangover (bypassed during Push-to-Talk)
         const silenceDuration = now - vadLastSpeechTime;
-        if (silenceDuration >= VAD_SILENCE_HANGOVER_MS) {
+        if (!isSpacebarPushToTalk && (silenceDuration >= VAD_SILENCE_HANGOVER_MS)) {
           console.log(`[VAD] Post-speech silence reached (${silenceDuration}ms >= ${VAD_SILENCE_HANGOVER_MS}ms). Auto-endpointing speech!`);
           stopMicListening(false);
           return;
@@ -8640,8 +8708,9 @@ function startVadMonitor(stream) {
       }
     }
 
-    // Safety duration ceiling
-    if (vadSpeechDetected && (now - vadSpeechStartTime > VAD_MAX_SPEECH_DURATION_MS)) {
+    // Safety duration ceiling (120s max for push-to-talk, 15s for auto-mic)
+    const maxDur = isSpacebarPushToTalk ? 120000 : VAD_MAX_SPEECH_DURATION_MS;
+    if (now - vadSpeechStartTime > maxDur) {
       console.log('[VAD] Maximum speech duration reached. Auto-endpointing.');
       stopMicListening(false);
     }
@@ -8650,6 +8719,7 @@ function startVadMonitor(stream) {
 
 async function startMicListening() {
   if (isMicListening) {
+    if (isSpacebarPushToTalk) return; // Do not toggle off while user is holding push-to-talk
     stopMicListening();
     return;
   }
@@ -8741,11 +8811,13 @@ async function startMicListening() {
 
           if (fullText) $('#chat-input').value = fullText;
 
-          // Auto-endpointing on speech pause
+          // Auto-endpointing on speech pause (bypassed if user is holding Spacebar Push-to-Talk)
           if (autoSendTimeout) clearTimeout(autoSendTimeout);
-          autoSendTimeout = setTimeout(() => {
-            stopMicListening(false);
-          }, wasWake ? 1800 : 1200);
+          if (!isSpacebarPushToTalk) {
+            autoSendTimeout = setTimeout(() => {
+              stopMicListening(false);
+            }, wasWake ? 1800 : 1200);
+          }
         };
         speechRecognizer.onerror = (e) => {
           console.warn('[JarvisSTT] WebSpeech error:', e);
@@ -9029,7 +9101,14 @@ window.addEventListener('keyup', (e) => {
       delete hudText.dataset.customText;
       hudText.textContent = 'Thinking...';
     }
-    stopMicListening();
+    stopMicListening(false);
+  }
+});
+
+window.addEventListener('blur', () => {
+  if (isSpacebarPushToTalk) {
+    isSpacebarPushToTalk = false;
+    stopMicListening(false);
   }
 });
 
@@ -10760,12 +10839,80 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-let jarvisTypewriterInterval = null;
+let _jarvisActionPanelDraggable = false;
+function initJarvisActionPanelDraggable() {
+  if (_jarvisActionPanelDraggable) return;
+  const panel = document.getElementById('jarvis-action-panel');
+  if (!panel) return;
+  const header = panel.querySelector('.jarvis-panel-header');
+  if (!header) return;
+
+  // Prevent any clicks or drags inside the panel from moving background 3D scene / HUD / SpatialNav
+  ['pointerdown', 'mousedown', 'touchstart', 'wheel'].forEach(evt => {
+    panel.addEventListener(evt, (e) => {
+      e.stopPropagation();
+    }, { passive: evt === 'wheel' ? false : true });
+  });
+
+  header.style.cursor = 'grab';
+  let isDragging = false;
+  let startX = 0, startY = 0;
+  let origLeft = 0, origTop = 0;
+
+  header.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (['BUTTON', 'SELECT', 'INPUT', 'A'].includes(e.target.tagName) || e.target.classList.contains('jarvis-panel-close-btn')) return;
+    isDragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+
+    const rect = panel.getBoundingClientRect();
+    origLeft = rect.left;
+    origTop = rect.top;
+
+    panel.style.transform = 'none';
+    panel.style.left = origLeft + 'px';
+    panel.style.top = origTop + 'px';
+    header.style.cursor = 'grabbing';
+
+    const onMouseMove = (ev) => {
+      if (!isDragging) return;
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+
+      let newLeft = origLeft + dx;
+      let newTop = origTop + dy;
+
+      const maxLeft = window.innerWidth - panel.offsetWidth - 8;
+      const maxTop = window.innerHeight - panel.offsetHeight - 8;
+      newLeft = Math.max(8, Math.min(newLeft, maxLeft));
+      newTop = Math.max(8, Math.min(newTop, maxTop));
+
+      panel.style.left = newLeft + 'px';
+      panel.style.top = newTop + 'px';
+    };
+
+    const onMouseUp = () => {
+      isDragging = false;
+      header.style.cursor = 'grab';
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  _jarvisActionPanelDraggable = true;
+}
 
 function openJarvisPanel(query, text, payload) {
   const popup = $('#jarvis-action-panel');
   if (!popup) return;
 
+  initJarvisActionPanelDraggable();
   popup.classList.remove('jarvis-panel-hidden');
 
   const queryElem = $('#jarvis-query-text');
@@ -11083,7 +11230,7 @@ window.jarvis = window.joe = {
       case 'joe_vad_speech_end':
       case 'jarvis_speech_ended':
       case 'joe_speech_ended':
-        if (isMicListening) {
+        if (isMicListening && !isSpacebarPushToTalk) {
           console.log('[HUD] Backend VAD detected speech end. Auto-endpointing STT.');
           stopMicListening(false);
         } else if (jarvisHudState === 'listening' || jarvisHudState === 'thinking') {

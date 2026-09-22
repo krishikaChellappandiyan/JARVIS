@@ -265,8 +265,11 @@ class SystemSkillEngine:
         handled, ack_msg, task, action_cat = router.route_input(text)
 
         if handled:
-            if action_cat.startswith("followup_"):
-                return True, ack_msg, False, "", {}
+            if action_cat.startswith("followup_") or not task:
+                payload = {"action_type": action_cat}
+                if action_cat == "set_operator_salutation":
+                    payload["salutation"] = self.memory.get_salutation()
+                return True, ack_msg, False, "", payload
 
             if task:
                 if task.type == TaskType.YOUTUBE_SEARCH.value:
@@ -1018,9 +1021,16 @@ class SystemSkillEngine:
 
 
         # 6. Cloud Docs & File Search
-        if any(kw in text_lower for kw in ["find file", "find document", "pdf", "report", "final_final", "read document", "buried file"]):
+        m_doc = re.search(
+            r'\b(?:find|search|open|read|locate|show)\s+(?:me\s+)?(?:the\s+)?(?:file|doc|document|pdf|notes)\s+([a-zA-Z0-9_\-\.\s]+)',
+            text_lower
+        )
+        if m_doc or any(kw in text_lower for kw in ["find file", "find document", "read document", "locate file", "search docs for", "final_final", "buried file"]):
             from modules.cloud_docs import CloudDocumentManager
-            q = re.sub(r'^(?:find\s+file|find\s+document|search\s+docs|read\s+pdf|pdf|report)\s*', '', text_lower).strip()
+            if m_doc:
+                q = m_doc.group(1).strip()
+            else:
+                q = re.sub(r'^(?:find\s+file|find\s+document|search\s+docs(?:\s+for)?|read\s+document|locate\s+file)\s*', '', text_lower).strip()
             if not q:
                 q = "Final_Final"
             msg = CloudDocumentManager().get_document_summary(q)
