@@ -2,6 +2,7 @@
 import sys
 import yaml
 from pathlib import Path
+from typing import Optional, Dict, Any, List, Union, Tuple
 sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 
 CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
@@ -1554,14 +1555,14 @@ class JarvisAPI:
                 from core.jarvis_reasoning_loop import JarvisCognitiveLoop
                 cognitive = JarvisCognitiveLoop(voice_engine=self._voice)
                 steps = cognitive.analyze_goal(text)
-                if len(steps) >= 2:
-                    print(f"[desktop] Multi-step cognitive loop activated ({len(steps)} steps) for: '{text}'")
+                if len(steps) >= 2 or (len(steps) == 1 and steps[0]["action"] in ("annotate", "cockpit", "satellites", "conflicts", "flights", "briefing")):
+                    print(f"[desktop] Autonomous cognitive loop activated ({len(steps)} steps) for: '{text}'")
                     def _live_speak(phrase: str):
                         self._emit("jarvis_stream_chunk", {"chunk": f"{phrase}\n"})
                         self._speak_and_suppress_echo(phrase)
 
                     def _live_ui(msg: str):
-                        self._emit("scan_status", {"message": msg})
+                        self._emit("scan_status", {"message": msg, "is_tactical": True})
 
                     plan_res = cognitive.execute_plan(text, on_progress_speak=_live_speak, on_progress_ui=_live_ui)
                     if plan_res.get("handled"):
@@ -2101,7 +2102,7 @@ class JarvisAPI:
           </g>
           <rect x="0" y="0" width="640" height="28" fill="rgba(2,8,16,0.9)" />
           <rect x="0" y="332" width="640" height="28" fill="rgba(2,8,16,0.9)" />
-          <text x="14" y="19" fill="#22C55E" font-family="monospace" font-size="11" font-weight="bold">● REC [LIVE OPTICAL FEED] // {label.upper()}</text>
+          <text x="14" y="19" fill="#22C55E" font-family="monospace" font-size="11" font-weight="bold">● REC [LIVE OPTICAL FEED] · {label.upper()}</text>
           <text x="440" y="19" fill="#FF9D2E" font-family="monospace" font-size="11">{now_str}</text>
           <text x="14" y="351" fill="#00F0FF" font-family="monospace" font-size="10">STATUS: SENSOR ONLINE (OPTICAL STREAM)</text>
           <text x="500" y="351" fill="#A1A1AA" font-family="monospace" font-size="10">ID: {camera_id}</text>
@@ -2137,41 +2138,103 @@ class JarvisAPI:
             print(f"[desktop] OSIRIS stats notice: {e}")
             return {}
 
-    def get_osiris_cctv(self, query: str = "", city: str = "", lat: float = None, lon: float = None, radius_km: float = None, limit: int = 40) -> list:
+    def get_osiris_cctv(self, query: str = "", city: str = "", lat: float = None, lon: float = None, radius_km: float = None, limit: int = 40, bounds: dict = None, category: str = "") -> list:
         """Query 28,400+ cameras from OSIRIS global surveillance network."""
         try:
             from modules.osiris_intel import get_osiris_client
-            return get_osiris_client().get_cctv_cameras(query=query, city=city, lat=lat, lon=lon, radius_km=radius_km, limit=limit)
+            return get_osiris_client().get_cctv_cameras(query=query, city=city, lat=lat, lon=lon, radius_km=radius_km, limit=limit, bounds=bounds, category=category)
         except Exception as e:
             print(f"[desktop] OSIRIS CCTV notice: {e}")
             return []
 
-    def get_osiris_flights(self, military_only: bool = False) -> dict:
+    def get_osiris_flights(self, military_only: bool = False, bounds: dict = None, category: str = "", limit: int = None) -> dict:
         """Query real-time ADS-B aircraft with military and GPS jamming separation."""
         try:
             from modules.osiris_intel import get_osiris_client
-            return get_osiris_client().get_flights(military_only=military_only)
+            return get_osiris_client().get_flights(military_only=military_only, bounds=bounds, category=category, limit=limit)
         except Exception as e:
             print(f"[desktop] OSIRIS flights notice: {e}")
             return {"total": 0, "military": [], "commercial": [], "private": [], "gps_jamming": []}
 
-    def get_osiris_satellites(self, query: str = "", category: str = "", limit: int = 50) -> list:
+    def get_osiris_satellites(self, query: str = "", category: str = "", limit: int = 50, bounds: dict = None) -> list:
         """Query 18,800+ tracked satellites with TLE positions from OSIRIS."""
         try:
             from modules.osiris_intel import get_osiris_client
-            return get_osiris_client().get_satellites(query=query, category=category, limit=limit)
+            return get_osiris_client().get_satellites(query=query, category=category, limit=limit, bounds=bounds)
         except Exception as e:
             print(f"[desktop] OSIRIS satellites notice: {e}")
             return []
 
-    def get_osiris_conflicts(self) -> dict:
+    def get_osiris_conflicts(self, bounds: dict = None, severity: str = "", limit: int = None) -> dict:
         """Query active warzones and frontline data from OSIRIS."""
         try:
             from modules.osiris_intel import get_osiris_client
-            return get_osiris_client().get_conflicts()
+            return get_osiris_client().get_conflicts(bounds=bounds, severity=severity, limit=limit)
         except Exception as e:
             print(f"[desktop] OSIRIS conflicts notice: {e}")
             return {"totalZones": 0, "activeWarzones": 0, "zones": []}
+
+    def get_active_satellites(self, category: str = "", limit: int = 60, bounds: dict = None) -> dict:
+        """Native CesiumJS bridge: Ingest tracked orbital assets by category.
+        Categories: 'iss', 'tiangong', 'gps', 'starlink', 'recon', 'all'.
+        Degrades gracefully with explicit UI states (ok, zero_results, capped, upstream_error).
+        """
+        try:
+            from modules.osiris_intel import get_osiris_client
+            return get_osiris_client().get_satellites(category=category, limit=limit, bounds=bounds, return_meta=True)
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e),
+                "count": 0,
+                "total_matched": 0,
+                "capped": False,
+                "limit": limit,
+                "satellites": [],
+                "debrief": f"Satellite bridge error: {e}",
+                "category": category,
+                "bounds": bounds,
+            }
+
+    def get_active_conflicts(self, bounds: Optional[dict] = None, severity: str = "") -> dict:
+        """Native CesiumJS bridge: Ingest active warzones, live frontlines, and tactical events.
+        Degrades gracefully with explicit UI states (ok, zero_results, capped, upstream_error).
+        """
+        try:
+            from modules.osiris_intel import get_osiris_client
+            return get_osiris_client().get_conflicts(bounds=bounds, severity=severity, return_meta=True)
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e),
+                "totalZones": 0,
+                "activeWarzones": 0,
+                "zones": [],
+                "liveEvents": [],
+                "capped": False,
+                "debrief": f"Conflict bridge error: {e}",
+                "bounds": bounds,
+            }
+
+    def get_cctv_in_viewport(self, bounds: Optional[dict] = None, limit: int = 60, category: Optional[str] = None) -> dict:
+        """Native CesiumJS bridge: Query CCTV cameras within the active 3D camera viewport bounds.
+        Degrades gracefully with explicit UI states (ok, zero_results, capped, upstream_error).
+        """
+        try:
+            from modules.osiris_intel import get_osiris_client
+            return get_osiris_client().get_cctv_cameras(bounds=bounds, limit=limit, category=category, return_meta=True)
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e),
+                "count": 0,
+                "total_in_bounds": 0,
+                "capped": False,
+                "limit": limit,
+                "cameras": [],
+                "debrief": f"Viewport CCTV query error: {e}",
+                "bounds": bounds,
+            }
 
     def get_osiris_route(self, from_loc: str, to_loc: str, mode: str = "auto") -> dict:
         """Query Valhalla/OSRM turn-by-turn routing from OSIRIS."""
@@ -2260,7 +2323,7 @@ class JarvisAPI:
             # Telemetry text overlays
             time_str = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now))
             draw.rectangle([0, 0, w, 28], fill=(2, 8, 16))
-            draw.text((12, 6), f"● REC [LIVE OPTICAL]  //  {info['name']}", fill=(34, 197, 94))
+            draw.text((12, 6), f"● REC [LIVE OPTICAL] · {info['name']}", fill=(34, 197, 94))
             draw.text((w - 230, 6), time_str, fill=(255, 157, 46))
 
             draw.rectangle([0, h - 26, w, h], fill=(2, 8, 16))
@@ -3103,8 +3166,27 @@ class JarvisAPI:
             cursor_ctx = getattr(self, '_last_screen_cursor_ctx', {})
             win_name = cursor_ctx.get("window_title", "")
             cursor_pos = f" (Cursor at X={cursor_ctx['x']}, Y={cursor_ctx['y']})" if cursor_ctx.get("x") is not None else ""
-            if win_name or cursor_pos:
-                question = f"[Desktop Context: Active Window '{win_name}'{cursor_pos}] {question}\n(Note: The operator is pointing directly at this area on screen. If they ask you to fix, run, or execute a command, provide the precise bash command enclosed in [CMD: <command>] so it can be executed.)"
+            
+            ocr_text = ""
+            if image_path and os.path.exists(image_path):
+                try:
+                    from modules.desktop_vision import DesktopVisionEngine
+                    ve = DesktopVisionEngine()
+                    crop_target = image_path
+                    if cursor_ctx.get("x") is not None and cursor_ctx.get("y") is not None:
+                        focal_crop = ve.crop_cursor_region(image_path, cursor_ctx["x"], cursor_ctx["y"], width=900, height=600)
+                        if focal_crop and os.path.exists(focal_crop):
+                            crop_target = focal_crop
+                    ocr_text = ve.extract_text_ocr(crop_target)
+                    if not ocr_text or len(ocr_text.strip()) < 5:
+                        ocr_text = ve.extract_text_ocr(image_path)
+                    if ocr_text:
+                        print(f"[desktop] Vision Eye extracted {len(ocr_text.splitlines())} lines of OCR text from screen focus.")
+                except Exception as ocr_err:
+                    print(f"[desktop] Vision Eye OCR extraction notice: {ocr_err}")
+
+            ocr_snippet = f"\n[OCR Text Under Cursor / Screen Focus]:\n\"\"\"\n{ocr_text[:3500]}\n\"\"\"\n" if ocr_text else ""
+            question = f"[Desktop Context: Active Window '{win_name}'{cursor_pos}]{ocr_snippet}User Prompt: {question}\n(Note: The operator is pointing directly at this area on screen. If they ask you to fix, run, or execute a command, provide the precise bash command enclosed in [CMD: <command>] so it can be executed.)"
 
         prefix_filter = _StreamingPrefixFilter(
             emit_clean_chunk,
@@ -3155,6 +3237,31 @@ class JarvisAPI:
                 self._voice.skills.open_application(result["app_action"])
             except Exception as app_err:
                 print(f"[desktop] Autonomous app launch error: {app_err}")
+        if result.get("media_action"):
+            try:
+                from modules.system_controller import SystemController
+                sc = SystemController()
+                act = result["media_action"].lower().strip()
+                if "vol_up" in act or "raise" in act or "increase" in act:
+                    sc.adjust_volume(15)
+                elif "vol_down" in act or "lower" in act or "decrease" in act:
+                    sc.adjust_volume(-15)
+                elif "unmute" in act:
+                    sc.mute(False)
+                elif "mute" in act:
+                    sc.mute(True)
+                elif "lock" in act:
+                    sc.lock_workstation()
+                elif any(w in act for w in ["pause", "stop"]):
+                    sc.media_control("pause")
+                elif any(w in act for w in ["play", "resume"]):
+                    sc.media_control("play")
+                elif "next" in act:
+                    sc.media_control("next")
+                elif any(w in act for w in ["prev", "previous"]):
+                    sc.media_control("previous")
+            except Exception as med_err:
+                print(f"[desktop] Autonomous media control error: {med_err}")
 
         if result.get("rate_limited"):
             self._emit("rate_limited", {})
@@ -4176,6 +4283,243 @@ class JarvisAPI:
 
 
 
+def setup_jarvis_bottle_routes(app, server_root_path, api=None, server_uid=None, js_callback=None):
+    """
+    Registers authentic local Jarvis routes on Bottle.
+    Enforces strict local static asset serving and deterministic 404 handling.
+    """
+    import bottle
+
+    if server_uid:
+        @app.post(f'/js_api/{server_uid}')
+        def js_api():
+            bottle.response.headers['Access-Control-Allow-Origin'] = '*'
+            bottle.response.headers['Access-Control-Allow-Methods'] = 'PUT, GET, POST, DELETE, OPTIONS'
+            bottle.response.headers['Access-Control-Allow-Headers'] = 'Origin, Accept, Content-Type, X-Requested-With, X-CSRF-Token'
+            body = json.loads(bottle.request.body.read().decode('utf-8'))
+            if js_callback and body.get('uid') in js_callback:
+                return json.dumps(js_callback[body['uid']](body))
+            return ""
+
+    @app.route('/api/adsb/<feed>')
+    def _bottle_adsb(feed="mil"):
+        bottle.response.content_type = 'application/json'
+        if api and hasattr(api, 'get_adsb_flights'):
+            return json.dumps(api.get_adsb_flights(feed))
+        return json.dumps({"flights": []})
+
+    @app.route('/api/cctv/sources')
+    def _bottle_cctv_sources():
+        bottle.response.headers['Access-Control-Allow-Origin'] = '*'
+        bottle.response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        bottle.response.content_type = 'application/json'
+        bottle.response.set_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        sources = api.get_cctv_sources() if (api and hasattr(api, 'get_cctv_sources')) else []
+        return json.dumps({"sources": sources})
+
+    @app.route('/api/cctv/frame/<camera_id>')
+    def _bottle_cctv(camera_id):
+        bottle.response.headers['Access-Control-Allow-Origin'] = '*'
+        bottle.response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        res = api.get_cctv_frame(camera_id) if (api and hasattr(api, 'get_cctv_frame')) else None
+        if isinstance(res, tuple) and len(res) == 2:
+            frame, mime = res
+        else:
+            frame = res
+            mime = 'image/jpeg'
+        if not frame and api and hasattr(api, 'get_cctv_synthetic_bmp'):
+            frame = api.get_cctv_synthetic_bmp(camera_id)
+            mime = 'image/bmp'
+        bottle.response.content_type = mime or 'image/jpeg'
+        bottle.response.set_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        return [frame] if isinstance(frame, bytes) else (frame or b"")
+
+    @app.route('/api/firms')
+    def _bottle_firms():
+        bottle.response.content_type = 'application/json'
+        if api and hasattr(api, 'get_firms_hotspots'):
+            return json.dumps(api.get_firms_hotspots())
+        return json.dumps({"hotspots": []})
+
+    @app.route('/api/satellites/active')
+    def _bottle_satellites_active():
+        bottle.response.headers['Access-Control-Allow-Origin'] = '*'
+        bottle.response.content_type = 'application/json'
+        cat = bottle.request.query.get('category', '')
+        try:
+            limit = int(bottle.request.query.get('limit', 60))
+        except (ValueError, TypeError):
+            limit = 60
+        if api and hasattr(api, 'get_active_satellites'):
+            return json.dumps(api.get_active_satellites(category=cat, limit=limit))
+        from modules.osiris_intel import get_osiris_client
+        return json.dumps(get_osiris_client().get_satellites(category=cat, limit=limit, return_meta=True))
+
+    @app.route('/api/conflicts/active')
+    def _bottle_conflicts_active():
+        bottle.response.headers['Access-Control-Allow-Origin'] = '*'
+        bottle.response.content_type = 'application/json'
+        if api and hasattr(api, 'get_active_conflicts'):
+            return json.dumps(api.get_active_conflicts())
+        from modules.osiris_intel import get_osiris_client
+        return json.dumps(get_osiris_client().get_conflicts(return_meta=True))
+
+    @app.route('/api/cctv/viewport', method=['GET', 'POST', 'OPTIONS'])
+    def _bottle_cctv_viewport():
+        bottle.response.headers['Access-Control-Allow-Origin'] = '*'
+        bottle.response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        bottle.response.headers['Access-Control-Allow-Headers'] = 'Origin, Accept, Content-Type'
+        if bottle.request.method == 'OPTIONS':
+            return ""
+        bottle.response.content_type = 'application/json'
+        bounds = None
+        limit = 60
+        category = None
+        if bottle.request.method == 'POST' and bottle.request.json:
+            bounds = bottle.request.json.get('bounds')
+            limit = int(bottle.request.json.get('limit', 60))
+            category = bottle.request.json.get('category')
+        else:
+            try:
+                limit = int(bottle.request.query.get('limit', 60))
+            except (ValueError, TypeError):
+                limit = 60
+            category = bottle.request.query.get('category')
+            south = bottle.request.query.get('south')
+            if south is not None:
+                bounds = {
+                    'south': float(south),
+                    'west': float(bottle.request.query.get('west', -180)),
+                    'north': float(bottle.request.query.get('north', 90)),
+                    'east': float(bottle.request.query.get('east', 180)),
+                }
+        if api and hasattr(api, 'get_cctv_in_viewport'):
+            return json.dumps(api.get_cctv_in_viewport(bounds=bounds, limit=limit, category=category))
+        from modules.osiris_intel import get_osiris_client
+        return json.dumps(get_osiris_client().get_cctv_cameras(bounds=bounds, limit=limit, category=category, return_meta=True))
+
+    _OVERPASS_CACHE = {}
+
+    def _generate_fallback_overpass_roads(query: str):
+        m = re.search(r'\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)', query)
+        if m:
+            s, w, n, e = float(m.group(1)), float(m.group(2)), float(m.group(3)), float(m.group(4))
+        else:
+            s, w, n, e = 11.41, 76.85, 11.45, 76.89
+        lat_span = max(0.001, n - s)
+        lon_span = max(0.001, e - w)
+        elements = []
+        road_types = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'residential']
+        idx = 10001
+        for i in range(6):
+            frac = 0.15 + (i * 0.14)
+            lat = s + lat_span * frac
+            rtype = road_types[i % len(road_types)]
+            geom = []
+            for step in range(11):
+                t = step / 10.0
+                lng = w + lon_span * t
+                curv_lat = lat + (math.sin(t * math.pi * 2 + i) * 0.003 * lat_span)
+                geom.append({"lat": round(curv_lat, 6), "lon": round(lng, 6)})
+            elements.append({
+                "type": "way",
+                "id": idx,
+                "tags": {"highway": rtype, "name": f"Tactical Corridor {i+1}", "oneway": "yes" if i % 2 == 0 else "no"},
+                "geometry": geom
+            })
+            idx += 1
+        for j in range(6):
+            frac = 0.15 + (j * 0.14)
+            lng = w + lon_span * frac
+            rtype = road_types[(j + 2) % len(road_types)]
+            geom = []
+            for step in range(11):
+                t = step / 10.0
+                lat = s + lat_span * t
+                curv_lng = lng + (math.cos(t * math.pi * 2 + j) * 0.003 * lon_span)
+                geom.append({"lat": round(lat, 6), "lon": round(curv_lng, 6)})
+            elements.append({
+                "type": "way",
+                "id": idx,
+                "tags": {"highway": rtype, "name": f"Arterial Way {j+1}", "oneway": "no"},
+                "geometry": geom
+            })
+            idx += 1
+        return {"elements": elements}
+
+    @app.route('/api/overpass', method=['GET', 'POST', 'OPTIONS'])
+    def _bottle_overpass():
+        bottle.response.headers['Access-Control-Allow-Origin'] = '*'
+        bottle.response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        bottle.response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        if bottle.request.method == 'OPTIONS':
+            return ''
+        bottle.response.content_type = 'application/json'
+        raw_body = ''
+        if bottle.request.body:
+            try:
+                raw_body = bottle.request.body.read().decode('utf-8', errors='ignore')
+            except Exception:
+                raw_body = ''
+        query = raw_body or bottle.request.query.get('data', '')
+        if not query:
+            return json.dumps({"elements": []})
+
+        cache_key = hashlib.md5(query.encode('utf-8')).hexdigest()
+        now = time.time()
+        if cache_key in _OVERPASS_CACHE:
+            cached_val, cached_time = _OVERPASS_CACHE[cache_key]
+            if now - cached_time < 3600:
+                return cached_val
+
+        mirrors = [
+            'https://overpass-api.de/api/interpreter',
+            'https://overpass.kumi.systems/api/interpreter',
+            'https://lz4.overpass-api.de/api/interpreter',
+            'https://overpass.private.coffee/api/interpreter'
+        ]
+        for mirror in mirrors:
+            try:
+                post_data = urllib.parse.urlencode({'data': query}).encode('utf-8')
+                req = urllib.request.Request(
+                    mirror,
+                    data=post_data,
+                    headers={'User-Agent': 'GodsEyeTactical/1.0', 'Accept': 'application/json'}
+                )
+                with urllib.request.urlopen(req, timeout=5.0) as resp:
+                    if resp.status == 200:
+                        text = resp.read().decode('utf-8', errors='ignore')
+                        _OVERPASS_CACHE[cache_key] = (text, now)
+                        return text
+            except Exception:
+                continue
+
+        return json.dumps(_generate_fallback_overpass_roads(query))
+
+    @app.route('/')
+    @app.route('/<file:path>')
+    def asset(file="app.html"):
+        if not server_root_path:
+            return bottle.HTTPResponse("Server root path not configured", status=500)
+        pure_file = (file.split('?')[0] if file else "app.html") or "app.html"
+        # Normalize path and prevent directory traversal
+        safe_file = os.path.normpath(pure_file).lstrip(os.sep)
+        full_local = os.path.join(server_root_path, safe_file)
+        root_abs = os.path.abspath(server_root_path)
+        if not os.path.abspath(full_local).startswith(root_abs):
+            return bottle.HTTPResponse("Forbidden", status=403)
+        if os.path.exists(full_local) and not os.path.isdir(full_local):
+            bottle.response.set_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            bottle.response.set_header('Pragma', 'no-cache')
+            bottle.response.set_header('Expires', '0')
+            return bottle.static_file(safe_file, root=server_root_path)
+        return bottle.HTTPResponse(
+            json.dumps({"error": "Not Found", "path": file}),
+            status=404,
+            headers={'Content-Type': 'application/json'}
+        )
+
+
 class JarvisDesktop:
     def launch(self, mode: str = "full"):
         import shutil
@@ -4286,338 +4630,13 @@ class JarvisDesktop:
                                 server.root_path = abspath(common_path) if common_path is not None else None
                                 app = bottle.Bottle()
 
-                                @app.post(f'/js_api/{server.uid}')
-                                def js_api():
-                                    bottle.response.headers['Access-Control-Allow-Origin'] = '*'
-                                    bottle.response.headers['Access-Control-Allow-Methods'] = 'PUT, GET, POST, DELETE, OPTIONS'
-                                    bottle.response.headers['Access-Control-Allow-Headers'] = 'Origin, Accept, Content-Type, X-Requested-With, X-CSRF-Token'
-                                    body = json.loads(bottle.request.body.read().decode('utf-8'))
-                                    if body['uid'] in server.js_callback:
-                                        return json.dumps(server.js_callback[body['uid']](body))
-                                    return ""
-
-                                # Hook dynamic OSINT and CCTV endpoints BEFORE catch-all static route!
-                                @app.route('/api/adsb/<feed>')
-                                def _bottle_adsb(feed="mil"):
-                                    bottle.response.content_type = 'application/json'
-                                    return json.dumps(api.get_adsb_flights(feed))
-
-                                @app.route('/api/cctv/sources')
-                                def _bottle_cctv_sources():
-                                    bottle.response.headers['Access-Control-Allow-Origin'] = '*'
-                                    bottle.response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-                                    bottle.response.content_type = 'application/json'
-                                    bottle.response.set_header('Cache-Control', 'no-cache, no-store, must-revalidate')
-                                    return json.dumps({"sources": api.get_cctv_sources()})
-
-                                @app.route('/api/cctv/frame/<camera_id>')
-                                def _bottle_cctv(camera_id):
-                                    bottle.response.headers['Access-Control-Allow-Origin'] = '*'
-                                    bottle.response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-                                    res = api.get_cctv_frame(camera_id)
-                                    if isinstance(res, tuple) and len(res) == 2:
-                                        frame, mime = res
-                                    else:
-                                        frame = res
-                                        mime = 'image/jpeg'
-                                    if not frame:
-                                        frame = api.get_cctv_synthetic_bmp(camera_id)
-                                        mime = 'image/bmp'
-                                    bottle.response.content_type = mime
-                                    bottle.response.set_header('Cache-Control', 'no-cache, no-store, must-revalidate')
-                                    return [frame] if isinstance(frame, bytes) else frame
-
-                                @app.route('/api/firms')
-                                def _bottle_firms():
-                                    bottle.response.content_type = 'application/json'
-                                    return json.dumps(api.get_firms_hotspots())
-
-                                _OVERPASS_CACHE = {}
-
-                                def _generate_fallback_overpass_roads(query: str):
-                                    m = re.search(r'\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)', query)
-                                    if m:
-                                        s, w, n, e = float(m.group(1)), float(m.group(2)), float(m.group(3)), float(m.group(4))
-                                    else:
-                                        s, w, n, e = 11.41, 76.85, 11.45, 76.89
-                                    lat_span = max(0.001, n - s)
-                                    lon_span = max(0.001, e - w)
-                                    elements = []
-                                    road_types = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'residential']
-                                    idx = 10001
-                                    for i in range(6):
-                                        frac = 0.15 + (i * 0.14)
-                                        lat = s + lat_span * frac
-                                        rtype = road_types[i % len(road_types)]
-                                        geom = []
-                                        for step in range(11):
-                                            t = step / 10.0
-                                            lng = w + lon_span * t
-                                            curv_lat = lat + (math.sin(t * math.pi * 2 + i) * 0.003 * lat_span)
-                                            geom.append({"lat": round(curv_lat, 6), "lon": round(lng, 6)})
-                                        elements.append({
-                                            "type": "way",
-                                            "id": idx,
-                                            "tags": {"highway": rtype, "name": f"Tactical Corridor {i+1}", "oneway": "yes" if i % 2 == 0 else "no"},
-                                            "geometry": geom
-                                        })
-                                        idx += 1
-                                    for j in range(6):
-                                        frac = 0.15 + (j * 0.14)
-                                        lng = w + lon_span * frac
-                                        rtype = road_types[(j + 2) % len(road_types)]
-                                        geom = []
-                                        for step in range(11):
-                                            t = step / 10.0
-                                            lat = s + lat_span * t
-                                            curv_lng = lng + (math.cos(t * math.pi * 2 + j) * 0.003 * lon_span)
-                                            geom.append({"lat": round(lat, 6), "lon": round(curv_lng, 6)})
-                                        elements.append({
-                                            "type": "way",
-                                            "id": idx,
-                                            "tags": {"highway": rtype, "name": f"Arterial Way {j+1}", "oneway": "no"},
-                                            "geometry": geom
-                                        })
-                                        idx += 1
-                                    return {"elements": elements}
-
-                                @app.route('/api/overpass', method=['GET', 'POST', 'OPTIONS'])
-                                def _bottle_overpass():
-                                    bottle.response.headers['Access-Control-Allow-Origin'] = '*'
-                                    bottle.response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-                                    bottle.response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-                                    if bottle.request.method == 'OPTIONS':
-                                        return ''
-                                    bottle.response.content_type = 'application/json'
-                                    raw_body = ''
-                                    if bottle.request.body:
-                                        try:
-                                            raw_body = bottle.request.body.read().decode('utf-8', errors='ignore')
-                                        except Exception:
-                                            raw_body = ''
-                                    query = raw_body or bottle.request.query.get('data', '')
-                                    if not query:
-                                        return json.dumps({"elements": []})
-
-                                    cache_key = hashlib.md5(query.encode('utf-8')).hexdigest()
-                                    now = time.time()
-                                    if cache_key in _OVERPASS_CACHE:
-                                        cached_val, cached_time = _OVERPASS_CACHE[cache_key]
-                                        if now - cached_time < 3600:
-                                            return cached_val
-
-                                    mirrors = [
-                                        'https://overpass-api.de/api/interpreter',
-                                        'https://overpass.kumi.systems/api/interpreter',
-                                        'https://lz4.overpass-api.de/api/interpreter',
-                                        'https://overpass.private.coffee/api/interpreter'
-                                    ]
-                                    for mirror in mirrors:
-                                        try:
-                                            post_data = urllib.parse.urlencode({'data': query}).encode('utf-8')
-                                            req = urllib.request.Request(
-                                                mirror,
-                                                data=post_data,
-                                                headers={'User-Agent': 'GodsEyeTactical/1.0', 'Accept': 'application/json'}
-                                            )
-                                            with urllib.request.urlopen(req, timeout=5.0) as resp:
-                                                if resp.status == 200:
-                                                    text = resp.read().decode('utf-8', errors='ignore')
-                                                    _OVERPASS_CACHE[cache_key] = (text, now)
-                                                    return text
-                                        except Exception:
-                                            continue
-
-                                    return json.dumps(_generate_fallback_overpass_roads(query))
-
-                                _OSIRIS_PROXY_BASE = "https://osirisai.live"
-                                _OSIRIS_DISK_CACHE = os.path.expanduser("~/.jarvis/osiris_cache/web")
-                                os.makedirs(_OSIRIS_DISK_CACHE, exist_ok=True)
-                                _OSIRIS_MEM_CACHE = {}
-
-                                def _fetch_osiris(path_and_query, method="GET", body=None, content_type=None):
-                                    clean_path = path_and_query.lstrip('/')
-                                    target_url = f"{_OSIRIS_PROXY_BASE}/{clean_path}" if clean_path else f"{_OSIRIS_PROXY_BASE}/"
-
-                                    is_static = any(clean_path.startswith(p) for p in ['_next/static/', 'vendor/', 'fonts/', 'site.webmanifest', 'favicon'])
-                                    cache_key = hashlib.md5(target_url.encode('utf-8')).hexdigest()
-                                    cache_file = os.path.join(_OSIRIS_DISK_CACHE, f"{cache_key}.bin")
-                                    meta_file = os.path.join(_OSIRIS_DISK_CACHE, f"{cache_key}.json")
-
-                                    if is_static and cache_key in _OSIRIS_MEM_CACHE:
-                                        return _OSIRIS_MEM_CACHE[cache_key]
-
-                                    if is_static and os.path.exists(cache_file) and os.path.exists(meta_file):
-                                        try:
-                                            with open(cache_file, 'rb') as f:
-                                                cached_bytes = f.read()
-                                            with open(meta_file, 'r', encoding='utf-8') as f:
-                                                meta = json.load(f)
-                                            res = (meta.get('status', 200), meta.get('headers', {'Content-Type': 'application/octet-stream'}), cached_bytes)
-                                            _OSIRIS_MEM_CACHE[cache_key] = res
-                                            return res
-                                        except Exception:
-                                            pass
-
-                                    req_headers = {
-                                        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-                                        'Accept': bottle.request.headers.get('Accept', '*/*'),
-                                        'Accept-Language': 'en-US,en;q=0.9',
-                                    }
-                                    if content_type:
-                                        req_headers['Content-Type'] = content_type
-
-                                    try:
-                                        req = urllib.request.Request(target_url, data=body, headers=req_headers, method=method)
-                                        with urllib.request.urlopen(req, timeout=12.0) as resp:
-                                            status = resp.status
-                                            resp_data = resp.read()
-                                            encoding = resp.headers.get('Content-Encoding', '').lower()
-                                            if 'gzip' in encoding:
-                                                try:
-                                                    import gzip
-                                                    resp_data = gzip.decompress(resp_data)
-                                                except Exception:
-                                                    pass
-
-                                            out_headers = {}
-                                            ct = resp.headers.get('Content-Type')
-                                            if ct:
-                                                out_headers['Content-Type'] = ct
-                                            else:
-                                                if clean_path.endswith('.js'):
-                                                    out_headers['Content-Type'] = 'application/javascript; charset=UTF-8'
-                                                elif clean_path.endswith('.css'):
-                                                    out_headers['Content-Type'] = 'text/css; charset=UTF-8'
-                                                elif clean_path.endswith('.json'):
-                                                    out_headers['Content-Type'] = 'application/json; charset=UTF-8'
-                                                elif clean_path.endswith('.png'):
-                                                    out_headers['Content-Type'] = 'image/png'
-                                                elif clean_path.endswith('.ico'):
-                                                    out_headers['Content-Type'] = 'image/x-icon'
-                                                elif clean_path.endswith('.svg'):
-                                                    out_headers['Content-Type'] = 'image/svg+xml'
-
-                                            if is_static and status == 200 and len(resp_data) > 0:
-                                                try:
-                                                    with open(cache_file, 'wb') as f:
-                                                        f.write(resp_data)
-                                                    with open(meta_file, 'w', encoding='utf-8') as f:
-                                                        json.dump({'status': status, 'headers': out_headers}, f)
-                                                    _OSIRIS_MEM_CACHE[cache_key] = (status, out_headers, resp_data)
-                                                except Exception:
-                                                    pass
-
-                                            return status, out_headers, resp_data
-                                    except urllib.error.HTTPError as he:
-                                        try:
-                                            err_data = he.read()
-                                        except Exception:
-                                            err_data = b'{"error":"Upstream HTTP error"}'
-                                        return he.code, {'Content-Type': 'application/json'}, err_data
-                                    except Exception as e:
-                                        return 502, {'Content-Type': 'application/json'}, json.dumps({"error": str(e)}).encode('utf-8')
-
-                                def _serve_osiris_proxy(path_and_query, method="GET", body=None, content_type=None):
-                                    status, headers, data = _fetch_osiris(path_and_query, method=method, body=body, content_type=content_type)
-                                    bottle.response.status = status
-                                    for k, v in headers.items():
-                                        bottle.response.set_header(k, v)
-                                    bottle.response.set_header('Access-Control-Allow-Origin', '*')
-                                    bottle.response.set_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-                                    bottle.response.set_header('Access-Control-Allow-Headers', 'Origin, Accept, Content-Type, Authorization, X-Requested-With')
-                                    for rm in ['X-Frame-Options', 'Content-Security-Policy', 'Content-Security-Policy-Report-Only', 'Strict-Transport-Security']:
-                                        if rm in bottle.response.headers:
-                                            del bottle.response.headers[rm]
-                                    return data
-
-                                @app.route('/osiris-live')
-                                @app.route('/osiris-live/')
-                                def _bottle_osiris_live():
-                                    status, headers, data = _fetch_osiris('/', method='GET')
-                                    try:
-                                        html = data.decode('utf-8', errors='ignore')
-                                        bootstrap = (
-                                            '<script>'
-                                            'window.__JARVIS_EMBEDDED_OSIRIS__=true;'
-                                            'if(window.location.pathname.startsWith("/osiris-live")){'
-                                            '  try{window.history.replaceState(null,"","/");}catch(e){}'
-                                            '}'
-                                            'window.addEventListener("message",function(evt){'
-                                            '  if(!evt.data)return;'
-                                            '  if(evt.data.type==="jarvis_fly_to"){'
-                                            '    const lat=parseFloat(evt.data.lat);'
-                                            '    const lon=parseFloat(evt.data.lon);'
-                                            '    const zoom=evt.data.zoom||11;'
-                                            '    if(!isNaN(lat)&&!isNaN(lon)){'
-                                            '      if(window._osirisMap&&typeof window._osirisMap.flyTo==="function"){'
-                                            '        window._osirisMap.flyTo({center:[lon,lat],zoom:zoom,essential:true});'
-                                            '      }'
-                                            '    }'
-                                            '  }'
-                                            '});'
-                                            '</script>'
-                                        )
-                                        if '<head>' in html:
-                                            html = html.replace('<head>', f'<head>{bootstrap}', 1)
-                                        else:
-                                            html = bootstrap + html
-                                        data = html.encode('utf-8')
-                                    except Exception:
-                                        pass
-                                    bottle.response.status = status
-                                    bottle.response.content_type = 'text/html; charset=utf-8'
-                                    bottle.response.set_header('Access-Control-Allow-Origin', '*')
-                                    for rm in ['X-Frame-Options', 'Content-Security-Policy', 'Content-Security-Policy-Report-Only', 'Strict-Transport-Security']:
-                                        if rm in bottle.response.headers:
-                                            del bottle.response.headers[rm]
-                                    return data
-
-                                @app.route('/_next/<path:path>')
-                                def _bottle_osiris_next(path):
-                                    qs = bottle.request.query_string
-                                    full = f"_next/{path}?{qs}" if qs else f"_next/{path}"
-                                    return _serve_osiris_proxy(full)
-
-                                @app.route('/vendor/<path:path>')
-                                def _bottle_osiris_vendor(path):
-                                    qs = bottle.request.query_string
-                                    full = f"vendor/{path}?{qs}" if qs else f"vendor/{path}"
-                                    return _serve_osiris_proxy(full)
-
-                                @app.route('/api/<path:path>', method=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
-                                def _bottle_osiris_api_fallback(path):
-                                    if bottle.request.method == 'OPTIONS':
-                                        bottle.response.headers['Access-Control-Allow-Origin'] = '*'
-                                        bottle.response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-                                        bottle.response.headers['Access-Control-Allow-Headers'] = '*'
-                                        return ''
-                                    qs = bottle.request.query_string
-                                    full = f"api/{path}?{qs}" if qs else f"api/{path}"
-                                    raw_body = None
-                                    if bottle.request.body:
-                                        try:
-                                            raw_body = bottle.request.body.read()
-                                        except Exception:
-                                            raw_body = None
-                                    ct = bottle.request.headers.get('Content-Type')
-                                    return _serve_osiris_proxy(full, method=bottle.request.method, body=raw_body, content_type=ct)
-
-                                @app.route('/')
-                                @app.route('/<file:path>')
-                                def asset(file="app.html"):
-                                    if not server.root_path:
-                                        return ''
-                                    pure_file = (file.split('?')[0] if file else "app.html") or "app.html"
-                                    full_local = os.path.join(server.root_path, pure_file)
-                                    if os.path.exists(full_local) and not os.path.isdir(full_local):
-                                        bottle.response.set_header('Cache-Control', 'no-cache, no-store, must-revalidate')
-                                        bottle.response.set_header('Pragma', 'no-cache')
-                                        bottle.response.set_header('Expires', 0)
-                                        return bottle.static_file(pure_file, root=server.root_path)
-                                    qs = bottle.request.query_string
-                                    full_req = f"{file}?{qs}" if qs else file
-                                    return _serve_osiris_proxy(full_req)
+                                setup_jarvis_bottle_routes(
+                                    app,
+                                    server.root_path,
+                                    api=api,
+                                    server_uid=server.uid,
+                                    js_callback=server.js_callback
+                                )
 
                             server.root_path = abspath(common_path) if common_path is not None else None
                             server.port = http_port or _get_random_port()

@@ -40,6 +40,7 @@ class TaskType(str, Enum):
     DIRECTIONS = "directions"
     LIVE_NEWS = "live_news"
     GENERIC_SKILL = "generic_skill"
+    TACTICAL_GOAL = "tactical_goal"
 
 @dataclass
 class TaskFinding:

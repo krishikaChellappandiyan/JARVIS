@@ -159,12 +159,16 @@ CRITICAL IDENTITY & CREATOR PROVENANCE:
   [CMD: <command>]
   To launch or switch to desktop applications (e.g. terminal, browser, code editor, calculator, files, settings), emit:
   [APP: <app_name>]
+  To control workstation media playback, volume, or lock the computer, emit:
+  [MEDIA: play | pause | next | prev | mute | unmute | vol_up | vol_down | lock]
   Examples:
   - User: "check disk space" -> [CMD: df -h]
   - User: "ping cloudflare" -> [CMD: ping -c 3 1.1.1.1]
   - User: "open up VS Code" -> [APP: code] Initializing VS Code for you now, Sir.
-  - User: "can you fire up the browser?" -> [APP: browser] Launching web browser now, Sir.
-  CRITICAL: Only emit [CMD: ...] or [APP: ...] when Sir specifically asks for system/application actions. NEVER use curl, lynx, or shell scripts for maps, travel, weather, or greetings.
+  - User: "pause the music" -> [MEDIA: pause] Pausing playback now, Sir.
+  - User: "turn up volume" -> [MEDIA: vol_up] Raising audio volume, Sir.
+  - User: "lock my screen" -> [MEDIA: lock] Locking workstation console now, Sir.
+  CRITICAL: Only emit [CMD: ...], [APP: ...], or [MEDIA: ...] when Sir specifically asks for system/application actions. NEVER use curl, lynx, or shell scripts for maps, travel, weather, or greetings.
 - Cognitive Web Intel & Autonomous Search Directive:
   You possess comprehensive internal knowledge across science, history, geography, technology, culture, and operational strategy.
   Answer directly from your vast internal knowledge for general questions, explanations, concepts, and trivia without searching.
@@ -724,7 +728,9 @@ class JarvisVoice:
                     "Authorization": f"Bearer {self.nvidia_key}",
                     "Content-Type": "application/json",
                 }
-                user_msg_content = image_content if image_content else prompt
+                # Nemotron is a frontier text LLM and expects text/OCR in prompt; only dedicated vision models accept image_url
+                is_vision_model = any(v in model_name.lower() for v in ["vision", "vl", "deplot", "pixtral", "llava", "multimodal"])
+                user_msg_content = image_content if (image_content and is_vision_model) else prompt
                 payload = {
                     "model": model_name,
                     "messages": [
@@ -1623,8 +1629,14 @@ class JarvisVoice:
                 tactical["app"] = m_app_dir.group(1).strip()
                 cleaned = re.sub(r'\[\s*APP\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
 
+            # Detect [MEDIA: <directive>]
+            m_media_dir = re.search(r'\[\s*MEDIA\s*:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
+            if m_media_dir:
+                tactical["media"] = m_media_dir.group(1).strip()
+                cleaned = re.sub(r'\[\s*MEDIA\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
+
             # Residual cleanup to ensure zero leaked tactical directives or brackets reach TTS
-            cleaned = re.sub(r'\[\s*(?:NAV|LAYER|CMD|ZOOM|RADIO|SFX|ANNOTATE|COCKPIT|SEARCH|YOUTUBE|APP)[^\]]*\]', '', cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r'\[\s*(?:NAV|LAYER|CMD|ZOOM|RADIO|SFX|ANNOTATE|COCKPIT|SEARCH|YOUTUBE|APP|MEDIA)[^\]]*\]', '', cleaned, flags=re.IGNORECASE)
             cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
             return cleaned, tactical
@@ -1699,6 +1711,7 @@ class JarvisVoice:
                 "cockpit_action": tactical_directives.get("cockpit"),
                 "search_action": tactical_directives.get("search") or resolved_search_query,
                 "app_action": tactical_directives.get("app"),
+                "media_action": tactical_directives.get("media"),
             }
 
         # Fall back to local SLM
@@ -1768,6 +1781,7 @@ class JarvisVoice:
             "cockpit_action": tactical_directives.get("cockpit"),
             "search_action": tactical_directives.get("search") or resolved_search_query,
             "app_action": tactical_directives.get("app"),
+            "media_action": tactical_directives.get("media"),
         }
 
     def classify_intent(self, text: str, current_target: Target = None) -> dict:

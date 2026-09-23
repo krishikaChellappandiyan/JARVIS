@@ -103,7 +103,13 @@ class JarvisCognitiveLoop:
         lat, lon = None, None
         clean_loc = (location_or_target or "").strip()
 
-        if clean_loc and clean_loc.lower() not in ("here", "this area", "current area", "current view", "this sector", "viewport"):
+        is_viewport = not clean_loc or any(ind in clean_loc.lower() for ind in (
+            "here", "this area", "current area", "current view", "this sector", "viewport",
+            "this place", "which i am seeing", "which im seeing", "where i am looking",
+            "where im looking", "where we are looking", "what i am seeing", "that i am seeing"
+        ))
+
+        if not is_viewport:
             geo = nav.geocode(clean_loc)
             if geo:
                 lat = geo.get("lat")
@@ -111,7 +117,7 @@ class JarvisCognitiveLoop:
                 clean_loc = geo.get("name", clean_loc)
 
         if not sector_name:
-            if clean_loc and clean_loc.lower() not in ("here", "this area", "current area", "current view", "this sector", "viewport"):
+            if not is_viewport and clean_loc:
                 sector_name = f"{clean_loc.upper()} {classification}"
             else:
                 sector_name = f"TACTICAL {classification}"
@@ -124,6 +130,7 @@ class JarvisCognitiveLoop:
             "classification": classification,
             "use_camera_center": (lat is None or lon is None)
         }
+        self.bus.emit("glide_to_telemetry", {})
         self.bus.emit("annotate_area", payload)
         self.bus.emit("jarvis_play_sfx", {"effect": "target_lock"})
 
@@ -153,6 +160,7 @@ class JarvisCognitiveLoop:
         fe = FlightIntelEngine()
         flights = fe.get_military_aircraft(limit=8)
         self.tool_tactical_layer("flights", True)
+        self.bus.emit("glide_to_telemetry", {})
         debrief = fe.format_tactical_debrief(flights)
         return {"success": True, "count": len(flights), "flights": flights[:5], "debrief": debrief}
 
@@ -309,6 +317,18 @@ class JarvisCognitiveLoop:
             if m_air and m_air.group(1).lower() not in ('the', 'local', 'our', 'all', 'pull', 'scan', 'check'):
                 loc_candidate = m_air.group(1).strip()
 
+        # Viewport relative references check (e.g. "this place which i am seeing", "here", "current view")
+        viewport_indicators = [
+            "this place", "this area", "this location", "this spot", "current view",
+            "current viewport", "current area", "current vantage", "where i am",
+            "which i am seeing", "which im seeing", "that i am seeing", "that im seeing",
+            "where i am seeing", "where i am looking", "where im looking",
+            "where we are looking", "what i am seeing", "what im seeing",
+            "here", "the map", "the screen", "the globe"
+        ]
+        if loc_candidate and any(ind in loc_candidate.lower() for ind in viewport_indicators):
+            loc_candidate = ""
+
         has_cctv = any(w in text_lower for w in ["cctv", "camera", "cameras", "cam", "cams", "optical", "surveillance", "vantage"])
         has_traffic = any(w in text_lower for w in ["traffic", "congestion", "road", "roads", "flow", "jam", "commute", "highway"]) and "air traffic" not in text_lower
         has_flight = any(w in text_lower for w in ["flight", "flights", "aircraft", "plane", "planes", "radar", "airspace", "ads-b", "adsb", "chase", "air traffic"])
@@ -341,9 +361,10 @@ class JarvisCognitiveLoop:
         if has_annotate:
             m_sec = re.search(r'(?:annotate|mark|highlight|designate)\s+(?:this\s+area|area|sector)?\s*(?:as|called|named)?\s*(.*)', user_text.strip(), flags=re.IGNORECASE)
             raw_sec = m_sec.group(1).strip() if m_sec else ""
-            clean_sec = re.sub(r'\b(?:with|at|radius|perimeter|km|miles?)\b.*$', '', raw_sec, flags=re.IGNORECASE).strip()
+            clean_sec = re.sub(r'\b(?:in|at|around|for|over|near)\s+(?:this\s+place|this\s+area|here|current\s+view|where\s+i|which\s+i|what\s+i|that\s+i).*$', '', raw_sec, flags=re.IGNORECASE).strip()
+            clean_sec = re.sub(r'\b(?:with|at|radius|perimeter|km|miles?)\b.*$', '', clean_sec, flags=re.IGNORECASE).strip()
             clean_sec = re.sub(r'^(?:a|an|the)\s+', '', clean_sec, flags=re.IGNORECASE).strip()
-            if re.match(r'^(?:\d+[\w\s]*|this\s+area|area|sector)?$', clean_sec, flags=re.IGNORECASE):
+            if re.match(r'^(?:\d+[\w\s]*|this\s+place.*|this\s+area.*|area|sector)?$', clean_sec, flags=re.IGNORECASE):
                 clean_sec = ""
             sec_name = clean_sec or (f"{loc_candidate.title()} Sector" if loc_candidate else "Tactical Defense Zone")
             m_rad = re.search(r'(\d+(?:\.\d+)?)\s*(?:km|kilo)', text_lower)
@@ -495,7 +516,7 @@ class JarvisCognitiveLoop:
         sal = self.get_salutation()
 
         task = self.task_manager.create_task(
-            type_=TaskType.INVESTIGATION.value,
+            type_=TaskType.TACTICAL_GOAL.value,
             title=f"Goal: {user_text[:35]}",
             data={"original_prompt": user_text, "steps_total": len(steps)}
         )

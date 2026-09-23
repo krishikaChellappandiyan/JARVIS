@@ -4114,7 +4114,6 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
 <div id="starfield"></div>
 <div id="cesium-spatial-wrapper">
   <div id="cesiumContainer"></div>
-  <iframe id="osirisContainer" src="about:blank" data-src="/osiris-live" allow="accelerometer; autoplay; camera; encrypted-media; geolocation; gyroscope; fullscreen" style="display:none; width:100%; height:100%; border:none; position:absolute; inset:0; z-index:2; background:#040711;"></iframe>
   <div id="orbital-space-aperture"></div>
 </div>
 <div id="bg-layer"></div>
@@ -4238,6 +4237,7 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
         <button class="globe-style-btn active" id="btn-engine-cesium" onclick="window.setGlobeEngine('cesium')" style="padding:6px; font-size:9px; font-weight:700;">🌐 CESIUM 3D</button>
         <button class="globe-style-btn" id="btn-engine-osiris" onclick="window.setGlobeEngine('osiris')" style="padding:6px; font-size:9px; font-weight:700; color:#00F0FF; border-color:rgba(0,240,255,0.5);">⚡ OSIRIS (60 FPS)</button>
       </div>
+      <div id="osiris-telemetry-debrief" style="display:none; margin-top:6px; font-size:8.5px; font-family:var(--mono); color:#38BDF8; background:rgba(0,240,255,0.08); border-left:2px solid #00F0FF; padding:4px 6px; border-radius:2px; line-height:1.3;"></div>
     </div>
 
     <!-- Earth Visual Style Selector -->
@@ -4775,7 +4775,7 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
       <div class="cr-tag-badge">
         <span class="cr-snowflake">❄</span>
         <span class="cr-title">THE COLD ROOM</span>
-        <span class="cr-sub">// TACTICAL OSINT CHAMBER</span>
+        <span class="cr-sub">· TACTICAL OSINT CHAMBER</span>
       </div>
       <div class="cr-target-pill" id="cr-target-pill" onclick="window.toggleCaseDrawer()" title="Open Case Dossier & Cross-Verification Drawer">
         <span class="cr-target-label">CASE:</span>
@@ -10130,7 +10130,7 @@ const TaskSurfaceManager = {
               </button>
             </div>
             <div style="font-size:11.5px; color:#7B8087; margin-bottom:8px; font-family:var(--mono); display:flex; align-items:center; gap:4px;">
-              <span style="opacity:0.6; margin-right:2px;">//</span><span>${this.escapeHtml(domain)}</span>
+              <span style="opacity:0.6; margin-right:4px;">·</span><span>${this.escapeHtml(domain)}</span>
             </div>
             <div style="font-size:13px; color:#D0D3D7; line-height:1.65; font-family:var(--sans);">${this.escapeHtml(f.snippet || '')}</div>
           </div>
@@ -10908,6 +10908,8 @@ function initJarvisActionPanelDraggable() {
   _jarvisActionPanelDraggable = true;
 }
 
+let jarvisTypewriterInterval = null;
+
 function openJarvisPanel(query, text, payload) {
   const popup = $('#jarvis-action-panel');
   if (!popup) return;
@@ -11274,12 +11276,15 @@ window.jarvis = window.joe = {
         setHudState('thinking');
         showSubtitles(data.message, 'RECON STREAM');
         $('#session-status').textContent = 'running';
-        if (window.glideToSpatial && SpatialNav.currentX > -300) {
-          window.glideToSpatial(-950);
-        }
-        if (window.ColdRoom) {
-          ColdRoom.setStatus(data.message || 'Scanning...', true);
-          if (data.target) ColdRoom.setTarget(data.target);
+        const isColdRoomInvestigation = data && !data.is_tactical && (data.is_investigation === true || (data.target && !data.is_telemetry));
+        if (isColdRoomInvestigation) {
+          if (window.glideToSpatial && SpatialNav.currentX > -300) {
+            window.glideToSpatial(-950);
+          }
+          if (window.ColdRoom) {
+            ColdRoom.setStatus(data.message || 'Scanning...', true);
+            if (data.target) ColdRoom.setTarget(data.target);
+          }
         }
         break;
 
@@ -11438,6 +11443,9 @@ window.jarvis = window.joe = {
           const color = data.color || (data.classification === 'NO-FLY ZONE' ? '#EF4444' : '#00F0FF');
           const lat = (data.lat != null) ? Number(data.lat) : null;
           const lon = (data.lon != null) ? Number(data.lon) : null;
+          if (window.glideToSpatial && SpatialNav && SpatialNav.currentX !== 950) {
+            window.glideToSpatial(950);
+          }
           if (typeof window.annotateCurrentArea === 'function') {
             window.annotateCurrentArea(secName, radiusKm, color, lat, lon);
           }
@@ -13804,60 +13812,60 @@ window.glideToSpatial = function(x) {
 };
 
 window.setGlobeEngine = function(engine) {
-  const osirisFrame = document.getElementById('osirisContainer');
   const cesiumCont = document.getElementById('cesiumContainer');
   const badge = document.getElementById('globe-engine-badge');
   const btnCesium = document.getElementById('btn-engine-cesium');
   const btnOsiris = document.getElementById('btn-engine-osiris');
 
+  // Keep Cesium container visible — native 3D engine without external iframe
+  if (cesiumCont) cesiumCont.style.display = 'block';
+
   window._activeGlobeEngine = engine;
 
   if (engine === 'osiris') {
-    if (cesiumCont) cesiumCont.style.display = 'none';
-    if (osirisFrame) {
-      osirisFrame.style.display = 'block';
-      if (!osirisFrame.src || osirisFrame.src === 'about:blank' || osirisFrame.src.includes('osirisai.live')) {
-        osirisFrame.src = '/osiris-live';
-      }
-    }
     if (badge) {
-      badge.textContent = 'OSIRIS 60 FPS';
+      badge.textContent = '⚡ OSIRIS (60 FPS)';
       badge.style.color = '#00F0FF';
       badge.style.borderColor = 'rgba(0,240,255,0.4)';
+      badge.style.background = 'rgba(0,240,255,0.15)';
     }
     if (btnCesium) btnCesium.classList.remove('active');
     if (btnOsiris) btnOsiris.classList.add('active');
-  } else {
-    if (osirisFrame) osirisFrame.style.display = 'none';
-    if (cesiumCont) {
-      cesiumCont.style.display = 'block';
-      if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
-        window.cesiumViewer.scene.requestRender();
-      }
+
+    if (window.OsirisCesiumLayer && typeof window.OsirisCesiumLayer.enable === 'function') {
+      window.OsirisCesiumLayer.enable();
     }
+    if (typeof showSubtitles === 'function') {
+      showSubtitles('⚡ OSIRIS FULL SPECTRUM LAYER ACTIVATED (Satellites • Conflicts • 28k CCTV)', 'OSIRIS 60 FPS');
+    }
+  } else {
     if (badge) {
       badge.textContent = 'CESIUM 3D';
       badge.style.color = '#22C55E';
       badge.style.borderColor = 'rgba(34,197,94,0.3)';
+      badge.style.background = 'rgba(34,197,94,0.15)';
     }
     if (btnCesium) btnCesium.classList.add('active');
     if (btnOsiris) btnOsiris.classList.remove('active');
+
+    if (window.OsirisCesiumLayer && typeof window.OsirisCesiumLayer.disable === 'function') {
+      window.OsirisCesiumLayer.disable();
+    }
+    const debriefEl = document.getElementById('osiris-telemetry-debrief');
+    if (debriefEl) debriefEl.style.display = 'none';
+
+    if (typeof showSubtitles === 'function') {
+      showSubtitles('STANDARD CESIUM 3D BASELINE RESTORED', 'CESIUM 3D');
+    }
+  }
+
+  if (window.cesiumViewer && !window.cesiumViewer.isDestroyed()) {
+    window.cesiumViewer.scene.requestRender();
   }
   if (window.JarvisSFX) window.JarvisSFX.scanRadar();
 };
 
 window.focusGlobeCoordinates = function(lat, lon, label) {
-  const osirisFrame = document.getElementById('osirisContainer');
-  if (osirisFrame && osirisFrame.contentWindow) {
-    try {
-      osirisFrame.contentWindow.postMessage({
-        type: 'jarvis_fly_to',
-        lat: lat,
-        lon: lon,
-        label: label
-      }, '*');
-    } catch (e) {}
-  }
   if (window.JarvisPatrol && window.JarvisPatrol.active && !window.JarvisPatrol._isPatrolling) {
     window.JarvisPatrol.stop();
   }
@@ -14277,7 +14285,7 @@ const JarvisAnnotations = {
     // Holographic arrival HUD card billboard at 450m altitude
     const cardCanvas = this.createHudCardCanvas(
       label,
-      'TRANSIT COMPLETE // ARRIVAL',
+      'TRANSIT COMPLETE · ARRIVAL',
       `LAT: ${lat.toFixed(4)}°N | LON: ${lon.toFixed(4)}°E`,
       'STATUS: SECTOR ACQUIRED & SYNCHRONIZED',
       colorHex
@@ -14353,7 +14361,7 @@ const JarvisAnnotations = {
     // Holographic HUD Card Billboard
     const cardCanvas = this.createHudCardCanvas(
       label,
-      'TACTICAL PIN // ACQUIRED',
+      'TACTICAL PIN · ACQUIRED',
       `LAT: ${lat.toFixed(4)}°N | LON: ${lon.toFixed(4)}°E`,
       'STATUS: ACTIVE TARGET LOCK',
       colorHex
@@ -17405,8 +17413,14 @@ function initGlobeIntelligence(viewer) {
     ctx.fillText(timeStr, w - 215, 68);
   }
 
-  function renderCctvFrustum(cam) {
-    if (!cam || !cam.lat || !cam.lon || !_cctvDataSource) return;
+  function renderCctvFrustum(cam, targetDS) {
+    const ds = targetDS || _cctvDataSource;
+    if (!cam || !cam.lat || !(cam.lon != null || cam.lng != null) || !ds) return;
+    const cLon = (cam.lon != null) ? Number(cam.lon) : Number(cam.lng);
+    const cLat = Number(cam.lat);
+    cam.lon = cLon;
+    cam.lat = cLat;
+
     const geom = computeCameraFrustum(cam);
     const posMount = Cesium.Cartesian3.fromDegrees(geom.mount.lon, geom.mount.lat, geom.mount.alt);
     const posCapCenter = Cesium.Cartesian3.fromDegrees(geom.capCenter.lon, geom.capCenter.lat, geom.capCenter.alt);
@@ -17431,7 +17445,7 @@ function initGlobeIntelligence(viewer) {
     };
 
     // 1. Camera Mount Optical Gizmo Billboard with Label (God's Eye always-on-top)
-    _cctvDataSource.entities.add({
+    ds.entities.add({
       position: posMount,
       billboard: {
         image: CAMERA_ICON,
@@ -17459,7 +17473,7 @@ function initGlobeIntelligence(viewer) {
 
     // 2. Optical Mast Line Anchoring Camera to Ground Terrain (Snapped to actual elevation, never sea-level 0m)
     const groundBaseAlt = Math.max(0, geom.mount.alt - (cam.mountHeightM || 28));
-    _cctvDataSource.entities.add({
+    ds.entities.add({
       polyline: {
         positions: [
           Cesium.Cartesian3.fromDegrees(cam.lon, cam.lat, groundBaseAlt),
@@ -17474,7 +17488,7 @@ function initGlobeIntelligence(viewer) {
     // 3. The 4 Corner Rays of the 3D Frustum Pyramid
     const rayMaterial = new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#00F0FF').withAlpha(0.85));
     [posTL, posTR, posBR, posBL].forEach(cornerPos => {
-      _cctvDataSource.entities.add({
+      ds.entities.add({
         polyline: {
           positions: [posMount, cornerPos],
           width: 1.6,
@@ -17492,7 +17506,7 @@ function initGlobeIntelligence(viewer) {
       [posMount, posBR, posBL],
       [posMount, posBL, posTL]
     ].forEach((tri) => {
-      _cctvDataSource.entities.add({
+      ds.entities.add({
         polygon: {
           hierarchy: new Cesium.PolygonHierarchy(tri),
           material: new Cesium.ColorMaterialProperty(coneFill),
@@ -17503,7 +17517,7 @@ function initGlobeIntelligence(viewer) {
     });
 
     // 4. The Pitched Far-Cap Closed Rectangle Polyline
-    _cctvDataSource.entities.add({
+    ds.entities.add({
       polyline: {
         positions: [posTL, posTR, posBR, posBL, posTL],
         width: 2.2,
@@ -17518,7 +17532,7 @@ function initGlobeIntelligence(viewer) {
     initCvs.height = 540;
     paintProjectionPlaceholder(initCvs.getContext('2d'), cam);
 
-    _cctvDataSource.entities.add({
+    ds.entities.add({
       id: `cctv-${cam.id}-plane`,
       show: false,
       position: posCapCenter,
@@ -17531,15 +17545,13 @@ function initGlobeIntelligence(viewer) {
           transparent: false,
           color: Cesium.Color.WHITE
         }),
-        outline: true,
-        outlineColor: Cesium.Color.fromCssColorString('#22C55E'),
-        outlineWidth: 2
+        outline: false
       },
       _tacticalData: tacticalData
     });
 
     // 5b. Floating In-World Street Name Badge (God's Eye Parity: e.g. "Upper St Nth/Duncan St" / "IH 35 SVRD / 6TH ST")
-    _cctvDataSource.entities.add({
+    ds.entities.add({
       id: `cctv-${cam.id}-label`,
       show: false,
       position: Cesium.Cartesian3.fromDegrees(geom.capCenter.lon, geom.capCenter.lat, geom.capCenter.alt + geom.halfH + 3.8),
@@ -17560,6 +17572,7 @@ function initGlobeIntelligence(viewer) {
       _tacticalData: tacticalData
     });
   }
+  window.renderCctvFrustum = renderCctvFrustum;
 
   // God's Eye High-Resolution In-World 3D Monitor Plane Tactical Painter
   window.updateCctvMonitorPlaneImage = function(cameraId) {
@@ -19457,6 +19470,615 @@ function initGlobeIntelligence(viewer) {
     }
     viewer.scene.requestRender();
   };
+
+  // =========================================================================
+  // OSIRIS FULL SPECTRUM LAYER (NATIVE CESIUM 60 FPS DATA INTEGRATION)
+  // =========================================================================
+  function initOsirisCesiumLayer(viewer) {
+    if (!viewer || viewer.isDestroyed()) return;
+
+    const _osirisSatellitesDS = new Cesium.CustomDataSource('osiris-satellites');
+    const _osirisConflictsDS = new Cesium.CustomDataSource('osiris-conflicts');
+    const _osirisCctvDS = new Cesium.CustomDataSource('osiris-cctv');
+    const _osirisClustersDS = new Cesium.CustomDataSource('osiris-clusters');
+
+    _osirisSatellitesDS.show = false;
+    _osirisConflictsDS.show = false;
+    _osirisCctvDS.show = false;
+    _osirisClustersDS.show = false;
+
+    viewer.dataSources.add(_osirisSatellitesDS);
+    viewer.dataSources.add(_osirisConflictsDS);
+    viewer.dataSources.add(_osirisCctvDS);
+    viewer.dataSources.add(_osirisClustersDS);
+
+    let _osirisActive = false;
+    let _activeLOD = null;
+    let _lodDebounceTimer = null;
+    let _osirisPollTimer = null;
+    let _isFetchingCctv = false;
+
+    // High-altitude regional clusters (> 1,200 km)
+    const OSIRIS_GLOBAL_CLUSTERS = [
+      { label: "OSIRIS GLOBAL CORE\n28,400+ SURVEILLANCE FEEDS", lat: 20.0, lon: 10.0, radiusM: 900000 },
+      { label: "NORTH AMERICA SECTOR\n12,840 CAMERAS", lat: 38.5, lon: -98.0, radiusM: 700000 },
+      { label: "EUROPEAN SECTOR\n8,420 CAMERAS", lat: 50.0, lon: 10.5, radiusM: 550000 },
+      { label: "ASIA-PACIFIC / INDIA\n5,610 CAMERAS", lat: 20.5, lon: 78.9, radiusM: 650000 },
+      { label: "TOKYO METROPOLITAN\n1,120 CAMERAS", lat: 35.68, lon: 139.75, radiusM: 250000 },
+      { label: "OCEANIA SECTOR\n410 CAMERAS", lat: -25.2, lon: 133.7, radiusM: 400000 },
+    ];
+
+    function populateHighAltitudeClusters() {
+      _osirisClustersDS.entities.removeAll();
+      OSIRIS_GLOBAL_CLUSTERS.forEach(cl => {
+        const pos = Cesium.Cartesian3.fromDegrees(cl.lon, cl.lat, 0);
+        _osirisClustersDS.entities.add({
+          position: pos,
+          ellipse: {
+            semiMajorAxis: cl.radiusM,
+            semiMinorAxis: cl.radiusM,
+            material: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#00F0FF').withAlpha(0.12)),
+            outline: false
+          },
+          label: {
+            text: `📷 ${cl.label}`,
+            font: 'bold 11px JetBrains Mono, monospace',
+            fillColor: Cesium.Color.fromCssColorString('#00F0FF'),
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 3,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.CENTER,
+            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+            disableDepthTestDistance: 500000
+          }
+        });
+      });
+    }
+
+    function getCesiumViewportBounds() {
+      if (!viewer || viewer.isDestroyed()) return null;
+      try {
+        const rect = viewer.camera.computeViewRectangle(viewer.scene.globe.ellipsoid);
+        if (rect) {
+          return {
+            south: Cesium.Math.toDegrees(rect.south),
+            west: Cesium.Math.toDegrees(rect.west),
+            north: Cesium.Math.toDegrees(rect.north),
+            east: Cesium.Math.toDegrees(rect.east)
+          };
+        }
+      } catch(e) {}
+      const carto = viewer.camera.positionCartographic;
+      if (!carto) return null;
+      const lat = Cesium.Math.toDegrees(carto.latitude);
+      const lon = Cesium.Math.toDegrees(carto.longitude);
+      const span = Math.min(25.0, Math.max(0.08, (carto.height / 111000) * 0.7));
+      return {
+        south: Math.max(-90, lat - span),
+        west: ((lon - span + 540) % 360) - 180,
+        north: Math.min(90, lat + span),
+        east: ((lon + span + 540) % 360) - 180
+      };
+    }
+
+    const _osirisFeedStatus = {
+      satellites: { status: 'ok', debrief: '' },
+      conflicts: { status: 'ok', debrief: '' },
+      cctv: { status: 'ok', debrief: '' }
+    };
+
+    function emitTacticalHudAlert(text, tag = 'OFFLINE CONTINGENCY') {
+      const sub = document.getElementById('jarvis-hud-subtitles') || document.getElementById('joe-hud-subtitles');
+      const tagEl = document.getElementById('jarvis-subtitle-tag') || document.getElementById('joe-subtitle-tag');
+      const textEl = document.getElementById('jarvis-subtitle-text') || document.getElementById('joe-subtitle-text');
+      if (sub && text) {
+        if (tagEl) {
+          tagEl.textContent = tag.toUpperCase();
+          tagEl.style.color = '#EF4444';
+        }
+        if (textEl) {
+          textEl.textContent = text;
+          textEl.style.color = '#FCA5A5';
+        }
+        sub.classList.remove('jarvis-subtitles-hidden');
+        sub.classList.remove('joe-subtitles-hidden');
+        if (typeof subtitleHideTimer !== 'undefined' && subtitleHideTimer) clearTimeout(subtitleHideTimer);
+        subtitleHideTimer = setTimeout(() => {
+          sub.classList.add('jarvis-subtitles-hidden');
+          sub.classList.add('joe-subtitles-hidden');
+          if (tagEl) tagEl.style.color = '';
+          if (textEl) textEl.style.color = '';
+        }, 7000);
+      }
+    }
+
+    function setOsirisHudDebrief(status, debrief, sourceTag) {
+      const tagKey = (sourceTag || 'osiris').toLowerCase();
+      if (_osirisFeedStatus[tagKey]) {
+        _osirisFeedStatus[tagKey] = { status: status || 'ok', debrief: debrief || '' };
+      }
+
+      const banner = document.getElementById('osiris-telemetry-debrief');
+      const badge = document.getElementById('globe-engine-badge');
+
+      // Prioritize error states across all active OSIRIS feeds
+      let effectiveStatus = status || 'ok';
+      let effectiveDebrief = debrief || '';
+      let effectiveSource = sourceTag || 'OSIRIS';
+
+      for (const [k, v] of Object.entries(_osirisFeedStatus)) {
+        if (v.status === 'upstream_error' || v.status === 'error') {
+          effectiveStatus = 'upstream_error';
+          effectiveDebrief = v.debrief;
+          effectiveSource = k.toUpperCase();
+          break;
+        } else if (v.status === 'capped' && effectiveStatus !== 'upstream_error') {
+          effectiveStatus = 'capped';
+          effectiveDebrief = v.debrief;
+          effectiveSource = k.toUpperCase();
+        } else if (v.status === 'zero_results' && effectiveStatus === 'ok') {
+          effectiveStatus = 'zero_results';
+          effectiveDebrief = v.debrief;
+          effectiveSource = k.toUpperCase();
+        }
+      }
+
+      if (banner) {
+        if (effectiveStatus === 'upstream_error' || effectiveStatus === 'error') {
+          banner.style.display = 'block';
+          banner.style.borderLeftColor = '#EF4444';
+          banner.style.color = '#EF4444';
+          banner.style.background = 'rgba(239,68,68,0.12)';
+          banner.innerHTML = `<span style="font-weight:700;">[OFFLINE CONTINGENCY]:</span> ${escapeHtml(effectiveDebrief || 'Upstream telemetry offline')}`;
+          if (badge) {
+            badge.textContent = '⚡ CONTINGENCY (OFFLINE)';
+            badge.style.color = '#EF4444';
+            badge.style.borderColor = 'rgba(239,68,68,0.5)';
+            badge.style.background = 'rgba(239,68,68,0.2)';
+          }
+        } else if (effectiveStatus === 'capped') {
+          banner.style.display = 'block';
+          banner.style.borderLeftColor = '#F59E0B';
+          banner.style.color = '#F59E0B';
+          banner.style.background = 'rgba(245,158,11,0.08)';
+          banner.innerHTML = `<span style="font-weight:700;">[${effectiveSource} CAPPED]:</span> ${escapeHtml(effectiveDebrief)}`;
+        } else if (effectiveStatus === 'zero_results') {
+          banner.style.display = 'block';
+          banner.style.borderLeftColor = '#38BDF8';
+          banner.style.color = '#38BDF8';
+          banner.style.background = 'rgba(0,240,255,0.08)';
+          banner.innerHTML = `<span style="font-weight:700;">[${effectiveSource} 0 RESULTS]:</span> ${escapeHtml(effectiveDebrief)}`;
+        } else if (effectiveDebrief) {
+          banner.style.display = 'block';
+          banner.style.borderLeftColor = '#00F0FF';
+          banner.style.color = '#38BDF8';
+          banner.style.background = 'rgba(0,240,255,0.08)';
+          banner.innerHTML = `<span style="font-weight:700;">[${effectiveSource}]:</span> ${escapeHtml(effectiveDebrief)}`;
+          if (badge && _osirisActive) {
+            badge.textContent = '⚡ OSIRIS (60 FPS)';
+            badge.style.color = '#00F0FF';
+            badge.style.borderColor = 'rgba(0,240,255,0.4)';
+            badge.style.background = 'rgba(0,240,255,0.15)';
+          }
+        }
+      }
+
+      if (effectiveStatus === 'upstream_error' || effectiveStatus === 'error') {
+        emitTacticalHudAlert(effectiveDebrief, 'OFFLINE CONTINGENCY');
+      } else if (effectiveStatus !== 'ok' && effectiveDebrief && typeof showSubtitles === 'function') {
+        showSubtitles(`[${effectiveSource}] ${effectiveDebrief}`, 'OSIRIS INTEL');
+      }
+    }
+
+    async function fetchOsirisSatellites() {
+      if (!_osirisActive) return;
+      try {
+        let data = null;
+        if (api() && typeof api().get_active_satellites === 'function') {
+          data = await api().get_active_satellites('all', 60);
+        } else {
+          const res = await fetch('/api/satellites/active?category=all&limit=60');
+          if (res.ok) data = await res.json();
+        }
+        if (!data) return;
+        if (data.status && data.status !== 'ok') {
+          setOsirisHudDebrief(data.status, data.debrief, 'Satellites');
+        } else if (data.debrief) {
+          setOsirisHudDebrief(data.status || 'ok', data.debrief, 'Satellites');
+        }
+        const sats = Array.isArray(data.satellites) ? data.satellites : [];
+        renderOsirisSatellites(sats);
+      } catch(e) {
+        console.warn('[OSIRIS Layer] Satellites fetch error:', e);
+      }
+    }
+
+    function renderOsirisSatellites(sats) {
+      if (!Array.isArray(sats) || sats.length === 0) {
+        _osirisSatellitesDS.entities.removeAll();
+        if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
+        return;
+      }
+
+      const activeIds = new Set();
+
+      sats.forEach(sat => {
+        const satLat = Number(sat.lat);
+        const satLon = Number(sat.lng != null ? sat.lng : sat.lon);
+        if (isNaN(satLat) || isNaN(satLon)) return;
+        const altM = (Number(sat.alt) || 420) * 1000;
+        const pos = Cesium.Cartesian3.fromDegrees(satLon, satLat, altM);
+
+        const safeKey = String(sat.noradId || sat.name || 'SAT').replace(/[^a-zA-Z0-9_\-]/g, '_');
+        const satId = `osiris-sat-${safeKey}`;
+        const beamId = `osiris-sat-beam-${safeKey}`;
+        activeIds.add(satId);
+        activeIds.add(beamId);
+
+        const tacticalData = {
+          type: 'SATELLITE',
+          name: sat.name,
+          category: sat.category || 'LEO',
+          noradId: sat.noradId || '',
+          altKm: sat.alt || 420,
+          lat: satLat,
+          lon: satLon
+        };
+
+        const labelText = `🛰 ${sat.name || 'SAT'} (${(sat.category || 'LEO').toUpperCase()})`;
+
+        // 1. Satellite billboard & label entity (reconcile in-place to avoid duplicate stacking)
+        const existingSat = _osirisSatellitesDS.entities.getById(satId);
+        if (existingSat) {
+          existingSat.position = pos;
+          if (existingSat.label) existingSat.label.text = labelText;
+          existingSat._tacticalData = tacticalData;
+        } else {
+          _osirisSatellitesDS.entities.add({
+            id: satId,
+            position: pos,
+            billboard: {
+              image: SATELLITE_ICON,
+              width: 26,
+              height: 26,
+              verticalOrigin: Cesium.VerticalOrigin.CENTER,
+              disableDepthTestDistance: 5000
+            },
+            label: {
+              text: labelText,
+              font: 'bold 9.5px JetBrains Mono, monospace',
+              fillColor: Cesium.Color.fromCssColorString('#38BDF8'),
+              outlineColor: Cesium.Color.BLACK,
+              outlineWidth: 3,
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+              pixelOffset: new Cesium.Cartesian2(0, -16),
+              disableDepthTestDistance: 5000,
+              distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 30000000)
+            },
+            _tacticalData: tacticalData
+          });
+        }
+
+        // 2. Nadir drop beam connecting satellite to ground track
+        const beamPositions = Cesium.Cartesian3.fromDegreesArrayHeights([
+          satLon, satLat, 0,
+          satLon, satLat, altM
+        ]);
+        const existingBeam = _osirisSatellitesDS.entities.getById(beamId);
+        if (existingBeam) {
+          if (existingBeam.polyline) existingBeam.polyline.positions = beamPositions;
+        } else {
+          _osirisSatellitesDS.entities.add({
+            id: beamId,
+            polyline: {
+              positions: beamPositions,
+              width: 1.2,
+              material: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#38BDF8').withAlpha(0.35))
+            }
+          });
+        }
+      });
+
+      // Reconcile and purge any obsolete entities
+      const toRemove = [];
+      const currentEntities = _osirisSatellitesDS.entities.values;
+      for (let i = 0; i < currentEntities.length; i++) {
+        const ent = currentEntities[i];
+        if (ent && ent.id && !activeIds.has(ent.id)) {
+          toRemove.push(ent.id);
+        }
+      }
+      toRemove.forEach(id => _osirisSatellitesDS.entities.removeById(id));
+
+      if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
+    }
+
+    async function fetchOsirisConflicts() {
+      if (!_osirisActive) return;
+      try {
+        let data = null;
+        if (api() && typeof api().get_active_conflicts === 'function') {
+          data = await api().get_active_conflicts();
+        } else {
+          const res = await fetch('/api/conflicts/active');
+          if (res.ok) data = await res.json();
+        }
+        if (!data) return;
+        if (data.status && data.status !== 'ok') {
+          setOsirisHudDebrief(data.status, data.debrief, 'Conflicts');
+        } else if (data.debrief) {
+          setOsirisHudDebrief(data.status || 'ok', data.debrief, 'Conflicts');
+        }
+        renderOsirisConflicts(data);
+      } catch(e) {
+        console.warn('[OSIRIS Layer] Conflicts fetch error:', e);
+      }
+    }
+
+    function renderOsirisConflicts(confData) {
+      _osirisConflictsDS.entities.removeAll();
+      const zones = Array.isArray(confData?.zones) ? confData.zones : [];
+      zones.forEach(z => {
+        const zLat = Number(z.lat);
+        const zLon = Number(z.lng != null ? z.lng : z.lon);
+        if (isNaN(zLat) || isNaN(zLon)) return;
+        const isWar = (z.severity || '').toLowerCase() === 'war';
+        const color = isWar ? '#EF4444' : '#F59E0B';
+
+        _osirisConflictsDS.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(zLon, zLat, 0),
+          ellipse: {
+            semiMajorAxis: 180000,
+            semiMinorAxis: 180000,
+            material: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString(color).withAlpha(0.2)),
+            outline: false
+          },
+          label: {
+            text: `⚔️ ${z.label || z.id || 'CONFLICT'} [${(z.severity || 'WAR').toUpperCase()}]`,
+            font: 'bold 10px JetBrains Mono, monospace',
+            fillColor: Cesium.Color.fromCssColorString(color),
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 3,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            pixelOffset: new Cesium.Cartesian2(0, -10),
+            disableDepthTestDistance: 50000
+          },
+          _tacticalData: {
+            type: 'CONFLICT_ZONE',
+            id: z.id,
+            label: z.label,
+            severity: z.severity,
+            description: z.description,
+            lat: zLat,
+            lon: zLon
+          }
+        });
+      });
+
+      const events = Array.isArray(confData?.liveEvents) ? confData.liveEvents : [];
+      events.forEach(ev => {
+        const eLat = Number(ev.lat);
+        const eLon = Number(ev.lng != null ? ev.lng : ev.lon);
+        if (isNaN(eLat) || isNaN(eLon)) return;
+        _osirisConflictsDS.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(eLon, eLat, 0),
+          point: {
+            pixelSize: 8,
+            color: Cesium.Color.fromCssColorString('#EF4444'),
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 1.5,
+            disableDepthTestDistance: 5000
+          },
+          label: {
+            text: `💥 ${ev.title || 'STRIKE'}`,
+            font: '9px JetBrains Mono, monospace',
+            fillColor: Cesium.Color.fromCssColorString('#FCA5A5'),
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 2,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            pixelOffset: new Cesium.Cartesian2(0, -10),
+            disableDepthTestDistance: 5000,
+            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 3000000)
+          },
+          _tacticalData: {
+            type: 'TACTICAL_EVENT',
+            id: ev.id,
+            title: ev.title,
+            lat: eLat,
+            lon: eLon
+          }
+        });
+      });
+      if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
+    }
+
+    async function fetchOsirisCctvViewport(lodTier) {
+      if (!_osirisActive || _isFetchingCctv) return;
+      const bounds = getCesiumViewportBounds();
+      if (!bounds) return;
+      _isFetchingCctv = true;
+      const limit = (lodTier === 'LOW') ? 40 : 60;
+
+      try {
+        let data = null;
+        if (api() && typeof api().get_cctv_in_viewport === 'function') {
+          data = await api().get_cctv_in_viewport(bounds, limit);
+        } else {
+          const res = await fetch('/api/cctv/viewport', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bounds, limit })
+          });
+          if (res.ok) data = await res.json();
+        }
+        if (!data) return;
+        if (data.status && data.status !== 'ok') {
+          setOsirisHudDebrief(data.status, data.debrief, 'CCTV');
+        } else if (data.debrief) {
+          setOsirisHudDebrief(data.status || 'ok', data.debrief, 'CCTV');
+        }
+        const cams = Array.isArray(data.cameras) ? data.cameras : [];
+        renderOsirisCctv(cams, lodTier);
+      } catch(e) {
+        console.warn('[OSIRIS Layer] Viewport CCTV fetch error:', e);
+      } finally {
+        _isFetchingCctv = false;
+      }
+    }
+
+    function renderOsirisCctv(cameras, lodTier) {
+      _osirisCctvDS.entities.removeAll();
+      if (lodTier === 'MEDIUM') {
+        cameras.forEach(cam => {
+          const cLat = Number(cam.lat);
+          const cLon = Number(cam.lon != null ? cam.lon : cam.lng);
+          if (isNaN(cLat) || isNaN(cLon)) return;
+          const pos = Cesium.Cartesian3.fromDegrees(cLon, cLat, 25);
+          _osirisCctvDS.entities.add({
+            position: pos,
+            billboard: {
+              image: CAMERA_ICON,
+              width: 20,
+              height: 20,
+              verticalOrigin: Cesium.VerticalOrigin.CENTER,
+              disableDepthTestDistance: 5000,
+              distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 1500000)
+            },
+            label: {
+              text: `📹 ${cam.name || cam.label || 'CAM'}`,
+              font: '9px JetBrains Mono, monospace',
+              fillColor: Cesium.Color.fromCssColorString('#00F0FF'),
+              outlineColor: Cesium.Color.BLACK,
+              outlineWidth: 2,
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+              pixelOffset: new Cesium.Cartesian2(0, -14),
+              disableDepthTestDistance: 5000,
+              distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 800000)
+            },
+            _tacticalData: {
+              type: 'CCTV',
+              id: cam.id,
+              label: cam.name || cam.label || 'OPTICAL NODE',
+              city: cam.city,
+              country: cam.country,
+              lat: cLat,
+              lon: cLon
+            }
+          });
+        });
+      } else if (lodTier === 'LOW') {
+        cameras.forEach(cam => {
+          renderCctvFrustum(cam, _osirisCctvDS);
+        });
+      }
+      if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
+    }
+
+    function updateLOD() {
+      if (!_osirisActive) return;
+      const carto = viewer.camera.positionCartographic;
+      if (!carto) return;
+      const alt = carto.height;
+
+      let targetTier = 'LOW';
+      if (alt > 1200000) {
+        targetTier = 'HIGH';
+      } else if (alt >= 80000) {
+        targetTier = 'MEDIUM';
+      } else {
+        targetTier = 'LOW';
+      }
+
+      if (targetTier === 'HIGH') {
+        _osirisClustersDS.show = true;
+        _osirisCctvDS.show = false;
+        if (_activeLOD !== 'HIGH') {
+          populateHighAltitudeClusters();
+          _activeLOD = 'HIGH';
+        }
+      } else if (targetTier === 'MEDIUM') {
+        _osirisClustersDS.show = false;
+        _osirisCctvDS.show = true;
+        _activeLOD = 'MEDIUM';
+        fetchOsirisCctvViewport('MEDIUM');
+      } else {
+        _osirisClustersDS.show = false;
+        _osirisCctvDS.show = true;
+        _activeLOD = 'LOW';
+        fetchOsirisCctvViewport('LOW');
+      }
+
+      if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
+    }
+
+    function onCameraMoved() {
+      if (!_osirisActive) return;
+      if (_lodDebounceTimer) clearTimeout(_lodDebounceTimer);
+      _lodDebounceTimer = setTimeout(() => {
+        updateLOD();
+      }, 350);
+    }
+
+    viewer.camera.moveEnd.addEventListener(onCameraMoved);
+
+    window.OsirisCesiumLayer = {
+      isActive: () => _osirisActive,
+      getLOD: () => _activeLOD,
+      enable: () => {
+        _osirisActive = true;
+        _osirisSatellitesDS.show = true;
+        _osirisConflictsDS.show = true;
+        _osirisCctvDS.show = true;
+        _osirisClustersDS.show = true;
+
+        fetchOsirisSatellites();
+        fetchOsirisConflicts();
+        updateLOD();
+
+        if (!_osirisPollTimer) {
+          _osirisPollTimer = setInterval(() => {
+            if (_osirisActive) {
+              fetchOsirisSatellites();
+              fetchOsirisConflicts();
+            }
+          }, 12000);
+        }
+        if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
+      },
+      disable: () => {
+        _osirisActive = false;
+        _activeLOD = null;
+        _osirisSatellitesDS.show = false;
+        _osirisConflictsDS.show = false;
+        _osirisCctvDS.show = false;
+        _osirisClustersDS.show = false;
+
+        _osirisSatellitesDS.entities.removeAll();
+        _osirisConflictsDS.entities.removeAll();
+        _osirisCctvDS.entities.removeAll();
+        _osirisClustersDS.entities.removeAll();
+
+        if (_osirisPollTimer) {
+          clearInterval(_osirisPollTimer);
+          _osirisPollTimer = null;
+        }
+        if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
+      },
+      refresh: () => {
+        if (_osirisActive) {
+          fetchOsirisSatellites();
+          fetchOsirisConflicts();
+          updateLOD();
+        }
+      }
+    };
+  }
+
+  initOsirisCesiumLayer(viewer);
 
   viewer.scene.requestRender();
 }

@@ -44,6 +44,55 @@ DEFAULT_TTLS = {
 }
 
 
+def parse_bounds(bounds: Any) -> Optional[Tuple[float, float, float, float]]:
+    """
+    Normalizes bounding box representations to (min_lat, min_lon, max_lat, max_lon).
+    Supports:
+      - dict: {'min_lat': ..., 'min_lon': ..., 'max_lat': ..., 'max_lon': ...}
+      - dict: {'south': ..., 'west': ..., 'north': ..., 'east': ...}
+      - list/tuple: [south, west, north, east] or [min_lat, min_lon, max_lat, max_lon]
+    """
+    if not bounds:
+        return None
+    try:
+        if isinstance(bounds, dict):
+            if "min_lat" in bounds and "max_lat" in bounds and "min_lon" in bounds and "max_lon" in bounds:
+                return (
+                    float(bounds["min_lat"]),
+                    float(bounds["min_lon"]),
+                    float(bounds["max_lat"]),
+                    float(bounds["max_lon"]),
+                )
+            if "south" in bounds and "north" in bounds and "west" in bounds and "east" in bounds:
+                return (
+                    float(bounds["south"]),
+                    float(bounds["west"]),
+                    float(bounds["north"]),
+                    float(bounds["east"]),
+                )
+        elif isinstance(bounds, (list, tuple)) and len(bounds) >= 4:
+            return (float(bounds[0]), float(bounds[1]), float(bounds[2]), float(bounds[3]))
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
+def is_point_in_bounds(lat: Optional[float], lon: Optional[float], bounds: Tuple[float, float, float, float]) -> bool:
+    """Check if (lat, lon) falls inside (min_lat, min_lon, max_lat, max_lon)."""
+    if lat is None or lon is None:
+        return False
+    min_lat, min_lon, max_lat, max_lon = bounds
+    if min_lat > max_lat:
+        min_lat, max_lat = max_lat, min_lat
+    if not (min_lat <= lat <= max_lat):
+        return False
+    if min_lon <= max_lon:
+        return min_lon <= lon <= max_lon
+    else:
+        # Crosses the antimeridian (+180 / -180)
+        return lon >= min_lon or lon <= max_lon
+
+
 class OsirisIntelClient:
     """Singleton client managing connectivity to OSIRIS Global Intelligence."""
     _instance = None
@@ -103,6 +152,15 @@ class OsirisIntelClient:
         except Exception as e:
             logger.debug(f"[OSIRIS] Cache write failed for {key}: {e}")
 
+    def clear_cache(self):
+        """Clear in-memory and on-disk response caches for testing and forced reload."""
+        self._cache_mem.clear()
+        try:
+            for p in CACHE_DIR.glob("*.json"):
+                p.unlink(missing_ok=True)
+        except Exception as e:
+            logger.debug(f"[OSIRIS] Cache clear notice: {e}")
+
     def _fetch_endpoint(self, path: str, params: Optional[Dict[str, Any]] = None, ttl: float = 30) -> Optional[Any]:
         """Perform HTTP GET against an OSIRIS endpoint with caching and error protection."""
         url = f"{self.base_url}{path}"
@@ -111,7 +169,7 @@ class OsirisIntelClient:
             if query_str:
                 url = f"{url}?{query_str}"
 
-        safe_key = urllib.parse.quote(f"{path}_{json.dumps(params or {}, sort_keys=True)}", safe="")[:120]
+        safe_key = urllib.parse.quote(f"{self.base_url}_{path}_{json.dumps(params or {}, sort_keys=True)}", safe="")[:120]
         cached = self._get_cache(safe_key, ttl)
         if cached is not None:
             return cached
@@ -153,15 +211,59 @@ class OsirisIntelClient:
         lon: Optional[float] = None,
         radius_km: Optional[float] = None,
         query: Optional[str] = None,
-        limit: int = 40
-    ) -> List[Dict[str, Any]]:
+        limit: int = 40,
+        bounds: Optional[Any] = None,
+        category: Optional[str] = None,
+        return_meta: bool = False,
+    ) -> Any:
         """
         Query OSIRIS worldwide CCTV registry (28,400+ cameras).
-        Supports geographic distance filtering and keyword filtering.
+        Supports:
+          - Bounding-box viewport filtering (min_lat, min_lon, max_lat, max_lon)
+          - Category / stream-type filtering (e.g., 'traffic', 'youtube', 'hls', 'highway')
+          - Geographic distance filtering (lat, lon, radius_km)
+          - Keyword / city / country filtering
+          - Display cap enforcement and explicit fallback metadata (return_meta=True)
         """
+        parsed_bounds = parse_bounds(bounds)
         res = self._fetch_endpoint("/api/cctv", ttl=DEFAULT_TTLS["cctv"])
         if not res or "cameras" not in res:
-            return []
+            # Check local contingency cameras from cctv_service if upstream failed
+            contingency_cams = []
+            try:
+                from modules.cctv_service import get_cctv_service
+                svc_sources = get_cctv_service().get_all_sources()
+                for c in svc_sources:
+                    c_lat = c.get("lat")
+                    c_lon = c.get("lon", c.get("lng"))
+                    if parsed_bounds and not is_point_in_bounds(c_lat, c_lon, parsed_bounds):
+                        continue
+                    contingency_cams.append({
+                        "id": c.get("id"),
+                        "name": c.get("name") or c.get("label", "CCTV Feed"),
+                        "city": c.get("city", ""),
+                        "country": c.get("country", ""),
+                        "lat": c_lat,
+                        "lng": c_lon,
+                        "stream_url": c.get("url") or c.get("videoUrl", ""),
+                        "stream_type": c.get("feedType", "video"),
+                        "source": c.get("provider", "Local Contingency"),
+                    })
+            except Exception:
+                pass
+
+            if return_meta:
+                return {
+                    "status": "upstream_error",
+                    "count": len(contingency_cams[:limit]),
+                    "total_in_bounds": len(contingency_cams),
+                    "capped": len(contingency_cams) > limit,
+                    "limit": limit,
+                    "cameras": contingency_cams[:limit],
+                    "debrief": "OSIRIS CCTV registry timed out. Displaying local contingency optical nodes." if contingency_cams else "OSIRIS CCTV registry unavailable.",
+                    "bounds": bounds,
+                }
+            return contingency_cams[:limit]
 
         cameras: List[Dict[str, Any]] = res.get("cameras", [])
         filtered = []
@@ -169,13 +271,25 @@ class OsirisIntelClient:
         q_lower = (query or "").lower().strip()
         city_lower = (city or "").lower().strip()
         country_lower = (country or "").lower().strip()
+        cat_lower = (category or "").lower().strip()
 
         for cam in cameras:
-            c_name = cam.get("name", "").lower()
-            c_city = cam.get("city", "").lower()
-            c_country = cam.get("country", "").lower()
+            c_name = str(cam.get("name", "")).lower()
+            c_city = str(cam.get("city", "")).lower()
+            c_country = str(cam.get("country", "")).lower()
+            c_cat = str(cam.get("category", "")).lower()
+            c_source = str(cam.get("source", "")).lower()
+            c_type = str(cam.get("stream_type", "")).lower()
             c_lat = cam.get("lat")
-            c_lng = cam.get("lng")
+            c_lng = cam.get("lng", cam.get("lon"))
+
+            # Bounding box filter
+            if parsed_bounds and not is_point_in_bounds(c_lat, c_lng, parsed_bounds):
+                continue
+
+            # Category / stream-type filter
+            if cat_lower and (cat_lower not in c_cat and cat_lower not in c_source and cat_lower not in c_type and cat_lower not in c_name):
+                continue
 
             # City filter
             if city_lower and city_lower not in c_city and city_lower not in c_name:
@@ -202,45 +316,201 @@ class OsirisIntelClient:
         if lat is not None and lon is not None:
             filtered.sort(key=lambda x: x.get("distance_km", 999999))
 
-        return filtered[:limit]
+        total_matched = len(filtered)
+        capped = total_matched > limit
+        sliced = filtered[:limit]
 
-    def get_flights(self, military_only: bool = False, bounds: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
-        """
-        Ingest real-time global flights, separating military and commercial tracks.
-        """
-        res = self._fetch_endpoint("/api/flights", ttl=DEFAULT_TTLS["flights"])
-        if not res:
-            return {"total": 0, "military": [], "commercial": [], "private": [], "gps_jamming": []}
+        if return_meta:
+            if total_matched == 0:
+                status = "zero_results"
+                debrief = "Zero tactical CCTV feeds detected within current viewport coordinates."
+            elif capped:
+                status = "capped"
+                debrief = f"Displaying {len(sliced)} of {total_matched} optical feeds in sector (display cap enforced: {limit})."
+            else:
+                status = "ok"
+                debrief = f"Tactical optical surveillance active: {len(sliced)} cameras rendered in viewport."
 
-        mil = res.get("military_flights", [])
-        com = res.get("commercial_flights", [])
-        priv = res.get("private_flights", [])
-        jam = res.get("gps_jamming", [])
-
-        if military_only:
             return {
-                "total": len(mil),
-                "military": mil,
-                "commercial": [],
-                "private": [],
-                "gps_jamming": jam
+                "status": status,
+                "count": len(sliced),
+                "total_in_bounds": total_matched,
+                "capped": capped,
+                "limit": limit,
+                "cameras": sliced,
+                "debrief": debrief,
+                "bounds": bounds,
             }
 
+        return sliced
+
+    def get_flights(
+        self,
+        military_only: bool = False,
+        bounds: Optional[Any] = None,
+        category: Optional[str] = None,
+        limit: Optional[int] = None,
+        return_meta: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Ingest real-time global flights, separating military and commercial tracks.
+        Supports bounding-box filtering, category filtering ('military', 'commercial', 'private', 'jamming', 'all'),
+        display caps, and explicit degradation metadata for edge cases.
+        """
+        parsed_bounds = parse_bounds(bounds)
+        res = self._fetch_endpoint("/api/flights", ttl=DEFAULT_TTLS["flights"])
+
+        cat_clean = (category or "").lower().strip()
+        if military_only and not cat_clean:
+            cat_clean = "military"
+
+        if not res:
+            # Fallback to offline fixtures if available
+            contingency_mil = []
+            try:
+                from modules.flight_intel import OFFLINE_MIL_FIXTURES
+                for f in OFFLINE_MIL_FIXTURES:
+                    f_lat = f.get("lat")
+                    f_lon = f.get("lon", f.get("lng"))
+                    if parsed_bounds and not is_point_in_bounds(f_lat, f_lon, parsed_bounds):
+                        continue
+                    contingency_mil.append(f)
+            except Exception:
+                pass
+
+            return {
+                "status": "upstream_error",
+                "total": len(contingency_mil),
+                "military": contingency_mil,
+                "commercial": [],
+                "private": [],
+                "gps_jamming": [],
+                "capped": False,
+                "debrief": "OSIRIS flight stream offline. Offline military fixtures active." if contingency_mil else "OSIRIS flight telemetry stream unavailable.",
+                "bounds": bounds,
+            }
+
+        mil = list(res.get("military_flights", []))
+        com = list(res.get("commercial_flights", []))
+        priv = list(res.get("private_flights", []))
+        jam = list(res.get("gps_jamming", []))
+
+        # Bounding box filter
+        if parsed_bounds:
+            mil = [f for f in mil if is_point_in_bounds(f.get("lat"), f.get("lng", f.get("lon")), parsed_bounds)]
+            com = [f for f in com if is_point_in_bounds(f.get("lat"), f.get("lng", f.get("lon")), parsed_bounds)]
+            priv = [f for f in priv if is_point_in_bounds(f.get("lat"), f.get("lng", f.get("lon")), parsed_bounds)]
+            jam = [j for j in jam if is_point_in_bounds(j.get("lat"), j.get("lng", j.get("lon")), parsed_bounds)]
+
+        # Category filter
+        if cat_clean in ("military", "mil"):
+            com, priv, jam = [], [], []
+        elif cat_clean in ("commercial", "civ", "civilian"):
+            mil, priv, jam = [], [], []
+        elif cat_clean in ("private", "vip", "pia"):
+            mil, com, jam = [], [], []
+        elif cat_clean in ("jamming", "gps_jamming", "ew"):
+            mil, com, priv = [], [], []
+
+        total_matched = len(mil) + len(com) + len(priv)
+        capped = False
+        if limit and limit > 0 and total_matched > limit:
+            capped = True
+            remaining = limit
+            mil = mil[:remaining]
+            remaining = max(0, remaining - len(mil))
+            com = com[:remaining]
+            remaining = max(0, remaining - len(com))
+            priv = priv[:remaining]
+
+        # Status and debrief for edge cases
+        if total_matched == 0 and len(jam) == 0:
+            status = "zero_results"
+            debrief = "Zero aircraft or GPS jamming sectors detected within active viewport."
+        elif capped:
+            status = "capped"
+            debrief = f"Airspace track density high: showing {len(mil) + len(com) + len(priv)} of {total_matched} contacts (cap: {limit})."
+        else:
+            status = "ok"
+            debrief = f"Airspace radar active: {len(mil)} military, {len(com)} commercial, {len(priv)} private, {len(jam)} jamming sectors."
+
         return {
-            "total": res.get("total", len(mil) + len(com) + len(priv)),
+            "status": status,
+            "total": len(mil) + len(com) + len(priv),
             "military": mil,
             "commercial": com,
             "private": priv,
-            "gps_jamming": jam
+            "gps_jamming": jam,
+            "capped": capped,
+            "limit": limit,
+            "total_matched": total_matched,
+            "debrief": debrief,
+            "bounds": bounds,
         }
 
-    def get_satellites(self, query: Optional[str] = None, category: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_satellites(
+        self,
+        query: Optional[str] = None,
+        category: Optional[str] = None,
+        limit: int = 50,
+        bounds: Optional[Any] = None,
+        return_meta: bool = False,
+    ) -> Any:
         """
         Retrieve tracked satellites (18,800+ orbital objects) with real-time TLE positions.
+        Supports category filtering (ISS, Tiangong, GPS, Starlink, Recon, All),
+        sub-satellite ground-track bounding-box filtering, display caps, and explicit fallback states.
         """
+        parsed_bounds = parse_bounds(bounds)
         res = self._fetch_endpoint("/api/satellites", ttl=DEFAULT_TTLS["satellites"])
+
         if not res or "satellites" not in res:
-            return []
+            # Contingency satellite fixtures for mission-critical orbits (ISS, Tiangong, GPS)
+            contingency_sats = [
+                {
+                    "name": "ISS (ZARYA)",
+                    "lat": 25.5,
+                    "lng": -45.2,
+                    "alt": 418,
+                    "mission": "Human Spaceflight Research Laboratory",
+                    "category": "iss",
+                    "noradId": "25544",
+                    "source": "Contingency Ephemeris",
+                },
+                {
+                    "name": "TIANGONG (CSS)",
+                    "lat": 18.2,
+                    "lng": 110.5,
+                    "alt": 389,
+                    "mission": "Chinese Space Station",
+                    "category": "tiangong",
+                    "noradId": "48274",
+                    "source": "Contingency Ephemeris",
+                },
+                {
+                    "name": "NAVSTAR GPS USA-203",
+                    "lat": 32.1,
+                    "lng": -105.4,
+                    "alt": 20180,
+                    "mission": "Global Positioning System",
+                    "category": "gps",
+                    "noradId": "34661",
+                    "source": "Contingency Ephemeris",
+                },
+            ]
+            if return_meta:
+                return {
+                    "status": "upstream_error",
+                    "count": len(contingency_sats[:limit]),
+                    "total_matched": len(contingency_sats),
+                    "capped": False,
+                    "limit": limit,
+                    "satellites": contingency_sats[:limit],
+                    "debrief": "OSIRIS satellite telemetry feed offline. Displaying contingency orbital ephemeris.",
+                    "category": category,
+                    "bounds": bounds,
+                }
+            return contingency_sats[:limit]
 
         sats: List[Dict[str, Any]] = res.get("satellites", [])
         filtered = []
@@ -248,36 +518,170 @@ class OsirisIntelClient:
         q_lower = (query or "").lower().strip()
         cat_lower = (category or "").lower().strip()
 
+        # Category keyword matchers for operator-selected constellations:
+        # ISS, Tiangong, GPS, Starlink, recon
         for sat in sats:
-            s_name = sat.get("name", "").lower()
-            s_cat = sat.get("category", "").lower()
-            s_mission = sat.get("mission", "").lower()
+            s_name = str(sat.get("name", "")).lower()
+            s_cat = str(sat.get("category", "")).lower()
+            s_mission = str(sat.get("mission", "")).lower()
+            s_lat = sat.get("lat")
+            s_lng = sat.get("lng", sat.get("lon"))
 
-            if q_lower and (q_lower not in s_name and q_lower not in s_mission):
+            # Bounding box filter (sub-satellite point)
+            if parsed_bounds and not is_point_in_bounds(s_lat, s_lng, parsed_bounds):
                 continue
 
-            if cat_lower and cat_lower not in s_cat:
+            # Query keyword filter
+            if q_lower and (q_lower not in s_name and q_lower not in s_mission and q_lower not in s_cat):
                 continue
+
+            # Category filter
+            if cat_lower and cat_lower not in ("all", "*"):
+                if cat_lower == "iss":
+                    if not ("iss" in s_name or "zarya" in s_name or "international space station" in s_name or s_cat == "iss" or "international space station" in s_mission):
+                        continue
+                elif cat_lower == "tiangong":
+                    if not ("tiangong" in s_name or "css" in s_name or "tianhe" in s_name or "mengtian" in s_name or "wentian" in s_name or s_cat == "tiangong"):
+                        continue
+                elif cat_lower in ("gps", "gnss", "navigation"):
+                    if not ("gps" in s_name or "navstar" in s_name or "glonass" in s_name or "galileo" in s_name or "beidou" in s_name or "gnss" in s_name or s_cat in ("gps", "gnss", "navigation")):
+                        continue
+                elif cat_lower == "starlink":
+                    if not ("starlink" in s_name or s_cat == "starlink"):
+                        continue
+                elif cat_lower in ("recon", "military", "surveillance"):
+                    is_nav = ("gps" in s_name or "navstar" in s_name or "glonass" in s_name or "navigation" in s_mission or s_cat in ("gps", "navigation"))
+                    if is_nav:
+                        continue
+                    if not ("recon" in s_name or "military" in s_name or "usa-" in s_name or "kh-" in s_name or "cosmos" in s_name or "nrol" in s_name or "spy" in s_mission or s_cat in ("recon", "military", "surveillance")):
+                        continue
+                else:
+                    if cat_lower not in s_cat and cat_lower not in s_name and cat_lower not in s_mission:
+                        continue
 
             filtered.append(sat)
-            if len(filtered) >= limit:
-                break
 
-        return filtered
+        total_matched = len(filtered)
+        capped = total_matched > limit
+        sliced = filtered[:limit]
 
-    def get_conflicts(self) -> Dict[str, Any]:
+        if return_meta:
+            if total_matched == 0:
+                status = "zero_results"
+                debrief = f"Zero orbital passes detected for category '{category or query or 'all'}' in specified zone."
+            elif capped:
+                status = "capped"
+                debrief = f"Tracking {len(sliced)} of {total_matched} orbital assets (display cap: {limit})."
+            else:
+                status = "ok"
+                debrief = f"Orbital telemetry active: {len(sliced)} assets tracked for '{category or query or 'all'}'."
+
+            return {
+                "status": status,
+                "count": len(sliced),
+                "total_matched": total_matched,
+                "capped": capped,
+                "limit": limit,
+                "satellites": sliced,
+                "debrief": debrief,
+                "category": category,
+                "bounds": bounds,
+            }
+
+        return sliced
+
+    def get_conflicts(
+        self,
+        bounds: Optional[Any] = None,
+        severity: Optional[str] = None,
+        limit: Optional[int] = None,
+        return_meta: bool = False,
+    ) -> Dict[str, Any]:
         """
         Retrieve active warzones, live frontlines, and conflict events.
+        Supports bounding-box viewport filtering, severity filtering, and graceful degradation.
         """
+        parsed_bounds = parse_bounds(bounds)
         res = self._fetch_endpoint("/api/conflicts", ttl=DEFAULT_TTLS["conflicts"])
+
         if not res:
-            return {"totalZones": 0, "activeWarzones": 0, "zones": [], "liveEvents": []}
+            contingency_zones = [
+                {
+                    "id": "contingency-ukraine",
+                    "label": "UKRAINE THEATRE (CONTINGENCY)",
+                    "severity": "war",
+                    "lat": 48.3794,
+                    "lng": 31.1656,
+                    "description": "Active conflict zone — frontline monitoring active.",
+                    "status": "active",
+                },
+                {
+                    "id": "contingency-mideast",
+                    "label": "MIDDLE EAST SECTOR (CONTINGENCY)",
+                    "severity": "crisis",
+                    "lat": 31.7683,
+                    "lng": 35.2137,
+                    "description": "Heightened tactical alert and air defense posture.",
+                    "status": "active",
+                },
+            ]
+            if parsed_bounds:
+                contingency_zones = [z for z in contingency_zones if is_point_in_bounds(z.get("lat"), z.get("lng", z.get("lon")), parsed_bounds)]
+
+            return {
+                "status": "upstream_error",
+                "totalZones": len(contingency_zones),
+                "activeWarzones": len([z for z in contingency_zones if z.get("severity") == "war"]),
+                "zones": contingency_zones,
+                "liveEvents": [],
+                "capped": False,
+                "debrief": "OSIRIS conflict link offline. Displaying tactical contingency zones.",
+                "bounds": bounds,
+            }
+
+        zones = list(res.get("zones", []))
+        live_events = list(res.get("liveEvents", []))
+
+        if parsed_bounds:
+            zones = [z for z in zones if is_point_in_bounds(z.get("lat"), z.get("lng", z.get("lon")), parsed_bounds)]
+            live_events = [e for e in live_events if is_point_in_bounds(e.get("lat"), e.get("lng", e.get("lon")), parsed_bounds)]
+
+        if severity:
+            sev_clean = severity.lower().strip()
+            zones = [z for z in zones if z.get("severity", "").lower() == sev_clean]
+
+        if parsed_bounds or severity:
+            total_zones = len(zones)
+            active_warzones = len([z for z in zones if z.get("severity", "").lower() == "war"])
+        else:
+            total_zones = res.get("totalZones", len(zones))
+            active_warzones = res.get("activeWarzones", len([z for z in zones if z.get("severity", "").lower() == "war"]))
+
+        capped = False
+        if limit and limit > 0 and len(zones) > limit:
+            capped = True
+            zones = zones[:limit]
+
+        if total_zones == 0 and len(live_events) == 0:
+            status = "zero_results"
+            debrief = "Zero active conflict zones or tactical incidents detected in sector."
+        elif capped:
+            status = "capped"
+            debrief = f"Conflict intelligence: showing {len(zones)} of {total_zones} zones in sector (cap: {limit})."
+        else:
+            status = "ok"
+            debrief = f"Tactical intelligence active: {active_warzones} active warzones, {total_zones} conflict sectors tracked."
 
         return {
-            "totalZones": res.get("totalZones", 0),
-            "activeWarzones": res.get("activeWarzones", 0),
-            "zones": res.get("zones", []),
-            "liveEvents": res.get("liveEvents", [])
+            "status": status,
+            "totalZones": total_zones,
+            "activeWarzones": active_warzones,
+            "zones": zones,
+            "liveEvents": live_events,
+            "capped": capped,
+            "limit": limit,
+            "debrief": debrief,
+            "bounds": bounds,
         }
 
     def get_frontlines(self) -> Dict[str, Any]:

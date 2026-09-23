@@ -927,7 +927,7 @@ class SystemSkillEngine:
                 pass
             return True, msg, False, "", payload
 
-        if any(kw in text_lower for kw in ["thermostat", "turn on lights", "lights on", "lock front door", "lock door"]):
+        if any(kw in text_lower for kw in ["thermostat", "turn on lights", "turn off lights", "lights on", "lights off", "lock front door", "lock door", "unlock front door", "unlock door"]):
             from modules.smart_home import SmartHomeManager
             sh = SmartHomeManager()
             msg = ""
@@ -935,8 +935,12 @@ class SystemSkillEngine:
                 m = re.search(r'(\d+)', text_lower)
                 temp = int(m.group(1)) if m else 72
                 msg = sh.set_thermostat(temp)
+            elif "unlock" in text_lower:
+                msg = sh.set_lock_state(False)
             elif "lock" in text_lower:
                 msg = sh.set_lock_state(True)
+            elif any(w in text_lower for w in ["turn off", "lights off", "off"]):
+                msg = sh.set_light_state(False)
             elif "lights" in text_lower:
                 msg = sh.set_light_state(True)
             raw = [{"title": "IoT Action Executed", "snippet": msg, "url": "data/smart_home_state.json"}]
