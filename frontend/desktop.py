@@ -2520,13 +2520,17 @@ class JarvisAPI:
             self._recent_agent_responses.append(cleaned.strip())
             if len(self._recent_agent_responses) > 25:
                 self._recent_agent_responses.pop(0)
-            dur = max(2.5, len(cleaned) * 0.085)
-            self._tts_playback_until = max(getattr(self, '_tts_playback_until', 0.0), time.time()) + dur
+        # Mute the background voice listener for the entire duration of TTS synthesis + playback.
+        # _tts_speaking is a boolean flag checked by _bg_voice_loop; it stays True while speak() blocks.
+        # After speak() returns, _tts_playback_until provides a 2.5s tail buffer for audio decay/reverb.
+        self._tts_speaking = True
         if self._voice:
             try:
                 self._voice.speak(text)
             except Exception as e:
                 print(f"[desktop] Voice speak error: {e}")
+        self._tts_speaking = False
+        self._tts_playback_until = time.time() + 2.5  # tail buffer after playback completes
         with self._tts_turn_lock:
             self._tts_turn_id += 1
         self._emit("jarvis_interrupt_speech", {})
@@ -3842,7 +3846,7 @@ class JarvisAPI:
         try:
             while getattr(self, '_bg_voice_active', False):
                 # Never record J.A.R.V.I.S.'s own TTS as a new command.
-                if time.time() < getattr(self, '_tts_playback_until', 0.0):
+                if getattr(self, '_tts_speaking', False) or time.time() < getattr(self, '_tts_playback_until', 0.0):
                     pcm_buffer.clear(); pre_roll.clear()
                     is_speaking = False; silence_chunks = 0; speech_start_count = 0
                     time.sleep(0.05)
@@ -3950,7 +3954,7 @@ class JarvisAPI:
     def _process_captured_speech(self, pcm_bytes: bytes):
         """Transcribe captured speech and trigger HUD / JarvisVoice response."""
         # 1. Ignore audio captured while TTS was playing back
-        if time.time() < getattr(self, '_tts_playback_until', 0.0):
+        if getattr(self, '_tts_speaking', False) or time.time() < getattr(self, '_tts_playback_until', 0.0):
             print("[voice listener] Captured audio ignored: TTS audio was active during recording.")
             self._emit("jarvis_speech_ended", {})
             return
@@ -4011,19 +4015,30 @@ class JarvisAPI:
                     if rec_clean in past_clean or past_clean in rec_clean:
                         is_self_echo = True
                         break
-                    rec_words = set(rec_clean.split())
+                    rec_words = rec_clean.split()
                     past_words = set(past_clean.split())
-                    if rec_words and past_words:
-                        overlap = len(rec_words & past_words) / len(rec_words)
-                        if overlap > 0.6 and len(rec_words) >= 3:
+                    rec_word_set = set(rec_words)
+                    if rec_word_set and past_words:
+                        overlap = len(rec_word_set & past_words) / len(rec_word_set)
+                        if overlap > 0.45 and len(rec_word_set) >= 3:
                             is_self_echo = True
                             break
-                        if len(rec_words) <= 2 and overlap >= 0.8:
+                        if len(rec_word_set) <= 2 and overlap >= 0.8:
                             is_self_echo = True
                             break
-                        if rec_words.issubset(past_words):
+                        if rec_word_set.issubset(past_words):
                             is_self_echo = True
                             break
+                        # Bigram (consecutive word pair) overlap catches paraphrased TTS transcriptions
+                        if len(rec_words) >= 4:
+                            rec_bigrams = set(zip(rec_words, rec_words[1:]))
+                            past_word_list = past_clean.split()
+                            past_bigrams = set(zip(past_word_list, past_word_list[1:]))
+                            if rec_bigrams and past_bigrams:
+                                bigram_overlap = len(rec_bigrams & past_bigrams) / len(rec_bigrams)
+                                if bigram_overlap > 0.35:
+                                    is_self_echo = True
+                                    break
 
                 if is_self_echo:
                     print(f"[voice listener] Self-echo suppressed (recognized text matches J.A.R.V.I.S. response): '{text}'")

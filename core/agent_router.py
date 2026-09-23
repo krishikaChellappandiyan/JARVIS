@@ -143,20 +143,10 @@ class AgentRouter:
                 self.task_manager.complete_task(surf_task.task_id, f"Loaded internal surface: {finding.title}")
                 return True, f"Opening {finding.title} inside the internal browser surface.", surf_task, "followup_select"
 
-        # ── 2. Check for YouTube Search ────────────────────────────
-        if "youtube" in text_lower or "watch" in text_lower or "video search" in text_lower:
-            m_yt = re.search(r'(?:search\s+youtube\s+for|youtube\s+search|youtube|find\s+videos?\s+on|watch)\s+(?:for\s+)?(.+)', text_lower)
-            query = m_yt.group(1).strip() if m_yt else text_strip
-            query = re.sub(r'^(?:do\s+a|can\s+you|please|search|for|about)\s+', '', query, flags=re.IGNORECASE).strip()
-            if not query:
-                query = text_strip
-
-            task = self.task_manager.create_task(
-                type_=TaskType.YOUTUBE_SEARCH.value,
-                title=f"YouTube Search: {query}",
-                data={"query": query}
-            )
-            return True, f"Searching YouTube for '{query}', {sal}.", task, "youtube_search"
+        # ── 2. YouTube / Web Search ─────────────────────────────────
+        # Removed hard-coded keyword routing. The AI model now has full
+        # autonomy to decide search intent via [SEARCH: ...] and
+        # [YOUTUBE: ...] cognitive directives in the advisor prompt.
 
         # ── 3. Check for Autonomous Terminal / System Command ──────
         # Handles explicit commands, backticks, or direct CLI binary execution (dig, nmap, curl, etc.)

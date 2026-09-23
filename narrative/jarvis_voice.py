@@ -170,9 +170,14 @@ CRITICAL IDENTITY & CREATOR PROVENANCE:
   - Obscure, specific external data that is outside your internal training data
   You can autonomously summon real-time web intelligence by emitting:
   [SEARCH: <concise search query>]
-  Example:
+  For YouTube video searches specifically, emit:
+  [YOUTUBE: <concise search query>]
+  Examples:
   - User: "What is the latest score in today's football match?" -> [SEARCH: football match score today] Pulling up the live telemetry now, Sir.
-  CRITICAL: Do NOT emit [SEARCH: ...] for general knowledge, definitions, history, banter, or local system tasks.
+  - User: "find me some lofi beats to study" -> [YOUTUBE: lofi beats to study] Scanning the video feeds now, Sir.
+  - User: "youtube" -> Respond conversationally. Do NOT search. Ask what they'd like to find, or offer to open it.
+  - User: "what is youtube" -> Answer from your internal knowledge. Do NOT search.
+  CRITICAL: Do NOT emit [SEARCH: ...] or [YOUTUBE: ...] for general knowledge, definitions, history, banter, or local system tasks. Only search when the user explicitly wants real-time external data or video content.
 - Response Guidelines:
   1. Length: Keep conversational responses crisp, punchy, and articulate (1 to 3 sentences) unless an in-depth breakdown is explicitly requested.
   2. Voice & Tone: Dry British wit and understated intelligence. Zero robotic clichés, zero forced profanity.
@@ -1602,8 +1607,14 @@ class JarvisVoice:
                 tactical["search"] = m_search_dir.group(1).strip()
                 cleaned = re.sub(r'\[\s*SEARCH\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
 
+            # Detect [YOUTUBE: <directive>]
+            m_yt_dir = re.search(r'\[\s*YOUTUBE\s*:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
+            if m_yt_dir:
+                tactical["youtube"] = m_yt_dir.group(1).strip()
+                cleaned = re.sub(r'\[\s*YOUTUBE\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
+
             # Residual cleanup to ensure zero leaked tactical directives or brackets reach TTS
-            cleaned = re.sub(r'\[\s*(?:NAV|LAYER|CMD|ZOOM|RADIO|SFX|ANNOTATE|COCKPIT|SEARCH)[^\]]*\]', '', cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r'\[\s*(?:NAV|LAYER|CMD|ZOOM|RADIO|SFX|ANNOTATE|COCKPIT|SEARCH|YOUTUBE)[^\]]*\]', '', cleaned, flags=re.IGNORECASE)
             cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
             return cleaned, tactical
@@ -1629,6 +1640,27 @@ class JarvisVoice:
                         f"{prompt}\n\n[REAL-WORLD LIVE WEB SCAN RESULTS FOR '{tool_query}']:\n{intel_summary}\n\n"
                         f"[INSTRUCTIONS]: Ground your verbal debrief to Sir in the live search results above. "
                         f"Deliver an articulate, accurate answer with your characteristic wit. Do NOT emit [SEARCH: ...] again."
+                    )
+                    second_cloud = self._ask_cloud(second_prompt, system, max_tokens=max_tok, on_token=on_token, image_path=image_path)
+                    if second_cloud["text"]:
+                        cloud = second_cloud
+
+            # Autonomous YouTube Search (ReAct turn)
+            m_cog_youtube = re.search(r'\[\s*YOUTUBE\s*:\s*([^\]]+)\]', primary_text, re.IGNORECASE)
+            if m_cog_youtube and not live_search_intel:
+                yt_query = m_cog_youtube.group(1).strip()
+                print(f"[voice] Cognitive tool invoked by AI model: [YOUTUBE: '{yt_query}']")
+                yt_summary, yt_results = self.skills.perform_youtube_search(yt_query)
+                if yt_results:
+                    resolved_search_query = yt_query
+                    search_panel_payload = self.skills.hud_engine.build_structured_payload(
+                        f"YouTube: {yt_query}", "YOUTUBE", yt_results, yt_summary
+                    )
+                    is_action_popup = True
+                    second_prompt = (
+                        f"{prompt}\n\n[YOUTUBE VIDEO RESULTS FOR '{yt_query}']:\n{yt_summary}\n\n"
+                        f"[INSTRUCTIONS]: Ground your verbal debrief in the YouTube results above. "
+                        f"Deliver an articulate summary of what was found. Do NOT emit [YOUTUBE: ...] again."
                     )
                     second_cloud = self._ask_cloud(second_prompt, system, max_tokens=max_tok, on_token=on_token, image_path=image_path)
                     if second_cloud["text"]:
@@ -1676,6 +1708,27 @@ class JarvisVoice:
                         f"{prompt}\n\n[REAL-WORLD LIVE WEB SCAN RESULTS FOR '{tool_query}']:\n{intel_summary}\n\n"
                         f"[INSTRUCTIONS]: Ground your verbal debrief to Sir in the live search results above. "
                         f"Deliver an articulate, accurate answer with your characteristic wit. Do NOT emit [SEARCH: ...] again."
+                    )
+                    second_slm = self._ask_slm(second_prompt, system, max_tokens=max_tok, timeout=180, num_ctx=8192, on_token=on_token)
+                    if second_slm["text"]:
+                        slm_res = second_slm
+
+            # Autonomous YouTube Search (SLM ReAct turn)
+            m_cog_youtube = re.search(r'\[\s*YOUTUBE\s*:\s*([^\]]+)\]', slm_res["text"], re.IGNORECASE)
+            if m_cog_youtube and not live_search_intel:
+                yt_query = m_cog_youtube.group(1).strip()
+                print(f"[voice] Cognitive tool invoked by SLM: [YOUTUBE: '{yt_query}']")
+                yt_summary, yt_results = self.skills.perform_youtube_search(yt_query)
+                if yt_results:
+                    resolved_search_query = yt_query
+                    search_panel_payload = self.skills.hud_engine.build_structured_payload(
+                        f"YouTube: {yt_query}", "YOUTUBE", yt_results, yt_summary
+                    )
+                    is_action_popup = True
+                    second_prompt = (
+                        f"{prompt}\n\n[YOUTUBE VIDEO RESULTS FOR '{yt_query}']:\n{yt_summary}\n\n"
+                        f"[INSTRUCTIONS]: Ground your verbal debrief in the YouTube results above. "
+                        f"Deliver an articulate summary of what was found. Do NOT emit [YOUTUBE: ...] again."
                     )
                     second_slm = self._ask_slm(second_prompt, system, max_tokens=max_tok, timeout=180, num_ctx=8192, on_token=on_token)
                     if second_slm["text"]:
