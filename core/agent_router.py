@@ -1,4 +1,5 @@
 import re
+import shutil
 from typing import Tuple, Dict, Any, Optional
 from core.task import Task, TaskType, TaskFinding
 from core.task_manager import get_task_manager, TaskManager
@@ -316,7 +317,9 @@ class AgentRouter:
         if m_app:
             app_name = m_app.group(1).strip()
             excluded = ["google", "youtube", "dialog", "target", "investigation", "case", "node", "first", "second", "third", "fourth", "fifth", "1", "2", "3", "4", "5", "panel", "surface", "chip"] + cli_tools
-            if app_name not in excluded and not app_name.startswith("the ") and not any(w in app_name for w in ["result", "video", "item", "link", "number", "second", "third", "fourth", "fifth"]):
+            known_apps = {"browser", "chrome", "firefox", "terminal", "calculator", "calc", "files", "code", "vscode", "editor", "gedit", "vlc", "spotify", "slack", "discord", "settings"}
+            is_valid_app = (app_name in known_apps) or bool(shutil.which(app_name)) or bool(shutil.which(app_name.replace(" ", "-")))
+            if is_valid_app and app_name not in excluded and not app_name.startswith("the ") and not any(w in app_name for w in ["result", "video", "item", "link", "number", "second", "third", "fourth", "fifth"]):
                 task = self.task_manager.create_task(
                     type_=TaskType.SYSTEM_ACTION.value,
                     title=f"System Action: Launch {app_name.upper()}",

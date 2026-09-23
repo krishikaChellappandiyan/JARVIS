@@ -811,13 +811,16 @@ class JarvisAPI:
         """Keep mic open in continued-conversation mode after J.A.R.V.I.S. finishes speaking."""
         dur = getattr(self, '_follow_up_window_sec', 10.0)
         self._follow_up_active = True
-        self._follow_up_expires = time.time() + dur
+        tts_end = max(time.time(), getattr(self, '_tts_playback_until', 0.0))
+        self._follow_up_expires = tts_end + dur
+        self._wake_window_expires = max(getattr(self, '_wake_window_expires', 0.0), self._follow_up_expires)
+        effective_dur = max(dur, self._follow_up_expires - time.time())
         if getattr(self, '_wake_engine', None):
             try:
-                self._wake_engine.start_follow_up_window(dur)
+                self._wake_engine.start_follow_up_window(effective_dur)
             except Exception as e:
                 print(f"[desktop] Notice starting follow-up window: {e}")
-        print(f"[desktop] Continued-conversation window ACTIVE ({dur:.1f}s) — open mic, no wake word needed.")
+        print(f"[desktop] Continued-conversation window ACTIVE ({dur:.1f}s post-playback) — open mic, no wake word needed.")
         self._emit("jarvis_followup_listening_active", {
             "duration": dur,
             "mode": "open_mic"
@@ -2905,6 +2908,7 @@ class JarvisAPI:
                     if not sentence:
                         continue
 
+                    self._tts_speaking = True
                     self._recent_agent_responses.append(sentence.strip())
                     if len(self._recent_agent_responses) > 20:
                         self._recent_agent_responses.pop(0)
@@ -2989,6 +2993,7 @@ class JarvisAPI:
                     with self._tts_turn_lock:
                         if self._tts_turn_id != turn:
                             continue
+                    self._tts_speaking = True
                     tts_state["emitted"] = True
                     # Emit to UI immediately
                     self._emit("jarvis_audio_chunk", {
@@ -3145,6 +3150,11 @@ class JarvisAPI:
             self._execute_tactical_annotate(result["annotate_action"])
         if result.get("cockpit_action"):
             self._execute_tactical_cockpit(result["cockpit_action"])
+        if result.get("app_action") and hasattr(self._voice, 'skills') and self._voice.skills:
+            try:
+                self._voice.skills.open_application(result["app_action"])
+            except Exception as app_err:
+                print(f"[desktop] Autonomous app launch error: {app_err}")
 
         if result.get("rate_limited"):
             self._emit("rate_limited", {})
@@ -3250,8 +3260,28 @@ class JarvisAPI:
             except Exception:
                 pass
 
-        # Trigger Continued-Conversation (open-mic follow-up window)
-        self._start_follow_up_window()
+        # Open continued-conversation follow-up window ONLY after speech finishes playing
+        def _await_speech_completion_and_open_mic():
+            if synth_thread:
+                try:
+                    synth_thread.join(timeout=45.0)
+                except Exception:
+                    pass
+            if playback_thread:
+                try:
+                    playback_thread.join(timeout=45.0)
+                except Exception:
+                    pass
+            # Mark TTS finished and set acoustic decay buffer
+            self._tts_speaking = False
+            self._tts_playback_until = max(getattr(self, '_tts_playback_until', 0.0), time.time() + 2.0)
+            self._start_follow_up_window()
+
+        if synth_thread or playback_thread:
+            threading.Thread(target=_await_speech_completion_and_open_mic, daemon=True).start()
+        else:
+            self._tts_speaking = False
+            self._start_follow_up_window()
 
     def export_report(self) -> str:
         """Export current investigation target findings to a standalone HTML report."""
@@ -3765,6 +3795,9 @@ class JarvisAPI:
 
     def cancel_playback(self):
         """Immediately abort active TTS audio playback (instant barge-in)."""
+        self._tts_speaking = False
+        with self._tts_turn_lock:
+            self._tts_turn_id += 1
         self._tts_playback_until = 0.0
         self._emit("jarvis_stop_pcm", {})
         self._emit("jarvis_interrupt_speech", {})

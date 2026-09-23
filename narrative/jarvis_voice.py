@@ -157,10 +157,14 @@ CRITICAL IDENTITY & CREATOR PROVENANCE:
   You can execute Linux shell commands for genuine system operations, file inspection, diagnostics, network sockets, or git.
   To execute an OS command, emit:
   [CMD: <command>]
+  To launch or switch to desktop applications (e.g. terminal, browser, code editor, calculator, files, settings), emit:
+  [APP: <app_name>]
   Examples:
   - User: "check disk space" -> [CMD: df -h]
   - User: "ping cloudflare" -> [CMD: ping -c 3 1.1.1.1]
-  CRITICAL: Only emit [CMD: ...] when Sir specifically asks for system/terminal actions. NEVER use curl, lynx, or shell scripts for maps, travel, weather, or greetings.
+  - User: "open up VS Code" -> [APP: code] Initializing VS Code for you now, Sir.
+  - User: "can you fire up the browser?" -> [APP: browser] Launching web browser now, Sir.
+  CRITICAL: Only emit [CMD: ...] or [APP: ...] when Sir specifically asks for system/application actions. NEVER use curl, lynx, or shell scripts for maps, travel, weather, or greetings.
 - Cognitive Web Intel & Autonomous Search Directive:
   You possess comprehensive internal knowledge across science, history, geography, technology, culture, and operational strategy.
   Answer directly from your vast internal knowledge for general questions, explanations, concepts, and trivia without searching.
@@ -1613,8 +1617,14 @@ class JarvisVoice:
                 tactical["youtube"] = m_yt_dir.group(1).strip()
                 cleaned = re.sub(r'\[\s*YOUTUBE\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
 
+            # Detect [APP: <directive>]
+            m_app_dir = re.search(r'\[\s*APP\s*:\s*([^\]]+)\]', cleaned, re.IGNORECASE)
+            if m_app_dir:
+                tactical["app"] = m_app_dir.group(1).strip()
+                cleaned = re.sub(r'\[\s*APP\s*:[^\]]+\]', '', cleaned, flags=re.IGNORECASE).strip()
+
             # Residual cleanup to ensure zero leaked tactical directives or brackets reach TTS
-            cleaned = re.sub(r'\[\s*(?:NAV|LAYER|CMD|ZOOM|RADIO|SFX|ANNOTATE|COCKPIT|SEARCH|YOUTUBE)[^\]]*\]', '', cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r'\[\s*(?:NAV|LAYER|CMD|ZOOM|RADIO|SFX|ANNOTATE|COCKPIT|SEARCH|YOUTUBE|APP)[^\]]*\]', '', cleaned, flags=re.IGNORECASE)
             cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
             return cleaned, tactical
@@ -1688,6 +1698,7 @@ class JarvisVoice:
                 "annotate_action": tactical_directives.get("annotate"),
                 "cockpit_action": tactical_directives.get("cockpit"),
                 "search_action": tactical_directives.get("search") or resolved_search_query,
+                "app_action": tactical_directives.get("app"),
             }
 
         # Fall back to local SLM
@@ -1756,6 +1767,7 @@ class JarvisVoice:
             "annotate_action": tactical_directives.get("annotate"),
             "cockpit_action": tactical_directives.get("cockpit"),
             "search_action": tactical_directives.get("search") or resolved_search_query,
+            "app_action": tactical_directives.get("app"),
         }
 
     def classify_intent(self, text: str, current_target: Target = None) -> dict:
