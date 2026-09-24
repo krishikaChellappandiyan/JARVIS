@@ -5935,10 +5935,15 @@ const SPINNER_HTML = `
   </div>
 `;
 
-function startStreamingAnswer() {
+function startStreamingAnswer(turnId) {
+  const tId = turnId != null ? Number(turnId) : (typeof activeJarvisTtsTurn !== 'undefined' ? activeJarvisTtsTurn : 0);
   if (currentStreamingElem) {
-    streamingBuffer = "";
-    return currentStreamingElem;
+    const elemTurn = currentStreamingElem.dataset.turnId ? Number(currentStreamingElem.dataset.turnId) : null;
+    if (elemTurn === tId) {
+      return currentStreamingElem;
+    }
+    // Element exists from a previous turn; finalize it cleanly before creating a new one
+    finalizeStreamingAnswer(null, elemTurn);
   }
   showThinking(false);
   setHudState('thinking');
@@ -5946,16 +5951,19 @@ function startStreamingAnswer() {
 
   const el = document.createElement('div');
   el.className = 'msg-answer streaming';
+  el.dataset.turnId = String(tId);
   el.innerHTML = SPINNER_HTML;
-  thread.appendChild(el);
+  const threadEl = document.getElementById('thread') || (typeof thread !== 'undefined' ? thread : null);
+  if (threadEl) threadEl.appendChild(el);
   currentStreamingElem = el;
   scrollThreadToBottom();
   return el;
 }
 
-function updateStreamingChunk(chunkText) {
-  if (!currentStreamingElem) {
-    startStreamingAnswer();
+function updateStreamingChunk(chunkText, turnId) {
+  const tId = turnId != null ? Number(turnId) : (typeof activeJarvisTtsTurn !== 'undefined' ? activeJarvisTtsTurn : 0);
+  if (!currentStreamingElem || (currentStreamingElem.dataset.turnId && Number(currentStreamingElem.dataset.turnId) !== tId)) {
+    startStreamingAnswer(tId);
   }
   if (!currentStreamingElem) return;
   streamingBuffer += chunkText;
@@ -5985,8 +5993,14 @@ function updateStreamingChunk(chunkText) {
   scrollThreadToBottom();
 }
 
-function finalizeStreamingAnswer(finalText) {
+function finalizeStreamingAnswer(finalText, turnId) {
   if (currentStreamingElem) {
+    const elemTurn = currentStreamingElem.dataset.turnId ? Number(currentStreamingElem.dataset.turnId) : null;
+    const reqTurn = turnId != null ? Number(turnId) : null;
+    if (reqTurn != null && elemTurn != null && reqTurn !== elemTurn) {
+      console.warn(`[JarvisText] finalizeStreamingAnswer turn mismatch: event turn=${reqTurn} vs elem turn=${elemTurn}; ignoring.`);
+      return;
+    }
     const raw = finalText || streamingBuffer;
     const text = cleanSpeakerPrefix(raw);
     if (typeof marked !== 'undefined' && marked.parse) {
@@ -8794,12 +8808,53 @@ async function startMicListening() {
           if (!fullText) return;
 
           // Self-echo check: Suppress transcript if it matches recent J.A.R.V.I.S. speech
-          const cleanRec = fullText.toLowerCase().replace(/[^\w\s]/g, '').trim();
-          for (const pastText of recentAgentTexts) {
-            const cleanPast = pastText.toLowerCase().replace(/[^\w\s]/g, '').trim();
-            if (cleanPast && (cleanPast.includes(cleanRec) || cleanRec.includes(cleanPast))) {
-              console.log('[JarvisSTT] Self-echo transcript suppressed:', fullText);
-              return;
+          // Only evaluate within active playback or 1.5s room reverberation decay window.
+          const isAudioActiveOrReverb = isPlayingJarvisQueue || currentJarvisAudioElement || (Date.now() < ttsPlaybackEndTime + 1500);
+          if (isAudioActiveOrReverb) {
+            const cleanRec = fullText.toLowerCase().replace(/[^\w\s]/g, '').trim();
+            const recWords = cleanRec.split(/\s+/).filter(Boolean);
+            if (recWords.length >= 3) {
+              const recWordSet = new Set(recWords);
+              for (const item of recentAgentTexts) {
+                const pastText = (typeof item === 'object' && item && item.text) ? item.text : item;
+                const cleanPast = (pastText || '').toLowerCase().replace(/[^\w\s]/g, '').trim();
+                if (!cleanPast) continue;
+
+                // 1. Partial or exact substring echo (at least 3 words)
+                if (cleanPast.includes(cleanRec)) {
+                  console.log('[JarvisSTT] Self-echo transcript suppressed (substring match):', fullText);
+                  return;
+                }
+
+                const pastWords = cleanPast.split(/\s+/).filter(Boolean);
+                const pastWordSet = new Set(pastWords);
+                // 2. High word overlap (>= 80%) with matching length
+                let commonCount = 0;
+                for (const w of recWordSet) {
+                  if (pastWordSet.has(w)) commonCount++;
+                }
+                const overlap = commonCount / recWordSet.size;
+                if (overlap >= 0.80 && recWords.length <= pastWords.length + 1) {
+                  console.log('[JarvisSTT] Self-echo transcript suppressed (word overlap):', fullText);
+                  return;
+                }
+
+                // 3. Bigram overlap (>= 75%)
+                if (recWords.length >= 4 && pastWords.length >= 4) {
+                  const recBigrams = new Set();
+                  for (let i = 0; i < recWords.length - 1; i++) recBigrams.add(recWords[i] + ' ' + recWords[i+1]);
+                  const pastBigrams = new Set();
+                  for (let i = 0; i < pastWords.length - 1; i++) pastBigrams.add(pastWords[i] + ' ' + pastWords[i+1]);
+                  let commonBigrams = 0;
+                  for (const bg of recBigrams) {
+                    if (pastBigrams.has(bg)) commonBigrams++;
+                  }
+                  if ((commonBigrams / recBigrams.size) >= 0.75 && recWords.length <= pastWords.length + 2) {
+                    console.log('[JarvisSTT] Self-echo transcript suppressed (bigram overlap):', fullText);
+                    return;
+                  }
+                }
+              }
             }
           }
 
@@ -9124,10 +9179,14 @@ let jarvisPcmContext = null;
 let jarvisPcmNextStartTime = 0;
 let jarvisPcmGeneration = 0;
 let activeJarvisTtsTurn = 0;
+let ttsSynthesisFinishedTurns = new Set();
+let ttsNotifiedPlaybackTurns = new Set();
+let activePlayingChunkCount = 0;
 
 function stopJarvisPcmStream() {
   jarvisPcmGeneration++;
   jarvisPcmNextStartTime = 0;
+  activePlayingChunkCount = 0;
   if (jarvisPcmContext) {
     try { jarvisPcmContext.close(); } catch(e) {}
     jarvisPcmContext = null;
@@ -9447,14 +9506,14 @@ function enqueueJarvisPcmChunk(audioB64, sampleRate, text, turnId) {
       ttsPlaybackEndTime,
       Date.now() + Math.max(250, (startAt - now + buffer.duration) * 1000)
     );
+    if (generation !== jarvisPcmGeneration) return false;
+    activePlayingChunkCount++;
+    const chunkTurn = turnId != null ? Number(turnId) : Number(activeJarvisTtsTurn);
     source.onended = () => {
       try { source.disconnect(); } catch(e) {}
-      if (ctx.currentTime >= jarvisPcmNextStartTime - 0.08) {
-        isPlayingJarvisQueue = false;
-        if (jarvisHudState === 'speaking') setHudState('idle');
-      }
+      activePlayingChunkCount = Math.max(0, activePlayingChunkCount - 1);
+      checkAndNotifyPlaybackCompletion(chunkTurn);
     };
-    if (generation !== jarvisPcmGeneration) return false;
     source.start(startAt);
     isPlayingJarvisQueue = true;
     setHudState('speaking');
@@ -9465,6 +9524,41 @@ function enqueueJarvisPcmChunk(audioB64, sampleRate, text, turnId) {
   }
 }
 window.enqueueJarvisPcmChunk = enqueueJarvisPcmChunk;
+
+function checkAndNotifyPlaybackCompletion(turnId) {
+  const currentTurn = turnId != null ? Number(turnId) : Number(activeJarvisTtsTurn);
+  if (currentTurn !== Number(activeJarvisTtsTurn)) return;
+  const ctx = jarvisPcmContext;
+  const drainTolerance = 0.02; // 20ms tolerance avoids premature completion on sub-50ms trailing chunks
+  const isAudioDrained = !ctx || (activePlayingChunkCount <= 0 && (!hasReceivedAudioChunk || ctx.currentTime >= (jarvisPcmNextStartTime - drainTolerance)));
+  const isSynthesisDone = ttsSynthesisFinishedTurns.has(currentTurn);
+
+  if (isSynthesisDone && isAudioDrained) {
+    isPlayingJarvisQueue = false;
+    if (jarvisHudState === 'speaking') setHudState('idle');
+    signalPlaybackFinished(currentTurn);
+  }
+}
+
+function signalPlaybackFinished(turnId) {
+  const tId = Number(turnId);
+  if (ttsNotifiedPlaybackTurns.has(tId)) return;
+  ttsNotifiedPlaybackTurns.add(tId);
+
+  try {
+    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.notify_tts_playback_finished === 'function') {
+      window.pywebview.api.notify_tts_playback_finished(tId);
+    } else {
+      fetch('/api/tts/playback_finished', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ turn_id: tId })
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('[JarvisAudio] Failed to notify playback finished:', err);
+  }
+}
 
 // Backward compatibility bindings for audio queue
 try {
@@ -11197,7 +11291,8 @@ window.jarvis = window.joe = {
         break;
       case 'jarvis_followup_listening_active':
       case 'joe_followup_listening_active':
-        resetJarvisAudioQueue();
+        // Note: Do not call resetJarvisAudioQueue() here — speech has naturally finished,
+        // so destroying audio contexts reflexively cuts off residual playback tails.
         setHudState('followup_listening');
         const dur = (data && data.duration) ? data.duration : 10;
         showSubtitles(`🎙️ [OPEN MIC ACTIVE] Listening for follow-up (${dur}s) — no wake word needed...`, 'CONVERSATION');
@@ -11326,17 +11421,29 @@ window.jarvis = window.joe = {
         if ('speechSynthesis' in window) { try { window.speechSynthesis.cancel(); } catch(e) {} }
         hasReceivedAudioChunk = false;
         activeJarvisTtsTurn = Number(data?.turn_id || (activeJarvisTtsTurn + 1));
+        ttsSynthesisFinishedTurns.delete(activeJarvisTtsTurn);
+        ttsNotifiedPlaybackTurns.delete(activeJarvisTtsTurn);
+        activePlayingChunkCount = 0;
         if (window.JarvisSFX && window.JarvisSFX.speechReady) {
           window.JarvisSFX.speechReady();
         }
         setHudState('speaking');
-        startStreamingAnswer();
+        startStreamingAnswer(activeJarvisTtsTurn);
         break;
 
       case 'jarvis_pcm_audio_chunk':
         if (data && data.audio) {
+          console.log(`[JarvisAudio] Received PCM chunk (turn=${data.turn_id}, sample_rate=${data.sample_rate}, len=${data.audio ? data.audio.length : 0})`);
           hasReceivedAudioChunk = true;
           enqueueJarvisPcmChunk(data.audio, data.sample_rate || 44100, data.text || '', data.turn_id);
+        }
+        break;
+
+      case 'jarvis_tts_stream_end':
+        if (data && data.turn_id != null) {
+          const tId = Number(data.turn_id);
+          ttsSynthesisFinishedTurns.add(tId);
+          checkAndNotifyPlaybackCompletion(tId);
         }
         break;
 
@@ -11506,7 +11613,11 @@ window.jarvis = window.joe = {
 
       case 'jarvis_stream_chunk':
       case 'joe_stream_chunk':
-        updateStreamingChunk(data.chunk);
+        if (data) {
+          const tId = data.turn_id != null ? Number(data.turn_id) : activeJarvisTtsTurn;
+          console.log(`[JarvisText] Received stream chunk (turn=${tId}, len=${data.chunk ? data.chunk.length : 0})`);
+          updateStreamingChunk(data.chunk, tId);
+        }
         break;
 
       case 'jarvis_tts_browser_fallback':
@@ -11526,13 +11637,19 @@ window.jarvis = window.joe = {
 
       case 'jarvis_answer':
       case 'joe_answer':
+        const ansTurn = data && data.turn_id != null ? Number(data.turn_id) : activeJarvisTtsTurn;
+        console.log(`[JarvisText] Received answer (turn=${ansTurn}, text_len=${data?.text ? data.text.length : 0})`);
         showThinking(false);
         setHudState('idle');
+        if (data && data.text && data.text.trim()) {
+          recentAgentTexts.push(data.text.trim());
+          if (recentAgentTexts.length > 25) recentAgentTexts.shift();
+        }
         if (data.open_dialog) {
           openTargetDialog();
         }
         if (currentStreamingElem) {
-          finalizeStreamingAnswer(data.text);
+          finalizeStreamingAnswer(data.text, ansTurn);
         } else if (data.text) {
           streamTextToThread(data.text);
         }
@@ -13949,6 +14066,13 @@ window.focusGlobeCoordinates = function(lat, lon, label) {
 window.resetGlobeOrbitView = function() {
   window._isTargetViewLocked = false;
   if (window.cesiumBeacon) window.cesiumBeacon.show = false;
+  if (window.JarvisAnnotations && window.JarvisAnnotations.dataSource) {
+    const ds = window.JarvisAnnotations.dataSource;
+    const oldWp = ds.entities.getById('jarvis-arrival-waypoint');
+    if (oldWp) ds.entities.remove(oldWp);
+    const oldRet = ds.entities.getById('jarvis-arrival-reticle');
+    if (oldRet) ds.entities.remove(oldRet);
+  }
   if (typeof window.updateCesiumLabelVisibility === 'function') {
     window.updateCesiumLabelVisibility();
   }
@@ -14270,7 +14394,8 @@ const JarvisAnnotations = {
         semiMajorAxis: 250,
         semiMinorAxis: 250,
         material: cesiumColor.withAlpha(0.20),
-        height: 5
+        height: 5,
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 500000.0)
       },
       polyline: {
         positions: this.computeRangeCircle(lon, lat, 250, 48, 8),
@@ -14278,7 +14403,8 @@ const JarvisAnnotations = {
         material: new Cesium.PolylineDashMaterialProperty({
           color: cesiumColor.withAlpha(0.9),
           dashLength: 10.0
-        })
+        }),
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 500000.0)
       }
     });
 
@@ -14300,13 +14426,15 @@ const JarvisAnnotations = {
           lon, lat, 450
         ]),
         width: 2.5,
-        material: cesiumColor
+        material: cesiumColor,
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 500000.0)
       },
       billboard: {
         image: cardCanvas,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
         pixelOffset: new Cesium.Cartesian2(0, -8),
-        disableDepthTestDistance: 1200000
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 500000.0),
+        disableDepthTestDistance: 500000.0
       },
       label: {
         text: `🎯 ${(label || 'SECTOR').toUpperCase()}`,
@@ -14317,7 +14445,8 @@ const JarvisAnnotations = {
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
         pixelOffset: new Cesium.Cartesian2(0, -22),
-        disableDepthTestDistance: 1200000
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 500000.0),
+        disableDepthTestDistance: 500000.0
       }
     });
 
@@ -14339,7 +14468,8 @@ const JarvisAnnotations = {
         semiMajorAxis: 200,
         semiMinorAxis: 200,
         material: cesiumColor.withAlpha(0.22),
-        height: 5
+        height: 5,
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 500000.0)
       },
       polyline: {
         positions: this.computeRangeCircle(lon, lat, 200, 48, 8),
@@ -14347,14 +14477,16 @@ const JarvisAnnotations = {
         material: new Cesium.PolylineDashMaterialProperty({
           color: cesiumColor.withAlpha(0.9),
           dashLength: 8.0
-        })
+        }),
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 500000.0)
       },
       point: {
         pixelSize: 8,
         color: cesiumColor,
         outlineColor: Cesium.Color.WHITE,
         outlineWidth: 2,
-        disableDepthTestDistance: 1200000
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 500000.0),
+        disableDepthTestDistance: 500000.0
       }
     });
 
@@ -14375,13 +14507,15 @@ const JarvisAnnotations = {
           lon, lat, 450
         ]),
         width: 2.5,
-        material: cesiumColor
+        material: cesiumColor,
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 500000.0)
       },
       billboard: {
         image: cardCanvas,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
         pixelOffset: new Cesium.Cartesian2(0, -8),
-        disableDepthTestDistance: 1200000
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 500000.0),
+        disableDepthTestDistance: 500000.0
       },
       label: {
         text: `🎯 ${(label || 'PIN').toUpperCase()}`,
@@ -14392,7 +14526,8 @@ const JarvisAnnotations = {
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
         pixelOffset: new Cesium.Cartesian2(0, -22),
-        disableDepthTestDistance: 1200000
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0.0, 500000.0),
+        disableDepthTestDistance: 500000.0
       }
     });
 
@@ -15546,7 +15681,7 @@ function initCesiumGlobe() {
               window._cesiumLabelLayer = labelLayer;
 
               function updateLabelVisibility() {
-                if (!labelLayer || labelLayer.isDestroyed() || !cesiumViewer || cesiumViewer.isDestroyed()) return;
+                if (!cesiumViewer || cesiumViewer.isDestroyed()) return;
                 try {
                   const cam = cesiumViewer.camera;
                   const carto = cam.positionCartographic;
@@ -15554,17 +15689,35 @@ function initCesiumGlobe() {
                   const isLocked = Boolean(window.lockedTargetEntity || window._isTargetViewLocked);
                   const isClose = height <= 1500000;
 
-                  if (isLocked || isClose) {
-                    labelLayer.show = true;
-                    if (isLocked || height <= 600000) {
-                      labelLayer.alpha = 0.95;
+                  if (labelLayer && !labelLayer.isDestroyed()) {
+                    if (isLocked || isClose) {
+                      labelLayer.show = true;
+                      if (isLocked || height <= 600000) {
+                        labelLayer.alpha = 0.95;
+                      } else {
+                        const t = Math.max(0.0, Math.min(1.0, (1500000 - height) / 900000));
+                        labelLayer.alpha = 0.25 + 0.70 * t;
+                      }
                     } else {
-                      const t = Math.max(0.0, Math.min(1.0, (1500000 - height) / 900000));
-                      labelLayer.alpha = 0.25 + 0.70 * t;
+                      labelLayer.show = false;
+                      labelLayer.alpha = 0.0;
                     }
-                  } else {
-                    labelLayer.show = false;
-                    labelLayer.alpha = 0.0;
+                  }
+
+                  // Tactical waypoint & HUD cards altitude culling (hide when camera zooms out to planetary scale)
+                  if (window.JarvisAnnotations && window.JarvisAnnotations.dataSource) {
+                    const ds = window.JarvisAnnotations.dataSource;
+                    const wp = ds.entities.getById('jarvis-arrival-waypoint');
+                    const ret = ds.entities.getById('jarvis-arrival-reticle');
+                    const showWp = (height <= 500000);
+                    if (wp && wp.show !== showWp) wp.show = showWp;
+                    if (ret && ret.show !== showWp) ret.show = showWp;
+                  }
+                  if (window.cesiumBeacon) {
+                    const showBeacon = (height <= 800000);
+                    if (!showBeacon && window.cesiumBeacon.show) {
+                      window.cesiumBeacon.show = false;
+                    }
                   }
                 } catch (e) {}
               }

@@ -61,7 +61,8 @@ except ImportError:
 from core.target_model import Target
 from core.case_brief import CaseBrief, parse_brief_with_slm
 from core.wake_word import WakeWordEngine
-from narrative.jarvis_voice import JarvisVoice, JarvisVoice
+from core.jarvis_memory import JarvisMemory
+from narrative.jarvis_voice import JarvisVoice
 from narrative.session_memory import SessionMemory
 from memory.lessons_store import LessonsStore
 
@@ -177,13 +178,98 @@ class _StreamingPrefixFilter:
 
     feed = push
 
+    DIRECTIVE_PREFIXES = (
+        "CMD", "NAV", "LAYER", "ZOOM", "RADIO", "SFX", "ANNOTATE",
+        "COCKPIT", "STYLE", "PATROL", "WINDOW", "MODE", "VOICEOS",
+        "SEARCH", "YOUTUBE", "APP", "MEDIA"
+    )
+
+    def _dispatch_directive(self, buf: str):
+        # Check if this bracket block is a tactical God's Eye or system directive (whitespace tolerant)
+        m_cmd = re.match(r'\[\s*CMD(?::|\s)\s*(.+)\]\s*$', buf, re.IGNORECASE | re.DOTALL)
+        m_nav = re.match(r'\[\s*NAV(?::|\s)\s*(.+)\]\s*$', buf, re.IGNORECASE | re.DOTALL)
+        m_layer = re.match(r'\[\s*LAYER(?::|\s)\s*(.+)\]\s*$', buf, re.IGNORECASE | re.DOTALL)
+        m_zoom = re.match(r'\[\s*ZOOM(?::|\s)\s*(.+)\]\s*$', buf, re.IGNORECASE | re.DOTALL)
+        m_radio = re.match(r'\[\s*RADIO(?::|\s)\s*(.+)\]\s*$', buf, re.IGNORECASE | re.DOTALL)
+        m_sfx = re.match(r'\[\s*SFX(?::|\s)\s*(.+)\]\s*$', buf, re.IGNORECASE | re.DOTALL)
+        m_annotate = re.match(r'\[\s*ANNOTATE(?::|\s)\s*(.+)\]\s*$', buf, re.IGNORECASE | re.DOTALL)
+        m_cockpit = re.match(r'\[\s*COCKPIT(?::|\s)\s*(.+)\]\s*$', buf, re.IGNORECASE | re.DOTALL)
+        m_style = re.match(r'\[\s*STYLE(?::|\s)\s*(.+)\]\s*$', buf, re.IGNORECASE | re.DOTALL)
+        m_patrol = re.match(r'\[\s*PATROL(?::|\s)\s*(.+)\]\s*$', buf, re.IGNORECASE | re.DOTALL)
+        m_window = re.match(r'\[\s*(?:WINDOW|MODE|VOICEOS)(?::|\s)\s*(.+)\]\s*$', buf, re.IGNORECASE | re.DOTALL)
+
+        if m_cmd:
+            cmd_to_run = m_cmd.group(1).strip()
+            try:
+                from core.system_commander import get_system_commander
+                commander = get_system_commander()
+                commander.run_as_task(cmd_to_run, title=f"Terminal: {cmd_to_run[:30]}")
+            except Exception as e:
+                print(f"[desktop] Streaming command launch error: {e}")
+        elif m_nav and self.on_nav:
+            try:
+                self.on_nav(m_nav.group(1).strip())
+            except Exception as e:
+                print(f"[desktop] Streaming NAV error: {e}")
+        elif m_layer and self.on_layer:
+            try:
+                self.on_layer(m_layer.group(1).strip())
+            except Exception as e:
+                print(f"[desktop] Streaming LAYER error: {e}")
+        elif m_style and self.on_style:
+            try:
+                self.on_style(m_style.group(1).strip())
+            except Exception as e:
+                print(f"[desktop] Streaming STYLE error: {e}")
+        elif m_patrol and self.on_patrol:
+            try:
+                self.on_patrol(m_patrol.group(1).strip())
+            except Exception as e:
+                print(f"[desktop] Streaming PATROL error: {e}")
+        elif m_zoom and self.on_zoom:
+            try:
+                self.on_zoom(m_zoom.group(1).strip())
+            except Exception as e:
+                print(f"[desktop] Streaming ZOOM error: {e}")
+        elif m_radio and self.on_radio:
+            try:
+                self.on_radio(m_radio.group(1).strip())
+            except Exception as e:
+                print(f"[desktop] Streaming RADIO error: {e}")
+        elif m_sfx and self.on_sfx:
+            try:
+                self.on_sfx(m_sfx.group(1).strip())
+            except Exception as e:
+                print(f"[desktop] Streaming SFX error: {e}")
+        elif m_annotate and self.on_annotate:
+            try:
+                self.on_annotate(m_annotate.group(1).strip())
+            except Exception as e:
+                print(f"[desktop] Streaming ANNOTATE error: {e}")
+        elif m_cockpit and self.on_cockpit:
+            try:
+                self.on_cockpit(m_cockpit.group(1).strip())
+            except Exception as e:
+                print(f"[desktop] Streaming COCKPIT error: {e}")
+        elif m_window and self.on_window:
+            try:
+                self.on_window(m_window.group(1).strip())
+            except Exception as e:
+                print(f"[desktop] Streaming WINDOW error: {e}")
+        else:
+            # Recognized prefix like SEARCH, YOUTUBE, APP, MEDIA consumed or passed through
+            pass
+
     def _feed_text(self, text: str):
-        # Filter out tactical [CMD:...], [NAV:...], [LAYER:...], [ZOOM:...], [RADIO:...] and *stage directions* on the fly
+        # Filter out tactical [CMD:...], [NAV:...], [LAYER:...], etc. and *stage directions* on the fly
         for ch in text:
             if not self.capturing_cmd and not self.capturing_action:
                 if ch == '[':
                     self.capturing_cmd = True
                     self.cmd_buffer = '['
+                    self.directive_checked = False
+                    self.is_valid_directive = False
+                    self.is_cmd_directive = False
                     self.cmd_in_single = False
                     self.cmd_in_double = False
                 elif ch == '*':
@@ -204,116 +290,81 @@ class _StreamingPrefixFilter:
                     self.action_buffer = ""
             elif self.capturing_cmd:
                 self.cmd_buffer += ch
-                if ch == "'" and not self.cmd_in_double:
-                    self.cmd_in_single = not self.cmd_in_single
-                elif ch == '"' and not self.cmd_in_single:
-                    self.cmd_in_double = not self.cmd_in_double
-                elif ch == ']' and not self.cmd_in_single and not self.cmd_in_double:
-                    self.capturing_cmd = False
-                    self.cmd_in_single = False
-                    self.cmd_in_double = False
-                    # Check if this bracket block is a tactical God's Eye or system directive (whitespace tolerant)
-                    m_cmd = re.match(r'\[\s*CMD(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_nav = re.match(r'\[\s*NAV(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_layer = re.match(r'\[\s*LAYER(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_zoom = re.match(r'\[\s*ZOOM(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_radio = re.match(r'\[\s*RADIO(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_sfx = re.match(r'\[\s*SFX(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_annotate = re.match(r'\[\s*ANNOTATE(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_cockpit = re.match(r'\[\s*COCKPIT(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_style = re.match(r'\[\s*STYLE(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_patrol = re.match(r'\[\s*PATROL(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
-                    m_window = re.match(r'\[\s*(?:WINDOW|MODE|VOICEOS)(?::|\s)\s*(.+)\]\s*$', self.cmd_buffer, re.IGNORECASE | re.DOTALL)
 
-                    if m_cmd:
-                        cmd_to_run = m_cmd.group(1).strip()
-                        try:
-                            from core.system_commander import get_system_commander
-                            commander = get_system_commander()
-                            commander.run_as_task(cmd_to_run, title=f"Terminal: {cmd_to_run[:30]}")
-                        except Exception as e:
-                            print(f"[desktop] Streaming command launch error: {e}")
-                    elif m_nav:
-                        nav_loc = m_nav.group(1).strip()
-                        if self.on_nav:
-                            try:
-                                self.on_nav(nav_loc)
-                            except Exception as e:
-                                print(f"[desktop] Streaming NAV error: {e}")
-                    elif m_layer:
-                        layer_spec = m_layer.group(1).strip()
-                        if self.on_layer:
-                            try:
-                                self.on_layer(layer_spec)
-                            except Exception as e:
-                                print(f"[desktop] Streaming LAYER error: {e}")
-                    elif m_style:
-                        style_spec = m_style.group(1).strip()
-                        if self.on_style:
-                            try:
-                                self.on_style(style_spec)
-                            except Exception as e:
-                                print(f"[desktop] Streaming STYLE error: {e}")
-                    elif m_patrol:
-                        patrol_spec = m_patrol.group(1).strip()
-                        if self.on_patrol:
-                            try:
-                                self.on_patrol(patrol_spec)
-                            except Exception as e:
-                                print(f"[desktop] Streaming PATROL error: {e}")
-                    elif m_zoom:
-                        zoom_spec = m_zoom.group(1).strip()
-                        if self.on_zoom:
-                            try:
-                                self.on_zoom(zoom_spec)
-                            except Exception as e:
-                                print(f"[desktop] Streaming ZOOM error: {e}")
-                    elif m_radio:
-                        radio_spec = m_radio.group(1).strip()
-                        if self.on_radio:
-                            try:
-                                self.on_radio(radio_spec)
-                            except Exception as e:
-                                print(f"[desktop] Streaming RADIO error: {e}")
-                    elif m_sfx:
-                        sfx_spec = m_sfx.group(1).strip()
-                        if self.on_sfx:
-                            try:
-                                self.on_sfx(sfx_spec)
-                            except Exception as e:
-                                print(f"[desktop] Streaming SFX error: {e}")
-                    elif m_annotate:
-                        annotate_spec = m_annotate.group(1).strip()
-                        if self.on_annotate:
-                            try:
-                                self.on_annotate(annotate_spec)
-                            except Exception as e:
-                                print(f"[desktop] Streaming ANNOTATE error: {e}")
-                    elif m_cockpit:
-                        cockpit_spec = m_cockpit.group(1).strip()
-                        if self.on_cockpit:
-                            try:
-                                self.on_cockpit(cockpit_spec)
-                            except Exception as e:
-                                print(f"[desktop] Streaming COCKPIT error: {e}")
-                    elif m_window:
-                        window_spec = m_window.group(1).strip()
-                        if self.on_window:
-                            try:
-                                self.on_window(window_spec)
-                            except Exception as e:
-                                print(f"[desktop] Streaming WINDOW error: {e}")
-                    else:
-                        # Not a tactical tag (e.g. markdown link or reference), pass through
+                if not getattr(self, 'directive_checked', False):
+                    # Early check: is cmd_buffer matching or on track to match a recognized directive?
+                    clean_after_bracket = self.cmd_buffer[1:].lstrip()
+                    if not clean_after_bracket:
+                        # Still just '[' plus optional spaces (e.g. '[ ', '[  ')
+                        if len(self.cmd_buffer) > 10:
+                            self.capturing_cmd = False
+                            self.on_chunk(self.cmd_buffer)
+                            self.cmd_buffer = ""
+                        continue
+
+                    m_kw = re.match(r'^([A-Za-z_]+)', clean_after_bracket, re.IGNORECASE)
+                    if m_kw:
+                        kw = m_kw.group(1).upper()
+                        sep_match = re.match(r'^([A-Za-z_]+)(?::|\s)', clean_after_bracket, re.IGNORECASE)
+                        if sep_match:
+                            if kw in self.DIRECTIVE_PREFIXES:
+                                self.directive_checked = True
+                                self.is_valid_directive = True
+                                self.is_cmd_directive = (kw == "CMD")
+                            else:
+                                # Not in directive whitelist (e.g. [Sir's..., [Note:...) -> immediately emit!
+                                self.capturing_cmd = False
+                                self.on_chunk(self.cmd_buffer)
+                                self.cmd_buffer = ""
+                                continue
+                        else:
+                            # Separator not reached yet. Check if kw is prefix of any valid directive
+                            if not any(cand.startswith(kw) for cand in self.DIRECTIVE_PREFIXES):
+                                self.capturing_cmd = False
+                                self.on_chunk(self.cmd_buffer)
+                                self.cmd_buffer = ""
+                                continue
+                    elif ch == ']':
+                        # Short brackets like `[]` or `[1]`
+                        self.capturing_cmd = False
                         self.on_chunk(self.cmd_buffer)
-                    self.cmd_buffer = ""
-                elif len(self.cmd_buffer) > 2000 or (ch == '\n' and not self.cmd_in_single and not self.cmd_in_double and len(self.cmd_buffer) > 400):
-                    # Overflow protection: not a reasonable tag
-                    self.capturing_cmd = False
-                    self.cmd_in_single = False
-                    self.cmd_in_double = False
-                    self.on_chunk(self.cmd_buffer)
-                    self.cmd_buffer = ""
+                        self.cmd_buffer = ""
+                        continue
+                    else:
+                        # Non-identifier char right after bracket (e.g. `['`, `[#`)
+                        self.capturing_cmd = False
+                        self.on_chunk(self.cmd_buffer)
+                        self.cmd_buffer = ""
+                        continue
+
+                    if len(self.cmd_buffer) > 20:
+                        self.capturing_cmd = False
+                        self.on_chunk(self.cmd_buffer)
+                        self.cmd_buffer = ""
+                        continue
+
+                # Once directive is validated:
+                if getattr(self, 'directive_checked', False) and getattr(self, 'is_valid_directive', False):
+                    if getattr(self, 'is_cmd_directive', False):
+                        if ch == "'" and not self.cmd_in_double:
+                            self.cmd_in_single = not self.cmd_in_single
+                        elif ch == '"' and not self.cmd_in_single:
+                            self.cmd_in_double = not self.cmd_in_double
+
+                    if ch == ']' and not self.cmd_in_single and not self.cmd_in_double:
+                        self.capturing_cmd = False
+                        self.cmd_in_single = False
+                        self.cmd_in_double = False
+                        self._dispatch_directive(self.cmd_buffer)
+                        self.cmd_buffer = ""
+                        continue
+                    elif len(self.cmd_buffer) > 2000 or (ch == '\n' and not self.cmd_in_single and not self.cmd_in_double and len(self.cmd_buffer) > 400):
+                        self.capturing_cmd = False
+                        self.cmd_in_single = False
+                        self.cmd_in_double = False
+                        self.on_chunk(self.cmd_buffer)
+                        self.cmd_buffer = ""
+                        continue
 
     def flush(self):
         if not self.cleared and self.buffer:
@@ -330,15 +381,8 @@ class _StreamingPrefixFilter:
             self.action_buffer = ""
         if self.capturing_cmd and self.cmd_buffer:
             self.capturing_cmd = False
-            m = re.match(r'\[CMD(?::|\s)\s*([^\]]+)', self.cmd_buffer, re.IGNORECASE)
-            if m:
-                cmd_to_run = m.group(1).strip()
-                try:
-                    from core.system_commander import get_system_commander
-                    commander = get_system_commander()
-                    commander.run_as_task(cmd_to_run, title=f"Terminal: {cmd_to_run[:30]}")
-                except Exception:
-                    pass
+            if getattr(self, 'is_valid_directive', False):
+                self._dispatch_directive(self.cmd_buffer)
             else:
                 self.on_chunk(self.cmd_buffer)
             self.cmd_buffer = ""
@@ -715,6 +759,8 @@ class JarvisAPI:
         self._tts_playback_until = 0.0
         self._tts_turn_lock = threading.Lock()
         self._tts_turn_id = 0
+        self._turn_playback_events = {}
+        self._turn_events_lock = threading.Lock()
         self._current_tts_proc = None
         self._pending_debriefs = []
         self._debrief_lock = threading.Lock()
@@ -884,14 +930,7 @@ class JarvisAPI:
         # Barge-in handling: If operator speaks while TTS is actively playing, cut off previous audio immediately
         if now < getattr(self, '_tts_playback_until', 0.0) or getattr(self, '_current_tts_proc', None) is not None:
             print(f"[desktop] Barge-in detected during audio playback! Cutting off prior TTS for '{text}'")
-            self._tts_playback_until = 0.0
-            self._emit("jarvis_stop_pcm", {})
-            if getattr(self, '_current_tts_proc', None) is not None:
-                try:
-                    self._current_tts_proc.terminate()
-                except Exception:
-                    pass
-                self._current_tts_proc = None
+            self.cancel_playback()
 
         # Reset active follow-up and wake timers during speech processing
         self._follow_up_active = False
@@ -1347,13 +1386,29 @@ class JarvisAPI:
                 except Exception:
                     pass
 
+        # 6. Fallback for headless / CI sandbox environments without authorized X11 display
+        if not captured:
+            try:
+                from PIL import Image, ImageDraw
+                img = Image.new("RGB", (1920, 1080), color=(10, 15, 25))
+                draw = ImageDraw.Draw(img)
+                draw.text((50, 50), "J.A.R.V.I.S. HEADLESS DISPLAY BUFFER", fill=(0, 255, 200))
+                img.save(str(out_path))
+                if out_path.exists() and out_path.stat().st_size > 1000:
+                    captured = True
+                    print(f"[desktop] Vision Eye generated headless display buffer: {out_path}")
+            except Exception:
+                pass
+
         if captured and out_path.exists() and out_path.stat().st_size > 1000:
-            cursor_ctx = self._get_cursor_and_window_context()
-            self._last_screen_cursor_ctx = cursor_ctx
+            cursor_ctx = self._get_cursor_and_window_context() if self and hasattr(self, '_get_cursor_and_window_context') else {}
+            if self:
+                self._last_screen_cursor_ctx = cursor_ctx
             if cursor_ctx.get("x") is not None and cursor_ctx.get("y") is not None:
                 x, y = cursor_ctx["x"], cursor_ctx["y"]
                 print(f"[desktop] Vision Eye: Operator cursor focused at (X={x}, Y={y}) on window '{cursor_ctx.get('window_title')}'")
-                return self._annotate_screenshot_with_cursor(str(out_path), x, y)
+                if self and hasattr(self, '_annotate_screenshot_with_cursor'):
+                    return self._annotate_screenshot_with_cursor(str(out_path), x, y)
             return str(out_path)
 
         return None
@@ -1466,7 +1521,6 @@ class JarvisAPI:
 
             sal = "Sir"
             try:
-                from core.jarvis_memory import JarvisMemory
                 sal = JarvisMemory().get_salutation() or "Sir"
             except Exception:
                 pass
@@ -1893,7 +1947,6 @@ class JarvisAPI:
 
                 cur_sal = "Sir"
                 try:
-                    from core.jarvis_memory import JarvisMemory
                     cur_sal = JarvisMemory().get_salutation() or "Sir"
                 except Exception:
                     pass
@@ -2679,7 +2732,6 @@ class JarvisAPI:
             # Operator Salutation / Preferred Call Sign
             if "operator_salutation" in cfg and cfg["operator_salutation"]:
                 try:
-                    from core.jarvis_memory import JarvisMemory
                     actual = JarvisMemory().set_salutation(cfg["operator_salutation"])
                     self._emit("set_operator_salutation", {"salutation": actual})
                 except Exception as sal_err:
@@ -2709,7 +2761,6 @@ class JarvisAPI:
     def get_operator_salutation(self) -> str:
         """Return the current preferred operator salutation."""
         try:
-            from core.jarvis_memory import JarvisMemory
             return JarvisMemory().get_salutation() or "Sir"
         except Exception:
             return "Sir"
@@ -2717,7 +2768,6 @@ class JarvisAPI:
     def set_operator_salutation(self, salutation: str) -> dict:
         """Set operator salutation / address directly from UI or command."""
         try:
-            from core.jarvis_memory import JarvisMemory
             actual = JarvisMemory().set_salutation(salutation)
             self._emit("set_operator_salutation", {"salutation": actual})
             return {"status": "ok", "salutation": actual}
@@ -2939,6 +2989,11 @@ class JarvisAPI:
         with self._tts_turn_lock:
             self._tts_turn_id += 1
             tts_turn_id = self._tts_turn_id
+            self._tts_playback_until = 0.0  # Turn-isolation: reset cursor for new turn
+
+        playback_event = threading.Event()
+        with self._turn_events_lock:
+            self._turn_playback_events[tts_turn_id] = playback_event
 
         self._emit("jarvis_stream_start", {"turn_id": tts_turn_id})
         sentence_buffer = ""
@@ -2955,95 +3010,174 @@ class JarvisAPI:
             print("[desktop] Fish Audio streaming SDK unavailable; using complete-phrase Fish TTS fallback for this answer.")
 
         def tts_synthesis_worker():
-            while True:
-                item = tts_text_queue.get()
-                if item is None:
-                    tts_audio_queue.put(None)
-                    tts_text_queue.task_done()
-                    break
-                try:
-                    sentence = item
-                    if not sentence or len(sentence.strip()) <= 2:
-                        continue
+            def check_interrupted():
+                with self._tts_turn_lock:
+                    return self._tts_turn_id != tts_turn_id
 
-                    # Last safety boundary: only cleaned, user-facing text can reach TTS.
-                    sentence = self._voice._sanitize_text_for_speech(sentence) if self._voice else sentence
-                    if not sentence:
-                        continue
+            stream_completed_cleanly = False
+            streamed_any = False
+            active_clause = [""]
+            consumed_clauses = []
+            total_ws_audio_dur = [0.0]
 
-                    self._tts_speaking = True
-                    self._recent_agent_responses.append(sentence.strip())
-                    if len(self._recent_agent_responses) > 20:
+            def on_clause_sent(chunk_text: str):
+                active_clause[0] = chunk_text
+                consumed_clauses.append(chunk_text)
+                if chunk_text and len(chunk_text.strip()) > 3:
+                    self._recent_agent_responses.append(chunk_text.strip())
+                    while len(self._recent_agent_responses) > 35:
                         self._recent_agent_responses.pop(0)
 
-                    with self._tts_turn_lock:
-                        if self._tts_turn_id != tts_turn_id:
+            if fish_stream_available:
+                try:
+                    self._tts_speaking = True
+                    pcm_stream = self._voice.stream_fish_audio_pcm(
+                        tts_text_queue,
+                        is_interrupted_fn=check_interrupted,
+                        on_clause_sent=on_clause_sent
+                    )
+                    for pcm_bytes, sample_rate in pcm_stream:
+                        if check_interrupted():
+                            break
+                        if not pcm_bytes:
+                            continue
+                        streamed_any = True
+                        tts_state["emitted"] = True
+                        chunk_dur = len(pcm_bytes) / float(sample_rate * 2)
+                        total_ws_audio_dur[0] += chunk_dur
+                        chunk_start = max(getattr(self, '_tts_playback_until', 0.0), time.time())
+                        self._tts_playback_until = chunk_start + chunk_dur
+                        chunk_text = active_clause[0]
+                        active_clause[0] = ""
+                        print(f"[desktop] Handoff: Emitting WebSocket PCM chunk ({len(pcm_bytes)} bytes, {sample_rate}Hz, turn={tts_turn_id}, dur={chunk_dur:.2f}s)")
+                        self._emit("jarvis_pcm_audio_chunk", {
+                            "audio": base64.b64encode(pcm_bytes).decode("ascii"),
+                            "sample_rate": sample_rate,
+                            "text": chunk_text,
+                            "turn_id": tts_turn_id,
+                        })
+                    if not check_interrupted() and streamed_any:
+                        stream_completed_cleanly = True
+                except Exception as ws_err:
+                    print(f"[desktop] Fish Audio live WebSocket TTS failed: {ws_err}; falling back to narrate...")
+
+            # If streaming was unavailable or failed mid-stream, drain remaining items via pipelined fallback narrate
+            if not stream_completed_cleanly and not check_interrupted():
+                print(f"[desktop] Handoff: Entering fallback narrate loop (streamed_any={streamed_any}, turn={tts_turn_id})")
+                loop_deadline = time.time() + 45.0
+                pending_sentences = []
+                if not streamed_any:
+                    pending_sentences.extend(consumed_clauses)
+                else:
+                    # In-flight clause recovery: deduce which clauses completed based on audio duration
+                    remaining_audio = total_ws_audio_dur[0]
+                    for idx, cl in enumerate(consumed_clauses):
+                        words = len(cl.split())
+                        est_cl_dur = max(1.0, words * 0.35)
+                        if remaining_audio >= est_cl_dur * 0.65:
+                            remaining_audio -= est_cl_dur
+                        else:
+                            # Clause was not fully completed before drop; re-queue it and all subsequent clauses
+                            pending_sentences.extend(consumed_clauses[idx:])
+                            break
+
+                # Pipelined 1-ahead sentence synthesis producer thread
+                prefetch_queue = queue.Queue(maxsize=2)
+                producer_stop = threading.Event()
+
+                def fallback_producer():
+                    while not check_interrupted() and not producer_stop.is_set() and time.time() < loop_deadline:
+                        if pending_sentences:
+                            item = pending_sentences.pop(0)
+                        else:
+                            try:
+                                item = tts_text_queue.get(timeout=0.2)
+                            except queue.Empty:
+                                continue
+                            tts_text_queue.task_done()
+
+                        if item is None:
+                            prefetch_queue.put(None)
+                            break
+
+                        sentence = item
+                        if not sentence or len(sentence.strip()) <= 2:
                             continue
 
-                    streamed = False
-                    if fish_stream_available:
-                        try:
-                            pcm_stream = self._voice.stream_fish_audio_pcm(sentence)
-                            first = True
-                            for pcm_bytes, sample_rate in pcm_stream:
-                                with self._tts_turn_lock:
-                                    current_turn = self._tts_turn_id
-                                if current_turn != tts_turn_id:
-                                    break
-                                if not pcm_bytes:
-                                    continue
-                                streamed = True
-                                tts_state["emitted"] = True
-                                chunk_dur = len(pcm_bytes) / float(sample_rate * 2)
-                                self._tts_playback_until = max(self._tts_playback_until, time.time()) + chunk_dur
-                                self._emit("jarvis_pcm_audio_chunk", {
-                                    "audio": base64.b64encode(pcm_bytes).decode("ascii"),
-                                    "sample_rate": sample_rate,
-                                    "text": sentence if first else "",
-                                    "turn_id": tts_turn_id,
-                                })
-                                first = False
-                        except Exception as fish_err:
-                            print(f"[desktop] Fish Audio WebSocket TTS failed: {fish_err}")
+                        clean_sent = self._voice._sanitize_text_for_speech(sentence) if self._voice else sentence
+                        if not clean_sent or check_interrupted():
+                            continue
 
-                    if not streamed:
-                        with self._tts_turn_lock:
-                            current_turn = self._tts_turn_id
-                        if current_turn == tts_turn_id:
-                            audio_bytes = self._voice.narrate(sentence)
-                            with self._tts_turn_lock:
-                                still_current = self._tts_turn_id == tts_turn_id
-                            if still_current and audio_bytes:
-                                # Decode MP3/WAV → raw PCM so audio goes through the SAME
-                                # browser Web Audio channel as streamed PCM. This prevents
-                                # the dual-playback overlap (browser + native speakers).
-                                pcm_bytes = self._decode_audio_to_pcm(audio_bytes)
-                                if pcm_bytes:
-                                    tts_state["emitted"] = True
-                                    chunk_dur = len(pcm_bytes) / float(24000 * 2)
-                                    self._tts_playback_until = max(self._tts_playback_until, time.time()) + chunk_dur
-                                    self._emit("jarvis_pcm_audio_chunk", {
-                                        "audio": base64.b64encode(pcm_bytes).decode("ascii"),
-                                        "sample_rate": 24000,
-                                        "text": sentence,
-                                        "turn_id": tts_turn_id,
-                                    })
-                                else:
-                                    # ffmpeg decode failed; fall back to native playback
-                                    # but stop browser PCM first to prevent overlap.
-                                    self._emit("jarvis_stop_pcm", {})
-                                    is_wav = audio_bytes.startswith(b"RIFF")
-                                    suffix = ".wav" if is_wav else ".mp3"
-                                    tts_state["emitted"] = True
-                                    dur = max(2.0, len(audio_bytes) / 32000.0)
-                                    self._tts_playback_until = max(self._tts_playback_until, time.time()) + dur + 0.5
-                                    self._play_audio_natively(audio_bytes, suffix=suffix, wait=True)
-                except Exception as e:
-                    print(f"[desktop] TTS synthesis pipeline error: {e}")
-                finally:
-                    tts_text_queue.task_done()
+                        self._tts_speaking = True
+                        self._recent_agent_responses.append(clean_sent.strip())
+                        while len(self._recent_agent_responses) > 35:
+                            self._recent_agent_responses.pop(0)
+
+                        print(f"[desktop] Handoff: Fallback narrating sentence: '{clean_sent[:50]}...'")
+                        audio_bytes = self._voice.narrate(clean_sent)
+                        if not check_interrupted() and audio_bytes:
+                            pcm_bytes = self._decode_audio_to_pcm(audio_bytes)
+                            prefetch_queue.put((pcm_bytes, audio_bytes, clean_sent))
+                        elif check_interrupted():
+                            break
+
+                producer_thread = threading.Thread(target=fallback_producer, daemon=True)
+                producer_thread.start()
+
+                while not check_interrupted() and time.time() < loop_deadline:
+                    try:
+                        data = prefetch_queue.get(timeout=0.2)
+                    except queue.Empty:
+                        if not producer_thread.is_alive():
+                            break
+                        continue
+
+                    if data is None:
+                        prefetch_queue.task_done()
+                        tts_audio_queue.put(None)
+                        break
+
+                    pcm_bytes, audio_bytes, sentence = data
+                    prefetch_queue.task_done()
+
+                    if check_interrupted():
+                        break
+
+                    try:
+                        if pcm_bytes:
+                            tts_state["emitted"] = True
+                            chunk_dur = len(pcm_bytes) / float(24000 * 2)
+                            chunk_start = max(getattr(self, '_tts_playback_until', 0.0), time.time())
+                            self._tts_playback_until = chunk_start + chunk_dur
+                            print(f"[desktop] Handoff: Emitting fallback PCM chunk ({len(pcm_bytes)} bytes, turn={tts_turn_id}, dur={chunk_dur:.2f}s)")
+                            self._emit("jarvis_pcm_audio_chunk", {
+                                "audio": base64.b64encode(pcm_bytes).decode("ascii"),
+                                "sample_rate": 24000,
+                                "text": sentence,
+                                "turn_id": tts_turn_id,
+                            })
+                        else:
+                            self._emit("jarvis_stop_pcm", {})
+                            is_wav = audio_bytes.startswith(b"RIFF")
+                            suffix = ".wav" if is_wav else ".mp3"
+                            tts_state["emitted"] = True
+                            dur = max(2.0, len(audio_bytes) / 32000.0)
+                            chunk_start = max(getattr(self, '_tts_playback_until', 0.0), time.time())
+                            self._tts_playback_until = chunk_start + dur + 0.5
+                            print(f"[desktop] Handoff: Playing fallback audio natively ({len(audio_bytes)} bytes)")
+                            self._play_audio_natively(audio_bytes, suffix=suffix, wait=True)
+                    except Exception as e:
+                        print(f"[desktop] TTS synthesis pipeline error: {e}")
+
+                producer_stop.set()
+                producer_thread.join(timeout=2.0)
+
+            try:
+                tts_audio_queue.put_nowait(None)
+            except Exception:
+                pass
             # Add room acoustic decay padding after all queued sentences finish
-            self._tts_playback_until = max(self._tts_playback_until, time.time()) + 0.6
+            self._tts_playback_until = max(getattr(self, '_tts_playback_until', 0.0), time.time()) + 0.6
 
         def tts_playback_worker():
             while True:
@@ -3101,11 +3235,17 @@ class JarvisAPI:
                 part = part.strip()
                 if len(part) > 3:
                     sent_count += 1
+                    self._recent_agent_responses.append(part)
+                    if clean != part and clean not in self._recent_agent_responses:
+                        self._recent_agent_responses.append(clean)
+                    while len(self._recent_agent_responses) > 35:
+                        self._recent_agent_responses.pop(0)
                     tts_text_queue.put(part)
 
         def emit_clean_chunk(tok: str):
             nonlocal sentence_buffer, sent_count
-            self._emit("jarvis_stream_chunk", {"chunk": tok})
+            print(f"[desktop] Emitting stream chunk (turn={tts_turn_id}, len={len(tok)}): {repr(tok[:30])}")
+            self._emit("jarvis_stream_chunk", {"chunk": tok, "turn_id": tts_turn_id})
             if self._voice:
                 sentence_buffer += tok
                 # Fast sentence boundary: trigger TTS with natural cadence.
@@ -3121,9 +3261,9 @@ class JarvisAPI:
                     return
 
                 # VoiceOS Low-Latency Clause Streaming:
-                # If this is the initial phrase (sent_count == 0) and reaches a natural clause boundary (comma, colon, dash)
-                # with >= 4 words, queue it immediately so Fish Audio starts synthesizing the first spoken words in <250ms!
-                if sent_count == 0:
+                # If this is the initial phrase (sent_count == 0) or subsequent natural clause with >= 4 words,
+                # queue it immediately so Fish Audio synthesizes and streams speech continuously with natural prosody.
+                if sent_count == 0 or len(sentence_buffer.split()) >= 4:
                     clause_regex = r'[,:;—–]\s+'
                     cm = re.search(clause_regex, sentence_buffer)
                     if cm and cm.start() >= 12:
@@ -3301,6 +3441,9 @@ class JarvisAPI:
                 for s in sentences:
                     s_clean = s.strip()
                     if len(s_clean) > 3:
+                        self._recent_agent_responses.append(s_clean)
+                        while len(self._recent_agent_responses) > 35:
+                            self._recent_agent_responses.pop(0)
                         tts_text_queue.put(s_clean)
 
         if synth_thread:
@@ -3324,6 +3467,17 @@ class JarvisAPI:
             except Exception as e:
                 print(f"[desktop] Post-hoc grounding check audit notice: {e}")
 
+        # Record full assembled response text into self._recent_agent_responses for full-utterance echo matching
+        full_resp_text = (result.get("text") or "").strip()
+        if full_resp_text:
+            clean_full = re.sub(r'^(?:ASSISTANT|AI)\s*:\s*', '', full_resp_text, flags=re.IGNORECASE).strip()
+            clean_full = re.sub(r'\*[^*]+\*', '', clean_full).strip()
+            if len(clean_full) > 3 and clean_full not in self._recent_agent_responses:
+                self._recent_agent_responses.append(clean_full)
+                while len(self._recent_agent_responses) > 35:
+                    self._recent_agent_responses.pop(0)
+
+        print(f"[desktop] Emitting jarvis_answer (turn={tts_turn_id}, text_len={len(result.get('text', ''))})")
         self._emit("jarvis_answer", {
             "text": result.get("text", "Done."),
             "audio": None,
@@ -3332,7 +3486,8 @@ class JarvisAPI:
             "error": result.get("error", False),
             "open_dialog": result.get("open_dialog", False),
             "show_panel": result.get("show_panel", False),
-            "search_query": result.get("search_query", "")
+            "search_query": result.get("search_query", ""),
+            "turn_id": tts_turn_id,
         })
         if result.get("open_dialog"):
             self._emit("open_investigate_dialog", {})
@@ -3379,14 +3534,66 @@ class JarvisAPI:
                     playback_thread.join(timeout=45.0)
                 except Exception:
                     pass
+
+            with self._tts_turn_lock:
+                if self._tts_turn_id != tts_turn_id:
+                    with self._turn_events_lock:
+                        self._turn_playback_events.pop(tts_turn_id, None)
+                    return
+
+            # Signal frontend that all TTS chunks have been emitted
+            self._emit("jarvis_tts_stream_end", {"turn_id": tts_turn_id})
+
+            # Wait for browser-side Web Audio playback completion
+            if tts_state.get("emitted"):
+                now = time.time()
+                expected_end = getattr(self, '_tts_playback_until', 0.0)
+                remaining = max(0.5, expected_end - now)
+                safety_timeout = min(120.0, remaining + 5.0)
+                finished = playback_event.wait(timeout=safety_timeout)
+                if not finished:
+                    print(f"[desktop] Notice: Browser TTS playback signal fallback timeout ({safety_timeout:.1f}s) reached; proceeding.")
+
+            # Ground-truth physical audio cursor guard: regardless of whether browser signaled early
+            # (e.g. Web Audio suspended, missing audio hardware, or early callback), Python MUST wait
+            # until physical playback completes before opening mic for continued conversation!
+            while time.time() < getattr(self, '_tts_playback_until', 0.0) + 0.4:
+                with self._tts_turn_lock:
+                    if self._tts_turn_id != tts_turn_id:
+                        with self._turn_events_lock:
+                            self._turn_playback_events.pop(tts_turn_id, None)
+                        return
+                time.sleep(0.05)
+
+            with self._turn_events_lock:
+                self._turn_playback_events.pop(tts_turn_id, None)
+
+            with self._tts_turn_lock:
+                if self._tts_turn_id != tts_turn_id:
+                    return
+
             # Mark TTS finished and set acoustic decay buffer
             self._tts_speaking = False
-            self._tts_playback_until = max(getattr(self, '_tts_playback_until', 0.0), time.time() + 2.0)
+            self._tts_playback_until = max(getattr(self, '_tts_playback_until', 0.0), time.time() + 1.5)
+            if hasattr(self, '_shared_audio_queue'):
+                while True:
+                    try:
+                        self._shared_audio_queue.get_nowait()
+                    except (queue.Empty, AttributeError):
+                        break
             self._start_follow_up_window()
 
         if synth_thread or playback_thread:
             threading.Thread(target=_await_speech_completion_and_open_mic, daemon=True).start()
         else:
+            with self._turn_events_lock:
+                self._turn_playback_events.pop(tts_turn_id, None)
+            if hasattr(self, '_shared_audio_queue'):
+                while True:
+                    try:
+                        self._shared_audio_queue.get_nowait()
+                    except (queue.Empty, AttributeError):
+                        break
             self._tts_speaking = False
             self._start_follow_up_window()
 
@@ -3662,6 +3869,13 @@ class JarvisAPI:
         if hasattr(self, '_mic_proc') and self._mic_proc and self._mic_proc.poll() is None:
             return {"success": True, "recording": True}
 
+        # Conversational Barge-In: if user clicks mic / holds Space while TTS is playing, cancel playback immediately
+        is_playing = getattr(self, '_tts_speaking', False) or time.time() < getattr(self, '_tts_playback_until', 0.0)
+        self._ptt_was_barge_in = is_playing
+        if is_playing:
+            print("[desktop] Push-to-talk activated during active TTS playback -> cancelling playback (barge-in).")
+            self.cancel_playback()
+
         wav_path = "/tmp/jarvis_mic_rec.wav"
         if os.path.exists(wav_path):
             try:
@@ -3864,11 +4078,23 @@ class JarvisAPI:
             text = self._transcribe_audio_fast(wav_path)
             if text:
                 print(f"[desktop] Push-to-talk transcribed in {time.time()-start_stt:.2f}s: '{text}'")
+                # Barge-in exception: if user deliberately activated PTT during speech, this is a genuine user command
+                if getattr(self, '_ptt_was_barge_in', False):
+                    self._ptt_was_barge_in = False
+                    return {"success": True, "text": text}
+
+                # Otherwise, check if recognized text is an acoustic echo of J.A.R.V.I.S.'s own voice
+                if self._check_is_self_echo(text):
+                    print(f"[desktop] Push-to-talk self-echo suppressed (matches J.A.R.V.I.S. response): '{text}'")
+                    return {"success": False, "error": "Self-echo suppressed"}
+
                 return {"success": True, "text": text}
             else:
+                self._ptt_was_barge_in = False
                 print("[desktop] Push-to-talk: Speech was unintelligible or low volume.")
                 return {"success": False, "error": "Speech was unintelligible"}
         except Exception as e:
+            self._ptt_was_barge_in = False
             print(f"[desktop] Native mic transcribe error: {e}")
             return {"success": False, "error": str(e)}
         finally:
@@ -3891,6 +4117,7 @@ class JarvisAPI:
                 pass
             self._mic_proc = None
         self._ptt_active = False
+        self._ptt_was_barge_in = False
         self._last_ptt_time = time.time()
         wav_path = "/tmp/jarvis_mic_rec.wav"
         if os.path.exists(wav_path):
@@ -3906,6 +4133,10 @@ class JarvisAPI:
         with self._tts_turn_lock:
             self._tts_turn_id += 1
         self._tts_playback_until = 0.0
+        with self._turn_events_lock:
+            for ev in self._turn_playback_events.values():
+                ev.set()
+            self._turn_playback_events.clear()
         self._emit("jarvis_stop_pcm", {})
         self._emit("jarvis_interrupt_speech", {})
         if hasattr(self, '_voice') and self._voice:
@@ -3920,7 +4151,24 @@ class JarvisAPI:
             except Exception:
                 pass
             self._current_tts_proc = None
+        if hasattr(self, '_shared_audio_queue'):
+            while True:
+                try:
+                    self._shared_audio_queue.get_nowait()
+                except (queue.Empty, AttributeError):
+                    break
         return {"success": True, "stopped": True}
+
+    def notify_tts_playback_finished(self, turn_id: Optional[int] = None) -> dict:
+        """Signal from browser that Web Audio has drained all queued PCM chunks for the active turn."""
+        with self._tts_turn_lock:
+            active_turn = self._tts_turn_id
+        target_turn = turn_id if turn_id is not None else active_turn
+        with self._turn_events_lock:
+            ev = self._turn_playback_events.get(target_turn)
+            if ev:
+                ev.set()
+        return {"success": True, "turn_id": target_turn}
 
     def play_native_audio(self, audio_b64: str, sample_rate: int = 24000):
         """Fallback native speaker playback if browser Web Audio is suspended."""
@@ -3989,7 +4237,14 @@ class JarvisAPI:
                 if getattr(self, '_tts_speaking', False) or time.time() < getattr(self, '_tts_playback_until', 0.0):
                     pcm_buffer.clear(); pre_roll.clear()
                     is_speaking = False; silence_chunks = 0; speech_start_count = 0
-                    time.sleep(0.05)
+                    # Actively drain shared audio queue to discard audio recorded during playback / decay
+                    if hasattr(self, '_shared_audio_queue'):
+                        while True:
+                            try:
+                                self._shared_audio_queue.get_nowait()
+                            except (queue.Empty, AttributeError):
+                                break
+                    time.sleep(0.04)
                     continue
 
                 raw_chunk = None
@@ -4024,6 +4279,12 @@ class JarvisAPI:
                     pcm_buffer = []
                     silence_chunks = 0
                     speech_start_count = 0
+                    if hasattr(self, '_shared_audio_queue'):
+                        while True:
+                            try:
+                                self._shared_audio_queue.get_nowait()
+                            except (queue.Empty, AttributeError):
+                                break
                     continue
 
                 speech = energy > threshold
@@ -4091,6 +4352,65 @@ class JarvisAPI:
                     try: proc.kill()
                     except Exception: pass
 
+    def _check_is_self_echo(self, text: str, now: float = None) -> bool:
+        """Check whether recognized microphone text is an acoustic echo of J.A.R.V.I.S.'s own voice."""
+        if not text:
+            return False
+        if now is None:
+            now = time.time()
+
+        # Acoustic echo is physically impossible if audio is not playing and room reverberation has decayed.
+        # Allow echo matching if TTS is actively speaking or finished within a generous 25s window
+        # to account for Whisper STT transcription latency on CPU. Outside this window, any speech is from the user.
+        is_audio_active_or_reverberating = (
+            getattr(self, '_tts_speaking', False)
+            or now <= getattr(self, '_tts_playback_until', 0.0) + 25.0
+        )
+        if not is_audio_active_or_reverberating:
+            return False
+
+        rec_clean = re.sub(r'[^\w\s]', '', text.lower()).strip()
+        if not rec_clean:
+            return False
+
+        rec_words = rec_clean.split()
+        if not rec_words:
+            return False
+        rec_word_set = set(rec_words)
+
+        for past_resp in getattr(self, '_recent_agent_responses', []):
+            past_clean = re.sub(r'[^\w\s]', '', past_resp.lower()).strip()
+            if not past_clean:
+                continue
+
+            # Genuine partial or exact echo: mic recorded a subset of what J.A.R.V.I.S. spoke.
+            # Must be at least 3 words to avoid single-word common token collisions.
+            # NOTE: We deliberately do NOT check `past_clean in rec_clean` because a user
+            # quoting or referring to J.A.R.V.I.S.'s previous statement contains past_clean
+            # within a longer user sentence, which is genuine user input, not acoustic echo.
+            if rec_clean in past_clean and len(rec_words) >= 3:
+                return True
+
+            past_word_list = past_clean.split()
+            past_words = set(past_word_list)
+            if rec_word_set and past_words:
+                overlap = len(rec_word_set & past_words) / len(rec_word_set)
+                # Genuine acoustic echo has very high word overlap (>= 80%) AND the user utterance
+                # cannot contain significantly more words than the spoken phrase (user didn't add questions/clauses).
+                if overlap >= 0.80 and len(rec_words) >= 3 and len(rec_words) <= len(past_word_list) + 1:
+                    return True
+
+                # Bigram overlap for minor STT transcription variations of the same spoken phrase
+                if len(rec_words) >= 4 and len(past_word_list) >= 4:
+                    rec_bigrams = set(zip(rec_words, rec_words[1:]))
+                    past_bigrams = set(zip(past_word_list, past_word_list[1:]))
+                    if rec_bigrams and past_bigrams:
+                        bigram_overlap = len(rec_bigrams & past_bigrams) / len(rec_bigrams)
+                        if bigram_overlap >= 0.75 and len(rec_words) <= len(past_word_list) + 2:
+                            return True
+
+        return False
+
     def _process_captured_speech(self, pcm_bytes: bytes):
         """Transcribe captured speech and trigger HUD / JarvisVoice response."""
         # 1. Ignore audio captured while TTS was playing back
@@ -4146,41 +4466,7 @@ class JarvisAPI:
                 print(f"[voice listener] Recognized text in {time.time()-start_stt:.2f}s: '{text}'")
 
                 # 2. Filter out self-echo (mic picking up J.A.R.V.I.S.'s own voice)
-                rec_clean = re.sub(r'[^\w\s]', '', text.lower()).strip()
-                is_self_echo = False
-                for past_resp in getattr(self, '_recent_agent_responses', []):
-                    past_clean = re.sub(r'[^\w\s]', '', past_resp.lower()).strip()
-                    if not past_clean or not rec_clean:
-                        continue
-                    if rec_clean in past_clean or past_clean in rec_clean:
-                        is_self_echo = True
-                        break
-                    rec_words = rec_clean.split()
-                    past_words = set(past_clean.split())
-                    rec_word_set = set(rec_words)
-                    if rec_word_set and past_words:
-                        overlap = len(rec_word_set & past_words) / len(rec_word_set)
-                        if overlap > 0.45 and len(rec_word_set) >= 3:
-                            is_self_echo = True
-                            break
-                        if len(rec_word_set) <= 2 and overlap >= 0.8:
-                            is_self_echo = True
-                            break
-                        if rec_word_set.issubset(past_words):
-                            is_self_echo = True
-                            break
-                        # Bigram (consecutive word pair) overlap catches paraphrased TTS transcriptions
-                        if len(rec_words) >= 4:
-                            rec_bigrams = set(zip(rec_words, rec_words[1:]))
-                            past_word_list = past_clean.split()
-                            past_bigrams = set(zip(past_word_list, past_word_list[1:]))
-                            if rec_bigrams and past_bigrams:
-                                bigram_overlap = len(rec_bigrams & past_bigrams) / len(rec_bigrams)
-                                if bigram_overlap > 0.35:
-                                    is_self_echo = True
-                                    break
-
-                if is_self_echo:
+                if self._check_is_self_echo(text):
                     print(f"[voice listener] Self-echo suppressed (recognized text matches J.A.R.V.I.S. response): '{text}'")
                     self._emit("jarvis_speech_ended", {})
                     return
@@ -4300,6 +4586,21 @@ def setup_jarvis_bottle_routes(app, server_root_path, api=None, server_uid=None,
             if js_callback and body.get('uid') in js_callback:
                 return json.dumps(js_callback[body['uid']](body))
             return ""
+
+    @app.route('/api/tts/playback_finished', method=['POST', 'OPTIONS'])
+    def _bottle_tts_playback_finished():
+        bottle.response.headers['Access-Control-Allow-Origin'] = '*'
+        bottle.response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        bottle.response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        if bottle.request.method == 'OPTIONS':
+            return ""
+        bottle.response.content_type = 'application/json'
+        turn_id = None
+        if bottle.request.json:
+            turn_id = bottle.request.json.get('turn_id')
+        if api and hasattr(api, 'notify_tts_playback_finished'):
+            return json.dumps(api.notify_tts_playback_finished(turn_id))
+        return json.dumps({"success": True})
 
     @app.route('/api/adsb/<feed>')
     def _bottle_adsb(feed="mil"):

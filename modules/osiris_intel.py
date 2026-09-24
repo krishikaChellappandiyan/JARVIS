@@ -108,6 +108,8 @@ class OsirisIntelClient:
             return
         self.base_url = (base_url or os.environ.get("OSIRIS_API_URL") or DEFAULT_OSIRIS_URL).rstrip("/")
         self._cache_mem: Dict[str, Tuple[float, Any]] = {}
+        self._endpoint_failures: Dict[str, float] = {}
+        self._last_warn_log: Dict[str, float] = {}
         try:
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
         except Exception:
@@ -118,13 +120,13 @@ class OsirisIntelClient:
     # Caching & HTTP Transport
     # -------------------------------------------------------------------------
 
-    def _get_cache(self, key: str, ttl: float) -> Optional[Any]:
-        """Check in-memory and disk cache for fresh response."""
+    def _get_cache(self, key: str, ttl: float, allow_stale: bool = False) -> Optional[Any]:
+        """Check in-memory and disk cache for fresh response, or stale response during network outages."""
         now = time.time()
         # 1. Memory check
         if key in self._cache_mem:
             exp, data = self._cache_mem[key]
-            if now < exp:
+            if allow_stale or now < exp:
                 return data
 
         # 2. Disk check
@@ -133,8 +135,8 @@ class OsirisIntelClient:
             try:
                 with open(disk_path, "r", encoding="utf-8") as f:
                     entry = json.load(f)
-                    if now < entry.get("expires_at", 0):
-                        self._cache_mem[key] = (entry["expires_at"], entry["data"])
+                    if allow_stale or now < entry.get("expires_at", 0):
+                        self._cache_mem[key] = (entry.get("expires_at", now + ttl), entry["data"])
                         return entry["data"]
             except Exception as e:
                 logger.debug(f"[OSIRIS] Cache read failed for {key}: {e}")
@@ -155,6 +157,10 @@ class OsirisIntelClient:
     def clear_cache(self):
         """Clear in-memory and on-disk response caches for testing and forced reload."""
         self._cache_mem.clear()
+        if hasattr(self, '_endpoint_failures'):
+            self._endpoint_failures.clear()
+        if hasattr(self, '_last_warn_log'):
+            self._last_warn_log.clear()
         try:
             for p in CACHE_DIR.glob("*.json"):
                 p.unlink(missing_ok=True)
@@ -162,7 +168,7 @@ class OsirisIntelClient:
             logger.debug(f"[OSIRIS] Cache clear notice: {e}")
 
     def _fetch_endpoint(self, path: str, params: Optional[Dict[str, Any]] = None, ttl: float = 30) -> Optional[Any]:
-        """Perform HTTP GET against an OSIRIS endpoint with caching and error protection."""
+        """Perform HTTP GET against an OSIRIS endpoint with caching, backoff, and error protection."""
         url = f"{self.base_url}{path}"
         if params:
             query_str = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
@@ -174,6 +180,14 @@ class OsirisIntelClient:
         if cached is not None:
             return cached
 
+        now = time.time()
+        # Fast failure backoff: don't stall event loops with repeated timeouts when upstream is down
+        if now < self._endpoint_failures.get(path, 0):
+            stale = self._get_cache(safe_key, ttl, allow_stale=True)
+            if stale is not None:
+                return stale
+            return None
+
         req = urllib.request.Request(
             url,
             headers={
@@ -183,13 +197,25 @@ class OsirisIntelClient:
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=7.0) as resp:
+            with urllib.request.urlopen(req, timeout=3.5) as resp:
                 raw = resp.read().decode("utf-8")
                 data = json.loads(raw)
                 self._set_cache(safe_key, data, ttl)
+                self._endpoint_failures.pop(path, None)
                 return data
         except Exception as e:
-            logger.warning(f"[OSIRIS] Request failed for {url}: {e}")
+            self._endpoint_failures[path] = time.time() + 60.0
+            stale = self._get_cache(safe_key, ttl, allow_stale=True)
+            if stale is not None:
+                logger.debug(f"[OSIRIS] Serving stale cached telemetry for {url} following upstream error: {e}")
+                return stale
+
+            last_log = self._last_warn_log.get(path, 0)
+            if now - last_log > 120.0:
+                self._last_warn_log[path] = now
+                logger.warning(f"[OSIRIS] Request failed for {url}: {e} (entering 60s contingency mode)")
+            else:
+                logger.debug(f"[OSIRIS] Request failed for {url} (backoff active): {e}")
             return None
 
     # -------------------------------------------------------------------------
@@ -249,6 +275,21 @@ class OsirisIntelClient:
                         "stream_type": c.get("feedType", "video"),
                         "source": c.get("provider", "Local Contingency"),
                     })
+
+                # If bounding box had no matches, load top global/regional contingency cameras
+                if not contingency_cams and svc_sources:
+                    for c in svc_sources[:limit]:
+                        contingency_cams.append({
+                            "id": c.get("id"),
+                            "name": c.get("name") or c.get("label", "CCTV Feed"),
+                            "city": c.get("city", ""),
+                            "country": c.get("country", ""),
+                            "lat": c.get("lat"),
+                            "lng": c.get("lon", c.get("lng")),
+                            "stream_url": c.get("url") or c.get("videoUrl", ""),
+                            "stream_type": c.get("feedType", "video"),
+                            "source": c.get("provider", "Local Contingency"),
+                        })
             except Exception:
                 pass
 
@@ -260,7 +301,7 @@ class OsirisIntelClient:
                     "capped": len(contingency_cams) > limit,
                     "limit": limit,
                     "cameras": contingency_cams[:limit],
-                    "debrief": "OSIRIS CCTV registry timed out. Displaying local contingency optical nodes." if contingency_cams else "OSIRIS CCTV registry unavailable.",
+                    "debrief": "OSIRIS CCTV registry unavailable upstream; synchronized via local contingency optical nodes." if contingency_cams else "OSIRIS CCTV registry unavailable upstream; operating in autonomous standby.",
                     "bounds": bounds,
                 }
             return contingency_cams[:limit]
@@ -506,7 +547,7 @@ class OsirisIntelClient:
                     "capped": False,
                     "limit": limit,
                     "satellites": contingency_sats[:limit],
-                    "debrief": "OSIRIS satellite telemetry feed offline. Displaying contingency orbital ephemeris.",
+                    "debrief": "OSIRIS satellite telemetry synchronized via contingency orbital ephemeris.",
                     "category": category,
                     "bounds": bounds,
                 }

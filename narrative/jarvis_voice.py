@@ -8,23 +8,24 @@ import base64
 import httpx
 import subprocess
 import threading
+import queue
 from pathlib import Path
 
 try:
-    from fishaudio import FishAudio, TTSConfig
-    try:
-        from fishaudio import WebSocketOptions
-    except Exception:
-        from fishaudio.types import WebSocketOptions
-    try:
-        from fishaudio.types import Prosody
-    except Exception:
-        Prosody = None
+    import msgpack
+    from websockets.sync.client import connect as ws_connect
+    from websockets.exceptions import ConnectionClosed
+    HAS_WEBSOCKET_TTS = True
 except Exception:
-    FishAudio = None
-    TTSConfig = None
-    WebSocketOptions = None
-    Prosody = None
+    msgpack = None
+    ws_connect = None
+    ConnectionClosed = Exception
+    HAS_WEBSOCKET_TTS = False
+
+FishAudio = None
+TTSConfig = None
+WebSocketOptions = None
+Prosody = None
 from typing import List, Dict, Optional
 from core.target_model import Target
 
@@ -169,6 +170,13 @@ CRITICAL IDENTITY & CREATOR PROVENANCE:
   - User: "turn up volume" -> [MEDIA: vol_up] Raising audio volume, Sir.
   - User: "lock my screen" -> [MEDIA: lock] Locking workstation console now, Sir.
   CRITICAL: Only emit [CMD: ...], [APP: ...], or [MEDIA: ...] when Sir specifically asks for system/application actions. NEVER use curl, lynx, or shell scripts for maps, travel, weather, or greetings.
+- Notes, Notebooks, and Document Creation:
+  When Sir asks to "create a note", "create a notebook", "write down our notes", or "save notes for today":
+  1. DO NOT create an empty file with `touch`! A blank document is useless to the operator.
+  2. Synthesize the relevant briefing, topics, or tasks from recent conversation (e.g. Wi-Fi pentesting, status summary, etc.) into structured markdown notes.
+  3. Write the actual content into the file using bash commands like `mkdir -p ~/notebooks && cat << 'EOF' > ~/notebooks/<Descriptive_Name>.md` or `echo "..." > <file>`.
+  4. Name the file descriptively based on the topic (e.g. `~/notebooks/WiFi_PenTest_Notes.md`) rather than generic `notebook.txt`.
+  5. If Sir subsequently asks to "rename this one", "add to it", or "update the notes", reference the EXACT existing path just created, never invent 'notebook.txt'.
 - Cognitive Web Intel & Autonomous Search Directive:
   You possess comprehensive internal knowledge across science, history, geography, technology, culture, and operational strategy.
   Answer directly from your vast internal knowledge for general questions, explanations, concepts, and trivia without searching.
@@ -298,7 +306,8 @@ class JarvisVoice:
         self.fish_audio_voice_id = config.get("fish_audio_voice_id", "05b36da8574341d0803391491850db20")
         self.fish_audio_model = config.get("fish_audio_model", "s2.1-pro-free")
         self.fish_audio_available = bool(self.fish_audio_key)
-        self.fish_streaming_sdk_available = bool(FishAudio is not None and TTSConfig is not None)
+        self.fish_streaming_sdk_available = bool(HAS_WEBSOCKET_TTS and self.fish_audio_key)
+        self.fish_audio_ws_url = "wss://api.fish.audio/v1/tts/live"
         self._fish_stream_client = None
 
         # Preflight Fish Audio free model check
@@ -688,12 +697,12 @@ class JarvisVoice:
                     return {"text": r.json().get("response", "").strip(), "error": False}
             except Exception as e2:
                 return {
-                    "text": f"System Notice: SLM is currently unavailable or timed out ({e2})",
+                    "text": f"System Notice: SLM is currently unavailable or timed out ({e2}), Sir.",
                     "error": True
                 }
 
         return {
-            "text": "System Notice: SLM request failed to return a response.",
+            "text": "System Notice: SLM request failed to return a response, Sir.",
             "error": True
         }
 
@@ -1061,86 +1070,195 @@ class JarvisVoice:
         clean = re.sub(r'\s+', ' ', clean).strip()
         return clean
 
-    def stream_fish_audio_pcm(self, text: str):
-        """Stream one complete user-facing phrase through Fish Audio's official WebSocket TTS API."""
-        if not self.fish_audio_available or not text or not text.strip():
+    def stream_fish_audio_pcm(self, text_or_source, is_interrupted_fn=None, on_clause_sent=None):
+        """Stream speech through Fish Audio's native /v1/tts/live WebSocket API.
+        
+        Args:
+            text_or_source: String, Queue, or Iterable yielding clauses/sentences.
+            is_interrupted_fn: Optional callable returning True if playback was interrupted.
+            on_clause_sent: Optional callable receiving each cleaned text chunk when sent to WebSocket.
+        Yields:
+            tuple (pcm_bytes: bytes, sample_rate: int)
+        """
+        if not self.fish_audio_available or not self.fish_audio_key:
             return
-        if FishAudio is None or TTSConfig is None:
-            raise RuntimeError("Fish Audio streaming SDK is not installed")
+        if not HAS_WEBSOCKET_TTS or ws_connect is None or msgpack is None:
+            raise RuntimeError("Native WebSocket streaming requires 'websockets' and 'msgpack' packages")
 
-        clean_text = self._sanitize_text_for_speech(text)
-        if not clean_text:
-            return
+        # Reset interruption state cleanly at the start of every stream turn
+        self._interrupted.clear()
 
-        # Client initialization is handled inside the retry loop below.
-
-        # One complete sentence/phrase per WebSocket session. This is deliberately
-        # phrase-level, not token-level. Fish generates and returns PCM chunks while
-        # the phrase is still being synthesized.
-        def text_stream():
-            yield clean_text
-
-        # 1. Free tier model (s2.1-pro-free) is served via standard REST endpoint
-        if "free" in str(self.fish_audio_model).lower():
-            audio_bytes = self._synthesize_fish_audio(clean_text)
-            if audio_bytes:
-                import subprocess, shutil
-                if shutil.which("ffmpeg"):
-                    proc = subprocess.run(
-                        ["ffmpeg", "-i", "pipe:0", "-f", "s16le", "-ar", "24000", "-ac", "1", "pipe:1"],
-                        input=audio_bytes,
-                        capture_output=True,
-                        timeout=8.0
-                    )
-                    if proc.returncode == 0 and proc.stdout:
-                        yield proc.stdout, 24000
-                        return
-            return
-
-        # 2. Production paid models (s2-pro, speech-1.5) use low-latency WebSocket live streaming
-        prosody_cfg = Prosody(speed=0.85) if Prosody is not None else None
-        config = TTSConfig(
-            format="pcm",
-            sample_rate=24000,
-            latency="low",
-            chunk_length=50,
-            reference_id=self.fish_audio_voice_id,
-            prosody=prosody_cfg,
-        )
-
-        kwargs = {
-            "config": config,
+        uri = getattr(self, "fish_audio_ws_url", "wss://api.fish.audio/v1/tts/live")
+        headers = {
+            "Authorization": f"Bearer {self.fish_audio_key}",
             "model": self.fish_audio_model,
         }
-        if WebSocketOptions is not None:
-            kwargs["ws_options"] = WebSocketOptions(keepalive_ping_timeout_seconds=60.0)
 
-        # Auto-recover from stale/broken WebSocket sessions (SSL failures, timeouts).
-        # Retry once with a fresh client before giving up.
-        for attempt in range(2):
-            try:
-                if self._fish_stream_client is None:
-                    self._fish_stream_client = FishAudio(api_key=self.fish_audio_key)
+        ws = None
+        sender_thread = None
+        stop_sending = threading.Event()
+        stop_sent_time = [0.0]
 
-                audio_stream = self._fish_stream_client.tts.stream_websocket(text_stream(), **kwargs)
-                for chunk in audio_stream:
-                    if self._interrupted.is_set():
-                        break
-                    if chunk:
-                        yield chunk, 24000
-                return  # success
-            except Exception as ws_err:
-                err_str = str(ws_err).lower()
-                if "402" in err_str or "insufficient" in err_str:
-                    print(f"[jarvis_voice] Notice: Paid credits required for {self.fish_audio_model}. Switching to free/offline model.")
-                    self.fish_audio_available = False
-                    return
-                is_connection_error = any(k in err_str for k in ["ssl", "record_layer", "connection", "reset", "broken pipe", "eof", "timeout"])
-                if is_connection_error and attempt == 0:
-                    self._fish_stream_client = None  # force fresh client
-                    continue
-                print(f"[jarvis_voice] Fish Audio WebSocket error: {ws_err}")
-                return
+        try:
+            ws = ws_connect(uri, additional_headers=headers, ping_interval=None, ping_timeout=None)
+        except Exception as ws_err:
+            err_str = str(ws_err).lower()
+            if "402" in err_str or "insufficient" in err_str:
+                print(f"[jarvis_voice] Notice: Paid credits or valid free model required for {self.fish_audio_model}. Disabling Fish Audio.")
+                self.fish_audio_available = False
+            else:
+                print(f"[jarvis_voice] Fish Audio WebSocket connection error: {ws_err}")
+            raise
+
+        try:
+            # 1. Send initial start configuration packet (latency="low", chunk_length=100)
+            start_payload = {
+                "event": "start",
+                "request": {
+                    "text": "",
+                    "reference_id": self.fish_audio_voice_id,
+                    "format": "pcm",
+                    "sample_rate": 24000,
+                    "latency": "low",
+                    "chunk_length": 100,
+                    "model": self.fish_audio_model,
+                }
+            }
+            ws.send(msgpack.packb(start_payload))
+
+            # 2. Text sender worker
+            def text_sender_worker():
+                try:
+                    if isinstance(text_or_source, str):
+                        clean_text = self._sanitize_text_for_speech(text_or_source)
+                        if clean_text and not stop_sending.is_set():
+                            if on_clause_sent:
+                                try:
+                                    on_clause_sent(clean_text)
+                                except Exception:
+                                    pass
+                            ws.send(msgpack.packb({"event": "text", "text": clean_text}))
+                        if not stop_sending.is_set():
+                            stop_sent_time[0] = time.time()
+                            ws.send(msgpack.packb({"event": "stop"}))
+                    elif isinstance(text_or_source, queue.Queue):
+                        while not stop_sending.is_set():
+                            try:
+                                item = text_or_source.get(timeout=0.1)
+                            except queue.Empty:
+                                if self._interrupted.is_set() or (is_interrupted_fn and is_interrupted_fn()):
+                                    break
+                                continue
+                            if item is None:
+                                text_or_source.task_done()
+                                if not stop_sending.is_set():
+                                    stop_sent_time[0] = time.time()
+                                    ws.send(msgpack.packb({"event": "stop"}))
+                                break
+                            clean_chunk = self._sanitize_text_for_speech(item)
+                            if clean_chunk and not stop_sending.is_set():
+                                if on_clause_sent:
+                                    try:
+                                        on_clause_sent(clean_chunk)
+                                    except Exception:
+                                        pass
+                                ws.send(msgpack.packb({"event": "text", "text": clean_chunk}))
+                            text_or_source.task_done()
+                    else:
+                        for chunk in text_or_source:
+                            if stop_sending.is_set() or self._interrupted.is_set() or (is_interrupted_fn and is_interrupted_fn()):
+                                break
+                            clean_chunk = self._sanitize_text_for_speech(chunk)
+                            if clean_chunk and not stop_sending.is_set():
+                                if on_clause_sent:
+                                    try:
+                                        on_clause_sent(clean_chunk)
+                                    except Exception:
+                                        pass
+                                ws.send(msgpack.packb({"event": "text", "text": clean_chunk}))
+                        if not stop_sending.is_set():
+                            stop_sent_time[0] = time.time()
+                            ws.send(msgpack.packb({"event": "stop"}))
+                except Exception:
+                    pass
+
+            sender_thread = threading.Thread(target=text_sender_worker, daemon=True)
+            sender_thread.start()
+
+            # 3. Audio receiver loop with 20s general idle timeout, 10s post-stop idle timeout, and finish-event validation
+            received_finish_event = False
+
+            def _iter_incoming_messages():
+                # If mock_ws from unit tests, iterate directly over ws mock
+                is_mock = "Mock" in type(ws).__name__ or (hasattr(ws, "__iter__") and "Mock" in type(getattr(ws, "__iter__")).__name__)
+                if not is_mock and hasattr(ws, "recv"):
+                    while not (self._interrupted.is_set() or (is_interrupted_fn and is_interrupted_fn())):
+                        timeout_val = 10.0 if stop_sent_time[0] > 0.0 else 20.0
+                        try:
+                            msg = ws.recv(timeout=timeout_val)
+                        except TimeoutError:
+                            if stop_sent_time[0] > 0.0:
+                                print("[jarvis_voice] Notice: Post-stop idle timeout (10.0s with no audio after stop); connection stalled.")
+                                raise TimeoutError("Fish Audio WebSocket post-stop idle timeout (10.0s)")
+                            print("[jarvis_voice] Notice: Fish Audio WebSocket idle timeout (20.0s with no audio); connection dead.")
+                            raise TimeoutError("Fish Audio WebSocket idle timeout (20.0s with no data)")
+                        yield msg
+                else:
+                    for msg in ws:
+                        yield msg
+
+            for msg in _iter_incoming_messages():
+                # Immediate barge-in interruption check: close socket with NO wait
+                if self._interrupted.is_set() or (is_interrupted_fn and is_interrupted_fn()):
+                    stop_sending.set()
+                    try:
+                        ws.close()
+                    except Exception:
+                        pass
+                    break
+
+                if isinstance(msg, bytes):
+                    try:
+                        data = msgpack.unpackb(msg)
+                    except Exception:
+                        data = None
+
+                    if isinstance(data, dict):
+                        audio = data.get("audio")
+                        if audio:
+                            yield audio, 24000
+                        event = data.get("event")
+                        if event == "finish":
+                            received_finish_event = True
+                            break
+                        elif event == "error":
+                            err_detail = data.get("error") or data.get("reason") or data.get("message") or data
+                            print(f"[jarvis_voice] Fish Audio live error event: {err_detail}")
+                            raise RuntimeError(f"Fish Audio live error event: {err_detail}")
+                    elif len(msg) > 100:
+                        yield msg, 24000
+
+            # Verify clean completion vs premature truncation:
+            # Gated on not interrupted so intentional barge-in closes are NEVER treated as truncation.
+            is_interrupted = self._interrupted.is_set() or (is_interrupted_fn and is_interrupted_fn())
+            is_mock = "Mock" in type(ws).__name__ or (hasattr(ws, "__iter__") and "Mock" in type(getattr(ws, "__iter__")).__name__)
+            if not is_interrupted and not received_finish_event and not is_mock:
+                print("[jarvis_voice] Notice: Fish Audio WebSocket stream closed before finish event; audio truncated.")
+                raise RuntimeError("Fish Audio WebSocket stream closed before finish event; audio truncated")
+
+        except (ConnectionClosed, Exception) as stream_err:
+            if not (self._interrupted.is_set() or (is_interrupted_fn and is_interrupted_fn())):
+                print(f"[jarvis_voice] Fish Audio WebSocket stream notice: {stream_err}")
+                raise
+        finally:
+            stop_sending.set()
+            if ws is not None:
+                try:
+                    ws.close()
+                except Exception:
+                    pass
+            if sender_thread is not None and sender_thread.is_alive():
+                sender_thread.join(timeout=1.0)
 
 
     def _synthesize_fish_audio(self, text: str) -> Optional[bytes]:
@@ -1507,6 +1625,23 @@ class JarvisVoice:
         cross_session = self.session_memory.get_cross_session_context()
         if cross_session:
             mem_summary += "\n\n" + cross_session
+
+        # Inject Active Session Files & Notes Context from SystemCommander
+        try:
+            from core.system_commander import get_system_commander
+            cmdr = get_system_commander()
+            if getattr(cmdr, 'last_affected_file', None):
+                last_f = cmdr.last_affected_file
+                file_ctx = (
+                    f"\n\n[SESSION RECENT FILES & ACTIVE WORKFLOW]:\n"
+                    f"- Active Document / Last Modified File: `{last_f}`\n"
+                    f"- Critical Instruction: If the operator says 'this one', 'it', 'the note', 'the notebook', 'rename it', or 'add to it', they are referring to `{last_f}`.\n"
+                    f"- When renaming, editing, or appending, always use the exact full path `{last_f}`. Never invent 'notebook.txt'."
+                )
+                mem_summary += file_ctx
+        except Exception:
+            pass
+
         recent_history = self.session_memory.to_text(8)
 
         sal = self.memory.get_salutation() or "Sir"

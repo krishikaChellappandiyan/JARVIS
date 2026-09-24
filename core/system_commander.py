@@ -11,8 +11,9 @@ import shlex
 import subprocess
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable, Tuple
+from typing import Dict, Any, Optional, Callable, Tuple, List
 
 from core.task import Task, TaskType, TaskFinding, TaskState
 from core.task_manager import get_task_manager, TaskManager
@@ -33,6 +34,46 @@ class SystemCommander:
     def __init__(self):
         self.task_manager: TaskManager = get_task_manager()
         self._recent_tasks: Dict[str, Tuple[float, Task]] = {}
+        self.last_affected_file: Optional[str] = None
+        self.recent_files: List[Dict[str, Any]] = []
+
+    def _extract_and_track_files(self, cmd: str, work_dir: str):
+        """Extract created or modified files from command and update session file memory."""
+        try:
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            normalized_cmd = re.sub(r'\$\(\s*date\s+\+[%A-Za-z0-9_-]+\s*\)', today_str, cmd)
+
+            # 1. Check touch / creation: touch <path>
+            m_touch = re.findall(r'\btouch\s+([^\s;&|]+)', normalized_cmd)
+            for target in m_touch:
+                target = os.path.expanduser(target.strip("'\""))
+                if not os.path.isabs(target):
+                    target = os.path.abspath(os.path.join(work_dir, target))
+                self.last_affected_file = target
+                self.recent_files.append({"path": target, "action": "create", "time": time.time()})
+
+            # 2. Check redirection: > <path> or >> <path>
+            m_redir = re.findall(r'(?:>{1,2})\s*([^\s;&|]+)', normalized_cmd)
+            for target in m_redir:
+                target = os.path.expanduser(target.strip("'\""))
+                if not os.path.isabs(target):
+                    target = os.path.abspath(os.path.join(work_dir, target))
+                self.last_affected_file = target
+                self.recent_files.append({"path": target, "action": "write", "time": time.time()})
+
+            # 3. Check mv <src> <dest>
+            m_mv = re.search(r'\bmv\s+(?:-[a-zA-Z]+\s+)?([^\s;&|]+)\s+([^\s;&|]+)', normalized_cmd)
+            if m_mv:
+                dest = os.path.expanduser(m_mv.group(2).strip("'\""))
+                if not os.path.isabs(dest):
+                    if self.last_affected_file and os.path.dirname(self.last_affected_file):
+                        dest = os.path.abspath(os.path.join(os.path.dirname(self.last_affected_file), dest))
+                    else:
+                        dest = os.path.abspath(os.path.join(work_dir, dest))
+                self.last_affected_file = dest
+                self.recent_files.append({"path": dest, "action": "rename", "time": time.time()})
+        except Exception as e:
+            print(f"[SystemCommander] File tracking notice: {e}")
 
     @staticmethod
     def is_safe(cmd: str) -> Tuple[bool, str]:
@@ -75,8 +116,29 @@ class SystemCommander:
         stdout_lines = []
         stderr_lines = []
 
-        # Graceful git chaining: If git commit is chained before git push, guard against clean working tree exit code 1
+        # Auto-heal missing source files in `mv` or `>>` if referring to recently created document
         exec_cmd = cmd
+        if self.last_affected_file and os.path.exists(self.last_affected_file):
+            m_mv = re.search(r'\bmv\s+(?:-[a-zA-Z]+\s+)?([^\s;&|]+)\s+([^\s;&|]+)', exec_cmd)
+            if m_mv:
+                src_raw = m_mv.group(1).strip("'\"")
+                src_path = os.path.expanduser(src_raw)
+                src_full = src_path if os.path.isabs(src_path) else os.path.join(work_dir, src_path)
+                if not os.path.exists(src_full):
+                    generic_names = ["notebook.txt", "notebook.md", "note.txt", "notes.txt", "notes.md", "today.md", "file.txt"]
+                    if (src_raw.lower() in generic_names or
+                        src_raw.lower() in os.path.basename(self.last_affected_file).lower() or
+                        "notebook" in src_raw.lower() or
+                        "note" in src_raw.lower()):
+                        dest_raw = m_mv.group(2).strip("'\"")
+                        dest_path = os.path.expanduser(dest_raw)
+                        if not os.path.isabs(dest_path):
+                            dest_path = os.path.join(os.path.dirname(self.last_affected_file), dest_path)
+                        healed_mv = f"mv {shlex.quote(self.last_affected_file)} {shlex.quote(dest_path)}"
+                        exec_cmd = exec_cmd.replace(m_mv.group(0), healed_mv)
+                        print(f"[SystemCommander] Auto-healed command: `{m_mv.group(0)}` -> `{healed_mv}`")
+
+        # Graceful git chaining: If git commit is chained before git push, guard against clean working tree exit code 1
         if "git commit" in exec_cmd and ("&&" in exec_cmd or ";" in exec_cmd):
             exec_cmd = re.sub(r'git\s+commit\s+([^&|;]+)', r'(git diff --cached --quiet || git commit \1)', exec_cmd)
 
@@ -127,10 +189,12 @@ class SystemCommander:
             full_stdout = "".join(stdout_lines)
             full_stderr = "".join(stderr_lines)
             exit_code = process.returncode
+            if exit_code == 0:
+                self._extract_and_track_files(exec_cmd, work_dir)
 
             return {
                 "success": exit_code == 0,
-                "command": cmd,
+                "command": exec_cmd,
                 "exit_code": exit_code,
                 "stdout": full_stdout,
                 "stderr": full_stderr,

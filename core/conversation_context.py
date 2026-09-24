@@ -121,6 +121,27 @@ class ConversationContextManager:
             target_val = inherited_entities.get("target") or (current_target_name if current_target_name else "")
             entities = dict(inherited_entities)
 
+            # Check for file/note follow-up references ("rename this one", "add to it", "edit the note")
+            is_file_action = any(w in lower for w in ["rename", "edit", "append", "add to", "save to", "note", "notebook", "file", "document"])
+            if is_file_action:
+                try:
+                    from core.system_commander import get_system_commander
+                    cmdr = get_system_commander()
+                    if getattr(cmdr, 'last_affected_file', None):
+                        entities["target_file"] = cmdr.last_affected_file
+                        # Resolve pronoun to concrete file path
+                        resolved = re.sub(
+                            r'\b(?:this\s+one|this|it|the\s+file|the\s+note|the\s+notebook)\b',
+                            cmdr.last_affected_file,
+                            clean,
+                            flags=re.IGNORECASE
+                        )
+                        latency = (time.time() - start_t) * 1000.0
+                        self._log_decision(clean, classification, "file_operation", entities, resolved, latency, note="Resolved file pronoun follow-up")
+                        return classification, "file_operation", entities, resolved
+                except Exception:
+                    pass
+
             platform_match = re.search(r'\b(twitter|x|github|linkedin|instagram|facebook|tiktok|reddit|email|domain|whois|dns)\b', lower)
             if platform_match:
                 entities["platform"] = platform_match.group(1)
