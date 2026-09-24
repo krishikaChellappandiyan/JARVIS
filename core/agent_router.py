@@ -328,19 +328,31 @@ class AgentRouter:
                 return True, f"Launching {app_name} on your system.", task, "system_action"
 
         # ── 4.8 Check for Memory Storage / Rule Definition ─────────
-        store_match = re.search(
-            r'\b(?:remember\s+(?:this|that|for\s+me|log)|you\s+can\s+remember|keep\s+in\s+mind|don\'?t\s+forget|note\s+that|learn\s+that|when\s+i\s+say\b|means?\b|meaning\b)',
-            text_lower
+        # Rule storage must be an EXPLICIT imperative command to store a permanent rule or preference.
+        # NEVER match on informational queries, explanations, questions, or colloquial phrases ("I mean", "meaning").
+        is_query = bool(
+            "?" in text_strip
+            or re.search(r'^(?:what|how|why|when|where|who|which|is|are|can|could|do|does|explain|tell\s+me)\b', text_lower)
+            or any(kw in text_lower for kw in [
+                "do you remember", "what did we", "what did i", "what do you mean",
+                "what does", "recall our", "recall the", "i mean", "meaning of", "the meaning",
+                "how to", "how do", "how we", "can you", "could you"
+            ])
         )
-        if store_match and not any(kw in text_lower for kw in ["do you remember", "what did we", "what did i", "what do you mean", "what does", "recall our", "recall the"]):
-            rule_text = text_strip
-            rule_text = re.sub(r'^(?:j\.?a\.?r\.?v\.?i\.?s\.?,?\s*|please\s+|hey\s+jarvis,?\s*)', '', rule_text, flags=re.IGNORECASE).strip()
-            task = self.task_manager.create_task(
-                type_="memory_store",
-                title=f"Store Memory: {rule_text[:35]}",
-                data={"rule": rule_text}
+        if not is_query:
+            store_match = re.search(
+                r'^(?:(?:hey\s+)?jarvis,?\s*)?(?:(?:always\s+)?remember\s+(?:this\s+rule|that\s+when|that\s+i|that\s+my|that\s+we)|save\s+(?:this\s+)?(?:rule|preference)|store\s+(?:this\s+)?(?:rule|preference|in\s+memory)|keep\s+in\s+mind\s+that\s+i|from\s+now\s+on\s+(?:always|never|remember))\b',
+                text_lower
             )
-            return True, f"I have committed that rule to persistent memory, {sal}.", task, "memory_store"
+            if store_match:
+                rule_text = text_strip
+                rule_text = re.sub(r'^(?:j\.?a\.?r\.?v\.?i\.?s\.?,?\s*|please\s+|hey\s+jarvis,?\s*)', '', rule_text, flags=re.IGNORECASE).strip()
+                task = self.task_manager.create_task(
+                    type_="memory_store",
+                    title=f"Store Memory: {rule_text[:35]}",
+                    data={"rule": rule_text}
+                )
+                return True, f"I have committed that rule to persistent memory, {sal}.", task, "memory_store"
 
         # ── 5. Check for Memory Recall Query ───────────────────────
         if any(kw in text_lower for kw in [

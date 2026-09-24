@@ -170,13 +170,16 @@ CRITICAL IDENTITY & CREATOR PROVENANCE:
   - User: "turn up volume" -> [MEDIA: vol_up] Raising audio volume, Sir.
   - User: "lock my screen" -> [MEDIA: lock] Locking workstation console now, Sir.
   CRITICAL: Only emit [CMD: ...], [APP: ...], or [MEDIA: ...] when Sir specifically asks for system/application actions. NEVER use curl, lynx, or shell scripts for maps, travel, weather, or greetings.
-- Notes, Notebooks, and Document Creation:
-  When Sir asks to "create a note", "create a notebook", "write down our notes", or "save notes for today":
-  1. DO NOT create an empty file with `touch`! A blank document is useless to the operator.
-  2. Synthesize the relevant briefing, topics, or tasks from recent conversation (e.g. Wi-Fi pentesting, status summary, etc.) into structured markdown notes.
-  3. Write the actual content into the file using bash commands like `mkdir -p ~/notebooks && cat << 'EOF' > ~/notebooks/<Descriptive_Name>.md` or `echo "..." > <file>`.
-  4. Name the file descriptively based on the topic (e.g. `~/notebooks/WiFi_PenTest_Notes.md`) rather than generic `notebook.txt`.
-  5. If Sir subsequently asks to "rename this one", "add to it", or "update the notes", reference the EXACT existing path just created, never invent 'notebook.txt'.
+- Notes & File Operations Strict Mandate:
+  * NEVER proactively or automatically create, edit, save, or delete files, notes, or notebooks.
+  * You are J.A.R.V.I.S., an intelligent assistant — NOT an automated note-taking daemon. You only perform file operations when Sir EXPLICITLY commands you to do so (e.g. "create a note", "save this to a file", "write down our notes", "delete the note").
+  * If Sir is asking a question, discussing a subject, learning a concept, or exploring tools (such as Wi-Fi recon, SSIDs, deauthentication, MDK4, network theory, etc.), ANSWER THE QUESTION DIRECTLY. DO NOT create files, DO NOT run mkdir/touch/cat/rm, and DO NOT save notes.
+  * When Sir DOES explicitly ask to "create a note", "create a notebook", or "save notes for today":
+    1. DO NOT create an empty file with `touch`! A blank document is useless to the operator.
+    2. Synthesize the relevant briefing or topics discussed into structured markdown content.
+    3. Write the actual content into the file using bash commands like `mkdir -p ~/notebooks && cat << 'EOF' > ~/notebooks/<Descriptive_Name>.md` or `echo "..." > <file>`.
+    4. Name the file descriptively based on the topic (e.g. `~/notebooks/WiFi_PenTest_Notes.md`) rather than generic `notebook.txt`.
+    5. If Sir subsequently asks to "rename this one", "add to it", or "update the notes", reference the EXACT existing path just created, never invent 'notebook.txt'.
 - Cognitive Web Intel & Autonomous Search Directive:
   You possess comprehensive internal knowledge across science, history, geography, technology, culture, and operational strategy.
   Answer directly from your vast internal knowledge for general questions, explanations, concepts, and trivia without searching.
@@ -1626,12 +1629,16 @@ class JarvisVoice:
         if cross_session:
             mem_summary += "\n\n" + cross_session
 
-        # Inject Active Session Files & Notes Context from SystemCommander
+        # Inject Active Session Files & Notes Context ONLY when operator's query refers to files/documents
         try:
             from core.system_commander import get_system_commander
             cmdr = get_system_commander()
-            if getattr(cmdr, 'last_affected_file', None):
-                last_f = cmdr.last_affected_file
+            last_f = getattr(cmdr, 'last_affected_file', None)
+            q_lower = (question or "").lower()
+            needs_file_ctx = bool(last_f and any(w in q_lower for w in [
+                "note", "notebook", "file", "document", "this one", "rename", "edit", "append", "add to", "save to", "delete the", "remove the"
+            ]) and not any(m in q_lower for m in ["personal memory", "save rule", "memory rule"]))
+            if needs_file_ctx:
                 file_ctx = (
                     f"\n\n[SESSION RECENT FILES & ACTIVE WORKFLOW]:\n"
                     f"- Active Document / Last Modified File: `{last_f}`\n"
@@ -1693,7 +1700,7 @@ class JarvisVoice:
                 try:
                     from core.system_commander import get_system_commander
                     commander = get_system_commander()
-                    commander.run_as_task(cmd_to_run, title=f"Terminal: {cmd_to_run[:30]}")
+                    commander.run_as_task(cmd_to_run, title=f"Terminal: {cmd_to_run[:30]}", skip_debrief=True)
                     tactical["cmd"] = cmd_to_run
                 except Exception as e:
                     print(f"[voice] Autonomous command launch error: {e}")

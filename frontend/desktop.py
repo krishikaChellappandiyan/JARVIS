@@ -1793,7 +1793,7 @@ class JarvisAPI:
         self.process_input(question)
 
     def _on_command_debrief(self, cmd: str, res: dict, task_id: str):
-        """Dispatches an asynchronous closed-loop spoken debrief when a terminal command completes."""
+        """Dispatches an asynchronous closed-loop spoken debrief when a standalone terminal command completes."""
         if not self._voice:
             return
         cmd_stripped = (cmd or "").strip()
@@ -1819,6 +1819,14 @@ class JarvisAPI:
 
     def _run_aggregated_debrief(self):
         """Processes and debriefs completed commands in a single unified prompt, strictly waiting for speech completion."""
+        # Suppress debrief if speech is currently active or recently played to prevent cutting off assistant responses
+        if getattr(self, '_tts_speaking', False) or (getattr(self, '_tts_playback_until', 0.0) > 0.0 and time.time() < getattr(self, '_tts_playback_until', 0.0) + 1.0):
+            print("[desktop] Suppressing automated command debrief: speech is actively in progress.")
+            with self._debrief_lock:
+                self._pending_debriefs.clear()
+                self._debrief_timer = None
+            return
+
         # Wait until previous voice playback (monologue or primary answer) finishes
         wait_start = time.time()
         while (time.time() < getattr(self, '_tts_playback_until', 0.0) or getattr(self, '_current_tts_proc', None) is not None) and (time.time() - wait_start) < 20.0:

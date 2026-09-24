@@ -219,7 +219,8 @@ class SystemCommander:
         cmd: str,
         title: Optional[str] = None,
         timeout: float = 60.0,
-        cwd: Optional[str] = None
+        cwd: Optional[str] = None,
+        skip_debrief: bool = False
     ) -> Task:
         """
         Spawns a TERMINAL_COMMAND task and runs execution asynchronously in a background thread.
@@ -335,13 +336,14 @@ class SystemCommander:
             else:
                 self.task_manager.fail_task(task.task_id, error_msg=res.get("error") or summary)
 
-            # Closed-Loop Agentic Feedback: notify registered listener (JARVIS loop)
-            cb = getattr(self, '_debrief_callback', None)
-            if callable(cb):
-                try:
-                    cb(cmd, res, task.task_id)
-                except Exception as e:
-                    print(f"[SystemCommander] Debrief callback error: {e}")
+            # Closed-Loop Agentic Feedback: notify registered listener (JARVIS loop) unless skipped
+            if not skip_debrief:
+                cb = getattr(self, '_debrief_callback', None)
+                if callable(cb):
+                    try:
+                        cb(cmd, res, task.task_id)
+                    except Exception as e:
+                        print(f"[SystemCommander] Debrief callback error: {e}")
 
         threading.Thread(target=_worker, daemon=True).start()
         return task

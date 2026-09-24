@@ -112,8 +112,9 @@ class ConversationContextManager:
                 break
 
         has_pronoun = bool(re.search(r'\b(?:he|him|his|she|her|they|them|their|it|that|there|this)\b', lower))
+        is_memory_ref = any(m in lower for m in ["personal memory", "save rule", "memory rule", "stored memory", "remove rule", "delete rule", "forget that", "clear memory", "in memory"])
 
-        if (is_followup or has_pronoun) and last_turn:
+        if (is_followup or has_pronoun) and last_turn and not is_memory_ref:
             classification = "follow_up"
             inherited_entities = dict(last_turn.entities)
             intent = last_turn.intent
@@ -122,20 +123,33 @@ class ConversationContextManager:
             entities = dict(inherited_entities)
 
             # Check for file/note follow-up references ("rename this one", "add to it", "edit the note")
-            is_file_action = any(w in lower for w in ["rename", "edit", "append", "add to", "save to", "note", "notebook", "file", "document"])
+            # Must NOT match general conversation, questions, or memory/rule commands
+            is_file_action = any(w in lower for w in [
+                "rename this", "rename it", "rename the", "edit the note", "edit this", "edit it",
+                "add to it", "add to this", "append to it", "update the note", "update this",
+                "delete the note", "delete this note", "delete the notebook", "remove the note", "remove the notebook"
+            ])
             if is_file_action:
                 try:
                     from core.system_commander import get_system_commander
                     cmdr = get_system_commander()
                     if getattr(cmdr, 'last_affected_file', None):
                         entities["target_file"] = cmdr.last_affected_file
-                        # Resolve pronoun to concrete file path
+                        # Resolve pronoun to concrete file path, specifically tied to the action verb
                         resolved = re.sub(
-                            r'\b(?:this\s+one|this|it|the\s+file|the\s+note|the\s+notebook)\b',
-                            cmdr.last_affected_file,
+                            r'\b(rename|edit|append(?:\s+to)?|add(?:\s+[\w\s\'-]+)?\s+to|update|delete|remove)\s+(?:this\s+one|this|it|the\s+file|the\s+note|the\s+notebook)\b',
+                            rf'\1 {cmdr.last_affected_file}',
                             clean,
                             flags=re.IGNORECASE
                         )
+                        # Also handle standalone "this one" / "the note" / "the notebook" only when file action is explicit
+                        if resolved == clean:
+                            resolved = re.sub(
+                                r'\b(?:this\s+one|the\s+note|the\s+notebook|the\s+file)\b',
+                                cmdr.last_affected_file,
+                                clean,
+                                flags=re.IGNORECASE
+                            )
                         latency = (time.time() - start_t) * 1000.0
                         self._log_decision(clean, classification, "file_operation", entities, resolved, latency, note="Resolved file pronoun follow-up")
                         return classification, "file_operation", entities, resolved
