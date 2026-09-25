@@ -289,15 +289,271 @@ class JarvisCognitiveLoop:
             return {"success": True, "from": from_loc, "to": to_loc, "route": route}
         return {"success": False, "from": from_loc, "to": to_loc}
 
+    def tool_memory_recall(self, query: str = "") -> Dict[str, Any]:
+        """Scans memory logs and recent conversational context."""
+        try:
+            from core.jarvis_memory import JarvisMemory
+            mem = JarvisMemory()
+            history = mem.get_recent_speech_patterns(limit=5)
+            sal = self.get_salutation()
+            if history:
+                return {
+                    "success": True,
+                    "count": len(history),
+                    "entries": history,
+                    "debrief": f"Retrieved {len(history)} recent context logs from memory, {sal}."
+                }
+            return {
+                "success": False,
+                "entries": [],
+                "debrief": f"No prior memory records found for that context, {sal}."
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "debrief": "Memory retrieval unavailable."}
+
+    def tool_live_news(self) -> Dict[str, Any]:
+        """Accesses global SIGINT live news broadcasts."""
+        sal = self.get_salutation()
+        self.bus.emit("open_live_news", {})
+        return {"success": True, "debrief": f"Accessing 24/7 global SIGINT broadcast network, {sal}."}
+
+    def _ask_cloud(self, prompt: str, system: str, max_tokens: int = 250) -> Dict[str, Any]:
+        """Try cloud LLMs via voice engine in priority order (Groq -> NVIDIA NIM -> Gemini)."""
+        if self.voice and hasattr(self.voice, "_ask_cloud"):
+            return self.voice._ask_cloud(prompt, system, max_tokens=max_tokens)
+        try:
+            from narrative.jarvis_voice import JarvisVoice
+            voice = JarvisVoice()
+            if hasattr(voice, "_ask_cloud"):
+                return voice._ask_cloud(prompt, system, max_tokens=max_tokens)
+        except Exception:
+            pass
+        return {"text": "", "rate_limited": False, "engine": None}
+
+    def _ask_slm(self, prompt: str, system: str, max_tokens: int = 250, timeout: int = 15) -> Dict[str, Any]:
+        if self.voice and hasattr(self.voice, "_ask_slm"):
+            return self.voice._ask_slm(prompt, system, max_tokens=max_tokens, timeout=timeout)
+        return {"text": "", "error": True}
+
     # ── 2. Intent & Plan Synthesis ────────────────────────────────────
 
     def analyze_goal(self, user_text: str) -> List[Dict[str, Any]]:
         """
-        Decomposes complex user prompt into a structured multi-step tactical plan.
-        Detects combinations of CCTV, traffic, navigation, flight tracking, weather, and terminal tasks.
+        Decomposes complex user prompts into a structured multi-step tactical plan using unified LLM tool selection.
+        Falls back gracefully to heuristic parsing if cloud/SLM inference fails or times out.
+        """
+        text_strip = (user_text or "").strip()
+        if not text_strip:
+            return []
+
+        sal = self.get_salutation()
+
+        prompt = f"""You are J.A.R.V.I.S.'s Tactical Goal Decomposition and Tool Selection Engine.
+Analyze the user directive below and select the specialized tools needed to fulfill the request.
+Return a JSON array of objects representing the required actions in execution order.
+
+User Directive: "{text_strip}"
+
+Available Tools:
+- "nav": Pan/glide 3D planetary Earth globe to a location.
+  Parameters: {{"action": "nav", "location": "<city or country name>"}}
+- "cctv": Query live optical surveillance and traffic camera feeds in a city or area.
+  Parameters: {{"action": "cctv", "location": "<city name or null>"}}
+- "traffic": Check live street traffic conditions, speeds, congestion, and road telemetry.
+  Parameters: {{"action": "traffic", "location": "<city name or null>"}}
+- "weather": Pull regional atmospheric radar, precipitation, temperature, and forecasts.
+  Parameters: {{"action": "weather", "location": "<city name or null>"}}
+- "flights": Scan global military and civilian ADS-B airspace radar transponders.
+  Parameters: {{"action": "flights", "query": "<optional query/region>"}}
+- "satellites": Orbital telemetry, satellite transit, ISS tracking.
+  Parameters: {{"action": "satellites", "query": "<satellite name or ISS>"}}
+- "conflicts": Global active warzones, frontlines, and theatre conflict telemetry.
+  Parameters: {{"action": "conflicts"}}
+- "cyber_recon": OSINT cyber reconnaissance, WHOIS, DNS, IP/domain scan.
+  Parameters: {{"action": "cyber_recon", "target": "<domain, ip, or host>"}}
+- "search": Live web search for recent news, facts, people, or real-time online queries.
+  Parameters: {{"action": "search", "query": "<search terms>"}}
+- "diagnostics": System hardware diagnostics, CPU load, RAM usage, thermals.
+  Parameters: {{"action": "diagnostics"}}
+- "top_processes": Audit active system processes and resource hogs by CPU or memory.
+  Parameters: {{"action": "top_processes", "query": "<cpu or memory>"}}
+- "git_intel": Inspect git repository branches, uncommitted changes, and working state.
+  Parameters: {{"action": "git_intel"}}
+- "briefing": Executive situational briefing aggregating weather, news, system telemetry.
+  Parameters: {{"action": "briefing", "location": "<optional location>"}}
+- "clipboard": Inspect clipboard buffers.
+  Parameters: {{"action": "clipboard"}}
+- "calendar": Agenda, upcoming meetings, schedule buffers.
+  Parameters: {{"action": "calendar"}}
+- "inbox": Communications buffer and unread messages.
+  Parameters: {{"action": "inbox"}}
+- "memory_recall": Search past conversation logs and persistent memory.
+  Parameters: {{"action": "memory_recall", "query": "<search topic>"}}
+- "cockpit": Engage 3D tactical cockpit chase camera on target aircraft.
+  Parameters: {{"action": "cockpit", "target": "<callsign or target>"}}
+- "directions": Turn-by-turn road driving route between two points.
+  Parameters: {{"action": "directions", "from": "<origin>", "to": "<destination>"}}
+- "live_news": Access 24/7 global SIGINT live news broadcasts.
+  Parameters: {{"action": "live_news"}}
+- "annotate": Mark/illuminate tactical sector perimeter or defense zone on 3D globe.
+  Parameters: {{"action": "annotate", "location": "<loc>", "sector_name": "<name>", "radius_km": <float>, "classification": "<NO-FLY ZONE|SURVEILLANCE ZONE|DEFENSE ZONE>"}}
+
+Rules:
+1. When a specific city/location is referenced for CCTV, traffic, or weather, prepend a "nav" action for that location first if the globe camera should focus there.
+2. If weather, cctv, or traffic is requested but NO location was provided at all in the prompt, set location to null.
+3. For compound directives (e.g. "Check the cameras in Mumbai and see how traffic is flowing"), return all required actions in execution order: nav, cctv, traffic.
+4. If the directive is general conversation, a question answerable without tools, or does not need these tools, return [].
+5. Output ONLY a valid raw JSON array of objects. No markdown formatting, no explanations."""
+
+        sys_prompt = "You are a precise tactical tool-selection agent. Output a raw JSON array of objects only."
+
+        res_text = ""
+        try:
+            cloud = self._ask_cloud(prompt, sys_prompt, max_tokens=250)
+            res_text = cloud.get("text", "")
+            if not res_text:
+                slm_res = self._ask_slm(prompt, sys_prompt, max_tokens=250, timeout=15)
+                res_text = slm_res.get("text", "")
+        except Exception:
+            pass
+
+        if res_text:
+            try:
+                clean_json = re.search(r'\[.*\]', res_text, re.DOTALL)
+                if clean_json:
+                    items = json.loads(clean_json.group(0))
+                    if isinstance(items, list):
+                        plan_steps = []
+                        for item in items:
+                            if not isinstance(item, dict) or "action" not in item:
+                                continue
+                            action = item.get("action")
+                            # Check missing location for cctv / traffic / weather
+                            if action in ("cctv", "traffic", "weather") and not item.get("location"):
+                                topic = "optical surveillance feeds" if action == "cctv" else ("live traffic telemetry" if action == "traffic" else "atmospheric telemetry")
+                                phrase = (
+                                    f"Which city would you like optical surveillance feeds for, {sal}?"
+                                    if action == "cctv"
+                                    else (
+                                        f"Which city or sector would you like live traffic telemetry for, {sal}?"
+                                        if action == "traffic"
+                                        else f"Which city or region would you like atmospheric telemetry for, {sal}?"
+                                    )
+                                )
+                                plan_steps.append({
+                                    "action": "ask_location",
+                                    "topic": topic,
+                                    "progress_phrase": phrase
+                                })
+                                continue
+
+                            # Standard progress phrases
+                            loc = item.get("location") or ""
+                            if "progress_phrase" not in item:
+                                if action == "nav":
+                                    item["progress_phrase"] = f"Navigating orbital telemetry to {loc.title()}, {sal}..."
+                                elif action == "cctv":
+                                    item["progress_phrase"] = f"Querying active optical surveillance feeds across {loc.title()}..."
+                                elif action == "traffic":
+                                    item["progress_phrase"] = f"Cross-referencing live street traffic and GIS flow vectors for {loc.title()}, {sal}..."
+                                elif action == "weather":
+                                    item["progress_phrase"] = f"Pulling regional atmospheric radar and precipitation telemetry for {loc.title()}, {sal}..."
+                                elif action == "flights":
+                                    item["progress_phrase"] = f"Scanning global ADS-B military and civilian airspace transponders, {sal}..."
+                                elif action == "satellites":
+                                    item["progress_phrase"] = f"Acquiring real-time orbital telemetry for {str(item.get('query', 'ISS')).upper()}, {sal}..."
+                                elif action == "conflicts":
+                                    item["progress_phrase"] = f"Synthesizing active warzone telemetry and frontline geometry, {sal}..."
+                                elif action == "cyber_recon":
+                                    item["progress_phrase"] = f"Initiating OSINT cyber intelligence sweep on {item.get('target', 'target')}, {sal}..."
+                                elif action == "search":
+                                    item["progress_phrase"] = f"Scanning real-time web intelligence for '{item.get('query', text_strip)}'..."
+                                elif action == "diagnostics":
+                                    item["progress_phrase"] = f"Querying live hardware diagnostic sensors and CPU telemetry, {sal}..."
+                                elif action == "top_processes":
+                                    item["progress_phrase"] = f"Auditing active processes and resource allocation, {sal}..."
+                                elif action == "git_intel":
+                                    item["progress_phrase"] = f"Inspecting repository branch and working directory state, {sal}..."
+                                elif action == "briefing":
+                                    item["progress_phrase"] = f"Compiling multi-source executive situational briefing, {sal}..."
+                                elif action == "clipboard":
+                                    item["progress_phrase"] = f"Reading active system clipboard buffers, {sal}..."
+                                elif action == "calendar":
+                                    item["progress_phrase"] = f"Scanning your agenda and scheduling buffers, {sal}..."
+                                elif action == "inbox":
+                                    item["progress_phrase"] = f"Scanning inbox dispatches and priority communications, {sal}..."
+                                elif action == "memory_recall":
+                                    item["progress_phrase"] = f"Scanning memory logs for related context, {sal}..."
+                                elif action == "cockpit":
+                                    item["progress_phrase"] = "Acquiring kinematic lock and initializing 3D tactical cockpit chase camera..."
+                                elif action == "annotate":
+                                    item["progress_phrase"] = f"Illuminating tactical perimeter and annotating sector boundary on World Telemetry, {sal}..."
+                                elif action == "directions":
+                                    item["progress_phrase"] = f"Computing Valhalla turn-by-turn road route between {item.get('from', 'Origin')} and {item.get('to', 'Destination')}..."
+                                elif action == "live_news":
+                                    item["progress_phrase"] = f"Accessing 24/7 global SIGINT broadcast network, {sal}..."
+                                else:
+                                    item["progress_phrase"] = f"Executing operational action: {action}, {sal}..."
+
+                            plan_steps.append(item)
+
+                        return plan_steps
+            except Exception:
+                pass
+
+        # Graceful fallback: heuristic flag and location extraction if cloud/SLM is unreachable
+        return self._analyze_goal_fallback(user_text)
+
+    def _analyze_goal_fallback(self, user_text: str) -> List[Dict[str, Any]]:
+        """
+        Deterministic heuristic fallback for goal decomposition when offline or during cloud timeouts.
         """
         text_lower = user_text.lower().strip()
         sal = self.get_salutation()
+
+        # Check explicit web search directives first
+        m_explicit_search = re.search(r'^(?:google\s+search|search\s+google|search\s+the\s+web|web\s+search)\s+(?:for\s+|about\s+|on\s+)?(.+)', text_lower)
+        if m_explicit_search:
+            q = m_explicit_search.group(1).strip()
+            q = re.sub(r'^(?:do\s+a|can\s+you|please|for|about)\s+', '', q, flags=re.IGNORECASE).strip()
+            if q:
+                return [{
+                    "action": "search",
+                    "query": q,
+                    "progress_phrase": f"Scanning real-time web intelligence for '{q}'..."
+                }]
+
+        # Check explicit turn-by-turn routing directives
+        has_directions = any(kw in text_lower for kw in [
+            "turn by turn", "driving directions", "drive from", "driving route",
+            "street route", "how do i drive from", "navigate from", "road directions"
+        ]) or (("directions" in text_lower or "route" in text_lower) and (" from " in text_lower and " to " in text_lower))
+        if has_directions:
+            m_route = re.search(r'from\s+[\'"]?([^\'"]+?)[\'"]?\s+to\s+[\'"]?([^\'"]+?)[\'"]?(?:\s*$|\s+via|\s+avoiding)', text_lower)
+            from_loc = m_route.group(1).strip() if m_route else ""
+            to_loc = m_route.group(2).strip() if m_route else ""
+            return [{
+                "action": "directions",
+                "from_loc": from_loc,
+                "to_loc": to_loc,
+                "progress_phrase": f"Computing precision turn-by-turn road route and maneuvers, {sal}..."
+            }]
+
+        # Check explicit OSINT cyber reconnaissance directives
+        has_cyber = any(kw in text_lower for kw in [
+            "cyber recon", "osint scan", "scan domain", "recon domain",
+            "whois lookup", "dns lookup", "shodan scan", "ssl certs",
+            "ip reputation", "cve scan", "sanctions check", "recon target"
+        ]) or bool(re.search(r'\b(?:whois|dns|shodan|cve|certs)\s+(?:lookup|scan|recon)\b', text_lower))
+        if has_cyber:
+            m_tgt = re.search(r'(?:recon|scan|lookup|check)\s+(?:target\s+|domain\s+|ip\s+)?([a-zA-Z0-9\.\-_]+)', text_lower)
+            tgt = m_tgt.group(1).strip() if m_tgt else "target"
+            return [{
+                "action": "cyber_recon",
+                "target": tgt,
+                "progress_phrase": f"Initiating OSINT cyber intelligence sweep on {tgt}, {sal}..."
+            }]
+
         plan_steps = []
 
         loc_candidate = ""
@@ -317,7 +573,7 @@ class JarvisCognitiveLoop:
             if m_air and m_air.group(1).lower() not in ('the', 'local', 'our', 'all', 'pull', 'scan', 'check'):
                 loc_candidate = m_air.group(1).strip()
 
-        # Viewport relative references check (e.g. "this place which i am seeing", "here", "current view")
+        # Viewport relative references check
         viewport_indicators = [
             "this place", "this area", "this location", "this spot", "current view",
             "current viewport", "current area", "current vantage", "where i am",
@@ -330,12 +586,12 @@ class JarvisCognitiveLoop:
             loc_candidate = ""
 
         has_cctv = any(w in text_lower for w in ["cctv", "camera", "cameras", "cam", "cams", "optical", "surveillance", "vantage"])
-        has_traffic = any(w in text_lower for w in ["traffic", "congestion", "road", "roads", "flow", "jam", "commute", "highway"]) and "air traffic" not in text_lower
+        has_traffic = any(re.search(rf'\b{w}\b', text_lower) for w in ["traffic", "congestion", "road", "roads", "flow", "jam", "commute", "highway"]) and "air traffic" not in text_lower
         has_flight = any(w in text_lower for w in ["flight", "flights", "aircraft", "plane", "planes", "radar", "airspace", "ads-b", "adsb", "chase", "air traffic"])
         has_weather = any(w in text_lower for w in ["weather", "forecast", "rain", "temperature", "storm", "wind", "pull the weather"])
         has_cockpit = any(w in text_lower for w in ["cockpit", "chase cam", "lock on", "track plane", "lock onto", "nearest flight"])
         has_search = bool(re.search(r'\b(?:google\s+search|web\s+search|search\s+(?:the\s+web|google|online))\b', text_lower))
-        has_briefing = any(w in text_lower for w in ["good morning", "briefing", "situational briefing", "status report", "morning protocol", "executive briefing", "how is the day looking", "how does the day look"])
+        has_briefing = any(w in text_lower for w in ["good morning", "briefing", "situational briefing", "status report", "morning protocol", "executive briefing", "how is the day looking", "how does the day look"]) and not any(w in text_lower for w in ["warzone", "conflict", "frontline", "cyber", "flight", "weather"])
         has_diag = any(w in text_lower for w in ["diagnostic", "system resource", "hardware stat", "cpu load", "thermals", "system status", "hardware status", "system telemetry", "resource monitor"])
         has_proc = any(w in text_lower for w in ["top process", "highest cpu", "highest memory", "what's using", "whats using", "memory hog", "cpu hog", "kill process", "terminate process", "running processes"])
         has_git = any(w in text_lower for w in ["git status", "repo status", "git branch", "uncommitted", "repository status", "git diff"])
@@ -344,6 +600,20 @@ class JarvisCognitiveLoop:
         has_clip = any(w in text_lower for w in ["clipboard", "what's on my clipboard", "whats on my clipboard", "read clipboard", "copied"])
         has_vol = any(w in text_lower for w in ["volume up", "volume down", "mute", "unmute", "set volume"])
         has_media = any(w in text_lower for w in ["pause music", "resume music", "play music", "next track", "previous track", "stop music"])
+        has_memory = any(kw in text_lower for kw in [
+            "do you remember", "what did we", "what did i", "recall our", "recall the",
+            "what did we discuss", "did we discuss", "remind me what", "past discussion",
+            "what was that", "search memory", "recall memory"
+        ])
+        has_news = any(kw in text_lower for kw in [
+            "live news", "world news", "breaking news", "news broadcast", "sigint broadcast", "latest news"
+        ])
+        has_satellites = any(kw in text_lower for kw in [
+            "satellite", "iss tracking", "track iss", "orbital tracking", "track satellite"
+        ])
+        has_conflicts = any(kw in text_lower for kw in [
+            "conflict zone", "warzone", "war zones", "active conflicts", "global conflicts"
+        ])
         has_annotate = any(w in text_lower for w in [
             "annotate", "mark this area", "mark area", "draw boundary", "defense zone",
             "tactical perimeter", "highlight area", "highlight sector", "draw perimeter",
@@ -390,7 +660,7 @@ class JarvisCognitiveLoop:
                 plan_steps.append({
                     "action": "ask_location",
                     "topic": "optical surveillance feeds",
-                    "progress_phrase": f"Awaiting location designation for optical surveillance feeds, {sal}..."
+                    "progress_phrase": f"Which city would you like optical surveillance feeds for, {sal}?"
                 })
 
         if has_traffic:
@@ -403,8 +673,8 @@ class JarvisCognitiveLoop:
             else:
                 plan_steps.append({
                     "action": "ask_location",
-                    "topic": "live street traffic telemetry",
-                    "progress_phrase": f"Awaiting location designation for traffic telemetry, {sal}..."
+                    "topic": "live traffic telemetry",
+                    "progress_phrase": f"Which city or sector would you like live traffic telemetry for, {sal}?"
                 })
 
         if has_weather:
@@ -418,7 +688,7 @@ class JarvisCognitiveLoop:
                 plan_steps.append({
                     "action": "ask_location",
                     "topic": "atmospheric telemetry",
-                    "progress_phrase": f"Awaiting location designation for atmospheric telemetry, {sal}..."
+                    "progress_phrase": f"Which city or region would you like atmospheric telemetry for, {sal}?"
                 })
 
         if has_flight:
@@ -484,6 +754,33 @@ class JarvisCognitiveLoop:
                 "action": "media_control",
                 "command": user_text,
                 "progress_phrase": f"Dispatching audio/media command to system controller, {sal}..."
+            })
+
+        if has_memory:
+            plan_steps.append({
+                "action": "memory_recall",
+                "query": user_text,
+                "progress_phrase": f"Querying long-term cognitive episodic and semantic memory banks, {sal}..."
+            })
+
+        if has_news:
+            plan_steps.append({
+                "action": "live_news",
+                "query": user_text,
+                "progress_phrase": f"Tuning into global SIGINT and news broadcasts, {sal}..."
+            })
+
+        if has_satellites:
+            plan_steps.append({
+                "action": "satellites",
+                "query": loc_candidate or "ISS",
+                "progress_phrase": f"Acquiring real-time orbital tracking and satellite ephemeris, {sal}..."
+            })
+
+        if has_conflicts:
+            plan_steps.append({
+                "action": "conflicts",
+                "progress_phrase": f"Aggregating geopolitical and active warzone intelligence telemetry, {sal}..."
             })
 
         if not plan_steps and has_search:
@@ -666,6 +963,14 @@ class JarvisCognitiveLoop:
                 elif action == "inbox":
                     res = self.tool_inbox()
                     obs["result"] = res.get("debrief", "Communications buffer scanned.")
+
+                elif action == "memory_recall":
+                    res = self.tool_memory_recall(step.get("query", ""))
+                    obs["result"] = res.get("debrief", "Memory scan completed.")
+
+                elif action == "live_news":
+                    res = self.tool_live_news()
+                    obs["result"] = res.get("debrief", "SIGINT news broadcast accessed.")
 
                 elif action == "media_control":
                     cmd_text = step.get("command", "").lower()

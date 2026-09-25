@@ -1933,23 +1933,8 @@ class JarvisVoice:
         """
         curr = current_target.primary if current_target else "None"
 
-        # 0. Fast guard: Never hijack map, routing, CCTV, or satellite console tasks into OSINT stalk
-        map_or_media_triggers = ("cctv", "camera", "cameras", "traffic", "flight", "plane", "aircraft", "route", "corridor", "map", "globe", "earth", "sector", "zone", "perimeter", "weather", "satellite", "orbit", "iss", "surveillance")
-        if any(w in text.lower() for w in map_or_media_triggers):
-            return {"type": "covo", "target": None}
-
-        # 1. Fast deterministic check for investigation commands (0ms)
-        stalk_match = re.match(r'^(?:stalk|pivot|investigate|scan|trace|lookup|dox)\s+(\S+)', text, re.IGNORECASE)
-        if stalk_match and stalk_match.group(1).lower() not in ("me", "jarvis", "us", "again", "them"):
-            return {"type": "investigate", "target": stalk_match.group(1)}
-
         if current_target and any(w in text.lower() for w in ["investigate again", "pivot to them", "scan again", "run it again", "re-scan"]):
             return {"type": "investigate", "target": current_target.primary}
-
-        # 2. Fast heuristic: If query contains no investigation triggers, route to covo instantly (saves 2s round trip)
-        investigate_keywords = ("investigate", "stalk", "recon", "dox", "trace", "pivot", "whois", "shodan", "scan target", "inspect target")
-        if not any(kw in text.lower() for kw in investigate_keywords):
-            return {"type": "covo", "target": None}
 
         prompt = f"""Analyze this user message and determine if it is an OSINT investigation request (task) or general conversation/question (covo).
 
@@ -1957,9 +1942,9 @@ User message: "{text}"
 Current active investigation target: {curr}
 
 Rules:
-1. If the user wants to start an investigation, scan, trace, lookup, or inspect a target (person, email, username, domain, IP, handle), classify as "investigate" and extract the target string.
+1. If the user wants to start an investigation, reconnaissance, scan, trace, lookup, or inspect a specific target entity (person, email, username, domain, IP, handle, organization, or target infrastructure), classify as "investigate" and extract the clean target string.
 2. If the user says "investigate again", "pivot to them", or refers to the active target, classify as "investigate" and use "{curr}" as the target.
-3. If the user is asking a general question, talking casually, requesting a story, or discussing strategy/OSINT methodology without giving a target to scan right now, classify as "covo" with target null.
+3. If the user is asking a general question, talking casually, requesting a story, discussing strategy/OSINT methodology, or giving general instructions without specifying a target to scan right now, classify as "covo" with target null.
 
 Output ONLY a JSON object:
 {{"type": "investigate" or "covo", "target": "extracted target string or null"}}"""
@@ -1967,13 +1952,11 @@ Output ONLY a JSON object:
         sys_prompt = "You are a precise intent classification agent. Output raw JSON only."
 
         res_text = ""
-        if self.nvidia_available and not self.nvidia_rate_limited:
-            res_text, _ = self._ask_nvidia(text, sys_prompt, max_tokens=150)
-        elif self.gemini_available and not self.gemini_rate_limited:
-            res_text, _ = self._ask_gemini(text, sys_prompt, max_tokens=150)
+        cloud = self._ask_cloud(prompt, sys_prompt, max_tokens=150)
+        res_text = cloud.get("text", "")
 
         if not res_text:
-            slm_res = self._ask_slm(prompt, sys_prompt, max_tokens=150, timeout=30)
+            slm_res = self._ask_slm(prompt, sys_prompt, max_tokens=150, timeout=15)
             res_text = slm_res.get("text", "")
 
         try:
@@ -1982,13 +1965,15 @@ Output ONLY a JSON object:
                 data = json.loads(match.group(0))
                 intent_type = data.get("type", "covo")
                 target_val = data.get("target")
-                if intent_type == "investigate" and target_val and target_val not in ("null", "None", "null"):
+                if intent_type == "investigate" and target_val and str(target_val).lower() not in ("null", "none"):
                     return {"type": "investigate", "target": str(target_val).strip()}
+                elif intent_type == "covo":
+                    return {"type": "covo", "target": None}
         except Exception:
             pass
 
-        # Fallback regex check only if LLM output was invalid JSON
-        stalk_match = re.match(r'^(?:stalk|pivot|investigate|scan|trace|lookup)\s+(\S+)', text, re.IGNORECASE)
+        # Emergency fallback regex check only if cloud/SLM calls failed or returned invalid JSON
+        stalk_match = re.match(r'^(?:stalk|pivot|investigate|scan|trace|lookup|dox)\s+(\S+)', text, re.IGNORECASE)
         if stalk_match and stalk_match.group(1).lower() not in ("me", "jarvis", "us", "again", "them"):
             return {"type": "investigate", "target": stalk_match.group(1)}
 

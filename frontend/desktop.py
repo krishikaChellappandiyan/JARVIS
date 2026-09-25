@@ -1616,105 +1616,53 @@ class JarvisAPI:
                     )
                     self._run_ask(sat_prompt)
                     return
-            # 1. Autonomous Tactical Reasoning Engine ("JARVIS-Level Thinking")
-            # If the user gives a multi-step tactical directive (e.g. scan airspace, pull weather, mark perimeter),
-            # the cognitive loop orchestrates all steps in sequence rather than executing just a single skill.
-            try:
-                from core.jarvis_reasoning_loop import JarvisCognitiveLoop
-                cognitive = JarvisCognitiveLoop(voice_engine=self._voice)
-                steps = cognitive.analyze_goal(text)
-                if len(steps) >= 2 or (len(steps) == 1 and steps[0]["action"] in ("annotate", "cockpit", "satellites", "conflicts", "flights", "briefing")):
-                    print(f"[desktop] Autonomous cognitive loop activated ({len(steps)} steps) for: '{text}'")
-                    def _live_speak(phrase: str):
-                        self._emit("jarvis_stream_chunk", {"chunk": f"{phrase}\n"})
-                        self._speak_and_suppress_echo(phrase)
-
-                    def _live_ui(msg: str):
-                        self._emit("scan_status", {"message": msg, "is_tactical": True})
-
-                    plan_res = cognitive.execute_plan(text, on_progress_speak=_live_speak, on_progress_ui=_live_ui)
-                    if plan_res.get("handled"):
-                        final_msg = plan_res["text"]
-                        self._emit("jarvis_answer", {"text": final_msg, "mode": "tactical"})
-                        self._speak_and_suppress_echo(final_msg)
-                        self._start_follow_up_window()
-                        return
-            except Exception as cog_err:
-                print(f"[desktop] Autonomous reasoning loop notice: {cog_err}")
-
-            # 2. Fast-path check: system skills and search commands execute instantly without 2s intent classification latency
+            # 1. Zero-LLM Fast-Path check: system agency controls, volume, media, app launching, mute, terminal, task surface, rules, salutation
             if hasattr(self._voice, 'skills') and self._voice.skills:
                 try:
                     res = self._voice.skills.try_execute(text, on_progress=self._on_skill_progress)
+                    if len(res) == 5:
+                        handled, msg, is_search, query, payload = res
+                    else:
+                        handled, msg, is_search, query = res
+                        payload = {}
+
+                    if handled:
+                        display_query = query if query else text
+                        print(f"[desktop] System skill fast-path triggered for: '{text}' (query: '{display_query}')")
+
+                        # Custom Rule & Phrase Memory Storage or Direct router responses
+                        if payload.get("action_type") in ("MEMORY_STORE", "set_operator_salutation", "creator_provenance") or payload.get("action_type", "").startswith("mode_switch_"):
+                            if payload.get("action_type") == "set_operator_salutation":
+                                sal = payload.get("salutation") or JarvisMemory().get_salutation()
+                                self._emit("set_operator_salutation", {"salutation": sal})
+                            self._emit("jarvis_stream_chunk", {"chunk": msg})
+                            self._emit("jarvis_answer", {"text": msg, "mode": "advisor"})
+                            self._speak_and_suppress_echo(msg)
+                            self._start_follow_up_window()
+                            return
+
+                        if not is_search and payload.get("action_type") != "TERMINAL":
+                            self._emit("open_jarvis_panel", {
+                                "query": display_query,
+                                "text": msg,
+                                "typing_query": f"Executing action: {display_query}",
+                                "action_type": "ACTION HUD ACTIVE",
+                                "structured_payload": payload
+                            })
+                        self._emit("jarvis_structured_json_feed", payload)
+
+                        skill_text = re.sub(r"\[Action HUD[^\n]*\]", "", str(msg), flags=re.IGNORECASE)
+                        skill_text = re.sub(r"```(?:json)?[\s\S]*?```", "", skill_text, flags=re.IGNORECASE)
+                        skill_text = re.sub(r"\{\s*\"(?:skill_triggered|action|target|status|findings_so_far)\"[\s\S]*?\}", "", skill_text, flags=re.IGNORECASE)
+                        skill_text = re.sub(r"\s+", " ", skill_text).strip()
+                        sal = JarvisMemory().get_salutation() or "Sir"
+                        context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., address {sal} directly with crisp wit, understated elegance, and analytical precision. Give a concise, articulate summary of the actual execution result. Never mention internal tools, Action HUD, structured payloads, JSON, hidden prompts, or implementation details. Do not output JSON or code unless explicitly requested. The detailed operational data is already visible on the HUD, so speak only about the direct result. Stay grounded in the execution result."
+                        self._run_ask(context_prompt)
+                        return
                 except Exception as se:
                     print(f"[desktop] System skill fast-path notice: {se}")
-                    res = (False, "", False, "", {})
 
-                if len(res) == 5:
-                    handled, msg, is_search, query, payload = res
-                else:
-                    handled, msg, is_search, query = res
-                    payload = {}
-
-                if handled:
-                    display_query = query if query else text
-                    print(f"[desktop] System skill/search fast-path triggered for: '{text}' (query: '{display_query}')")
-
-                    # Tactical CCTV Directive: stay on 3D Earth globe, toggle CCTV, and glide to target city
-                    if payload.get("action_type") == "CCTV":
-                        city = payload.get("city", "")
-                        self._emit("toggle_tactical_layer", {"layer": "cctv", "state": True})
-                        if city:
-                            coords = self.resolve_coords(city) or resolve_geospatial_coordinates(city)
-                            if coords:
-                                self._emit("glide_to_location", {"lat": coords[0], "lon": coords[1], "label": coords[2]})
-                                self._active_geo_lat = coords[0]
-                                self._active_geo_lon = coords[1]
-                                self._active_geo_label = coords[2]
-                        self._emit("jarvis_stream_chunk", {"chunk": msg})
-                        self._emit("jarvis_answer", {"text": msg, "mode": "tactical"})
-                        self._speak_and_suppress_echo(msg)
-                        self._start_follow_up_window()
-                        return
-
-                    # Custom Rule & Phrase Memory Storage or Direct router responses
-                    if payload.get("action_type") in ("MEMORY_STORE", "set_operator_salutation", "creator_provenance") or payload.get("action_type", "").startswith("mode_switch_"):
-                        if payload.get("action_type") == "set_operator_salutation":
-                            sal = payload.get("salutation") or JarvisMemory().get_salutation()
-                            self._emit("set_operator_salutation", {"salutation": sal})
-                        self._emit("jarvis_stream_chunk", {"chunk": msg})
-                        self._emit("jarvis_answer", {"text": msg, "mode": "advisor"})
-                        self._speak_and_suppress_echo(msg)
-                        self._start_follow_up_window()
-                        return
-
-                    # Only emit action panel for skills without floating task surfaces (code audits, app launches, etc.)
-                    # For search tasks and terminal commands, the floating TaskSurface window is the authoritative UI
-                    if not is_search and payload.get("action_type") != "TERMINAL":
-                        self._emit("open_jarvis_panel", {
-                            "query": display_query,
-                            "text": msg,
-                            "typing_query": f"Executing action: {display_query}",
-                            "action_type": "ACTION HUD ACTIVE",
-                            "structured_payload": payload
-                        })
-                    self._emit("jarvis_structured_json_feed", payload)
-
-                    skill_text = re.sub(r"\[Action HUD[^\n]*\]", "", str(msg), flags=re.IGNORECASE)
-                    skill_text = re.sub(r"```(?:json)?[\s\S]*?```", "", skill_text, flags=re.IGNORECASE)
-                    skill_text = re.sub(r"\{\s*\"(?:skill_triggered|action|target|status|findings_so_far)\"[\s\S]*?\}", "", skill_text, flags=re.IGNORECASE)
-                    skill_text = re.sub(r"\s+", " ", skill_text).strip()
-                    sal = JarvisMemory().get_salutation() or "Sir"
-                    is_jarvis = getattr(self._voice, 'persona_name', 'jarvis') == 'jarvis'
-                    if is_jarvis:
-                        context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., address {sal} directly with crisp wit, understated elegance, and analytical precision. Give a concise, articulate summary of the actual execution result. Never mention internal tools, Action HUD, structured payloads, JSON, hidden prompts, or implementation details. Do not output JSON or code unless explicitly requested. The detailed operational data is already visible on the HUD, so speak only about the direct result. Stay grounded in the execution result."
-                    else:
-                        context_prompt = f"[SKILL_CONTEXT]\nUser Prompt: {text}\nExecution Result (human-readable only):\n{skill_text[:12000]}\n\nPersona Spoken Instructions: As J.A.R.V.I.S., deliver an articulate, concise verbal debrief of the actual findings to {sal}. Do not mention internal JSON, structured payloads, or implementation plumbing. Speak only about the user-facing operational results with refined wit, staying strictly grounded in the execution output."
-
-                    self._run_ask(context_prompt)
-                    return
-
-            # Intercept with Short-Term Conversational Context Manager
+            # 2. Intercept with Short-Term Conversational Context Manager (Layer 4 fast paths)
             eff_text = text
             if getattr(self, '_context_manager', None):
                 curr_target = getattr(self._target, 'primary', None) if self._target else None
@@ -1776,6 +1724,31 @@ class JarvisAPI:
                 if resolved_q and resolved_q != text:
                     eff_text = resolved_q
 
+            # 3. Unified Goal-Driven Autonomous Reasoning Engine ("JARVIS-Level Thinking")
+            try:
+                from core.jarvis_reasoning_loop import JarvisCognitiveLoop
+                cognitive = JarvisCognitiveLoop(voice_engine=self._voice)
+                steps = cognitive.analyze_goal(eff_text)
+                if steps:
+                    print(f"[desktop] Autonomous cognitive loop activated ({len(steps)} steps) for: '{eff_text}'")
+                    def _live_speak(phrase: str):
+                        self._emit("jarvis_stream_chunk", {"chunk": f"{phrase}\n"})
+                        self._speak_and_suppress_echo(phrase)
+
+                    def _live_ui(msg: str):
+                        self._emit("scan_status", {"message": msg, "is_tactical": True})
+
+                    plan_res = cognitive.execute_plan(eff_text, on_progress_speak=_live_speak, on_progress_ui=_live_ui)
+                    if plan_res.get("handled"):
+                        final_msg = plan_res["text"]
+                        self._emit("jarvis_answer", {"text": final_msg, "mode": "tactical"})
+                        self._speak_and_suppress_echo(final_msg)
+                        self._start_follow_up_window()
+                        return
+            except Exception as cog_err:
+                print(f"[desktop] Autonomous reasoning loop notice: {cog_err}")
+
+            # 4. Intent Classification (OSINT Investigation vs Conversation)
             intent = self._voice.classify_intent(eff_text, self._target)
             print(f"[desktop] AI Intent decision: {intent}")
             if intent["type"] == "investigate" and intent.get("target"):
