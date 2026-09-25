@@ -341,7 +341,7 @@ class AgentRouter:
         )
         if not is_query:
             store_match = re.search(
-                r'^(?:(?:hey\s+)?jarvis,?\s*)?(?:(?:always\s+)?remember\s+(?:this\s+rule|that\s+when|that\s+i|that\s+my|that\s+we)|save\s+(?:this\s+)?(?:rule|preference)|store\s+(?:this\s+)?(?:rule|preference|in\s+memory)|keep\s+in\s+mind\s+that\s+i|from\s+now\s+on\s+(?:always|never|remember))\b',
+                r'^(?:(?:hey\s+)?jarvis,?\s*)?(?:(?:always\s+)?remember\s+(?:this\s+rule|this\s+log|this|that)|save\s+(?:this\s+)?(?:rule|preference)|store\s+(?:this\s+)?(?:rule|preference|in\s+memory)|keep\s+in\s+mind\s+that|from\s+now\s+on\s+(?:always|never|remember)|.+?\b(?:doesn\'?t\s+mean.+?it\s+says\s+that|means\s+that\b))\b',
                 text_lower
             )
             if store_match:

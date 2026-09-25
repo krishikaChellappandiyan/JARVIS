@@ -774,6 +774,7 @@ class JarvisAPI:
         self._active_geo_lon = -74.0060
         self._active_geo_label = "New York"
         self._shared_audio_queue = queue.Queue(maxsize=150)
+        self._voice_muted = False
         self._cfg = self._load_config()
 
         # Rolling Short-Term Conversational Context Manager
@@ -839,23 +840,34 @@ class JarvisAPI:
     def _async_init_wake_engine(self):
         try:
             print("[desktop] Spinning up openWakeWord engine in background...")
+            pipe_cfg = getattr(self, '_cfg', {}).get("audio_pipeline", {}) if hasattr(self, '_cfg') else {}
+            wake_thresh = float(pipe_cfg.get("wake_word_sensitivity", 0.60))
+            if wake_thresh > 1.0:
+                wake_thresh = wake_thresh / 100.0
+            if wake_thresh <= 0.0 or wake_thresh > 1.0:
+                wake_thresh = 0.60
+
             self._wake_engine = WakeWordEngine(
                 on_wake_detected=self._on_wake_word_detected,
                 on_speech_ended=self._on_vad_speech_ended,
                 on_follow_up_expired=self._on_follow_up_window_expired,
                 audio_chunk_callback=self._on_shared_audio_chunk,
                 wake_phrases=getattr(self, '_wake_phrases', None),
-                threshold=0.35,
+                threshold=wake_thresh,
                 silence_timeout_sec=3.2,
                 max_window_sec=30.0
             )
+            if getattr(self, '_voice_muted', False):
+                self._wake_engine.set_muted(True)
             self._wake_engine.start()
-            print("[desktop] Background wake engine ready.")
+            print(f"[desktop] Background wake engine ready (threshold: {wake_thresh:.2f}).")
         except Exception as e:
             print(f"[desktop] Background wake engine init notice: {e}")
 
     def _start_follow_up_window(self):
         """Keep mic open in continued-conversation mode after J.A.R.V.I.S. finishes speaking."""
+        if getattr(self, '_voice_muted', False):
+            return
         dur = getattr(self, '_follow_up_window_sec', 10.0)
         self._follow_up_active = True
         tts_end = max(time.time(), getattr(self, '_tts_playback_until', 0.0))
@@ -881,12 +893,14 @@ class JarvisAPI:
         self._emit("jarvis_followup_listening_ended", {})
 
     def _on_wake_word_detected(self, phrase: str):
+        if getattr(self, '_voice_muted', False):
+            return
         now = time.time()
         if now < getattr(self, '_tts_playback_until', 0.0) or getattr(self, '_current_tts_proc', None) is not None:
             print(f"[desktop] Conversational Barge-In! Wake word '{phrase}' triggered during active speech. Halting playback immediately.")
             self.cancel_playback()
         print(f"[desktop] openWakeWord triggered ('{phrase}'). Opening STT command capture window.")
-        self._wake_window_expires = now + 20.0
+        self._wake_window_expires = now + 5.0
         self._emit("jarvis_wake_word_detected", {"raw": phrase, "clean": ""})
 
     def _on_vad_speech_ended(self):
@@ -3589,7 +3603,8 @@ class JarvisAPI:
                         self._shared_audio_queue.get_nowait()
                     except (queue.Empty, AttributeError):
                         break
-            self._start_follow_up_window()
+            if not getattr(self, '_voice_muted', False):
+                self._start_follow_up_window()
 
         if synth_thread or playback_thread:
             threading.Thread(target=_await_speech_completion_and_open_mic, daemon=True).start()
@@ -3603,7 +3618,8 @@ class JarvisAPI:
                     except (queue.Empty, AttributeError):
                         break
             self._tts_speaking = False
-            self._start_follow_up_window()
+            if not getattr(self, '_voice_muted', False):
+                self._start_follow_up_window()
 
     def export_report(self) -> str:
         """Export current investigation target findings to a standalone HTML report."""
@@ -4205,8 +4221,56 @@ class JarvisAPI:
         except Exception as e:
             print(f"[desktop] Native audio playback fallback notice: {e}")
 
+    def stop_background_voice_listener(self):
+        """Stop the background voice listener thread and drain audio queues."""
+        self._bg_voice_active = False
+        if hasattr(self, '_shared_audio_queue'):
+            while True:
+                try:
+                    self._shared_audio_queue.get_nowait()
+                except (queue.Empty, AttributeError):
+                    break
+        return {"success": True, "status": "stopped"}
+
+    def get_voice_mute(self):
+        """Returns the current voice mute status."""
+        return {"muted": getattr(self, '_voice_muted', False)}
+
+    def set_voice_mute(self, muted: bool):
+        """Enable or disable voice mute state across all voice loops and engines."""
+        self._voice_muted = bool(muted)
+        if self._voice_muted:
+            if getattr(self, '_wake_engine', None):
+                try:
+                    self._wake_engine.set_muted(True)
+                except Exception as e:
+                    print(f"[desktop] Error muting wake engine: {e}")
+            self.stop_background_voice_listener()
+            self.cancel_playback()
+            self._follow_up_active = False
+            self._follow_up_expires = 0.0
+            self._wake_window_expires = 0.0
+            print("[desktop] Voice system MUTED: openWakeWord & background listening stopped.")
+        else:
+            if getattr(self, '_wake_engine', None):
+                try:
+                    self._wake_engine.set_muted(False)
+                except Exception as e:
+                    print(f"[desktop] Error unmuting wake engine: {e}")
+            self.start_background_voice_listener()
+            print("[desktop] Voice system UNMUTED: openWakeWord & background listening restored.")
+
+        self._emit("jarvis_voice_mute_changed", {"muted": self._voice_muted})
+        return {"success": True, "muted": self._voice_muted}
+
+    def toggle_voice_mute(self):
+        """Toggle the voice mute status."""
+        return self.set_voice_mute(not getattr(self, '_voice_muted', False))
+
     def start_background_voice_listener(self):
         """Start a background daemon thread that continuously listens for speech."""
+        if getattr(self, '_voice_muted', False):
+            return {"success": False, "status": "muted", "error": "Voice is currently muted"}
         if hasattr(self, '_bg_voice_thread') and self._bg_voice_thread and self._bg_voice_thread.is_alive():
             return {"success": True, "status": "running"}
 
@@ -4421,6 +4485,12 @@ class JarvisAPI:
 
     def _process_captured_speech(self, pcm_bytes: bytes):
         """Transcribe captured speech and trigger HUD / JarvisVoice response."""
+        # 0. Immediate guard: ignore completely if voice is muted
+        if getattr(self, '_voice_muted', False):
+            print("[voice listener] Background audio ignored: Voice is muted.")
+            self._emit("jarvis_speech_ended", {})
+            return
+
         # 1. Ignore audio captured while TTS was playing back
         if getattr(self, '_tts_speaking', False) or time.time() < getattr(self, '_tts_playback_until', 0.0):
             print("[voice listener] Captured audio ignored: TTS audio was active during recording.")
@@ -4483,8 +4553,16 @@ class JarvisAPI:
                 stop_pattern = r'\b(?:stop|shut\s*up|be\s*quiet|quiet|hush|silence|cancel)\b'
                 if re.search(stop_pattern, text, re.IGNORECASE):
                     print(f"[voice listener] Stop command detected: '{text}'")
+                    self.cancel_playback()
                     self._emit("jarvis_stop_command", {"text": text})
                     self._wake_window_expires = 0.0
+                    self._follow_up_expires = 0.0
+                    self._follow_up_active = False
+                    if getattr(self, '_wake_engine', None):
+                        try:
+                            self._wake_engine.cancel_follow_up_window()
+                        except Exception:
+                            pass
                     return
 
                 # Wake word patterns: J.A.R.V.I.S. + J.A.R.V.I.S. + natural addressing
@@ -4500,8 +4578,16 @@ class JarvisAPI:
                 # 1. Continued-Conversation Mode: Open mic, no wake word needed
                 if in_followup:
                     print(f"[voice listener] Continued-conversation window active! Sending follow-up command: '{text}'")
+                    # Non-renewing follow-up cap: close the open window so it does not renew indefinitely on room chatter
+                    self._follow_up_expires = 0.0
+                    self._follow_up_active = False
+                    self._wake_window_expires = 0.0
+                    if getattr(self, '_wake_engine', None):
+                        try:
+                            self._wake_engine.cancel_follow_up_window()
+                        except Exception:
+                            pass
                     self._emit("jarvis_voice_detected", {"text": text, "raw": text})
-                    self._wake_window_expires = now + getattr(self, '_follow_up_window_sec', 10.0)
                     return
 
                 # 2. Direct identity / interaction questions bypass wake word check
@@ -4510,7 +4596,7 @@ class JarvisAPI:
                     print(f"[voice listener] Direct query match ('{text}')! Triggering assistant command...")
                     self._emit("jarvis_wake_word_detected", {"raw": text, "clean": text})
                     self._emit("jarvis_voice_detected", {"text": text, "raw": text})
-                    self._wake_window_expires = now + 15.0
+                    self._wake_window_expires = now + 5.0
                     return
 
                 # 3. Multi Wake-Phrase Matching (Local Phonetic & Exact)
@@ -4519,20 +4605,27 @@ class JarvisAPI:
                 if getattr(self, '_wake_engine', None):
                     is_wake, matched_phrase = self._wake_engine.check_stt_text_for_wake_or_aliases(text)
                 else:
-                    m_fb = re.search(r'^(?:(?:hey|hi|yo|hello|ok|okay)\\s+)?(?:jarvis|jarv)\\b', text, re.IGNORECASE)
+                    m_fb = re.search(r'^(?:(?:hey|hi|yo|hello|ok|okay)\s+)?(?:jarvis|jarv)\b', text, re.IGNORECASE)
                     if m_fb:
                         is_wake = True
                         matched_phrase = m_fb.group(0)
 
                 if is_wake:
-                    clean = re.sub(re.escape(matched_phrase), '', text, flags=re.IGNORECASE).strip(" ,:.-")
-                    print(f"[voice listener] Wake phrase matched ('{matched_phrase}')! Command: '{clean}'")
-                    self._emit("jarvis_wake_word_detected", {"raw": text, "clean": clean if clean else text, "phrase": matched_phrase})
-                    if clean:
+                    # Clean out the wake phrase cleanly, regardless of whether transcribed as "Jarvis", "J.A.R.V.I.S.", "Hey Jarvis", etc.
+                    clean = re.sub(re.escape(matched_phrase), '', text, flags=re.IGNORECASE)
+                    clean = re.sub(r'\b(?:hey\s+|hi\s+|yo\s+|ok\s+|okay\s+|alright\s+)?j\.?a\.?r\.?v\.?i\.?s\.?\b', '', clean, flags=re.IGNORECASE)
+                    clean = re.sub(r'^[,\s:.-]+|[,\s:.-]+$', '', clean).strip()
+                    clean_words = re.sub(r'[^\w\s]', '', clean).strip().split()
+                    has_command = len(clean_words) > 0
+
+                    if has_command:
+                        print(f"[voice listener] Wake phrase matched ('{matched_phrase}')! Command: '{clean}'")
+                        self._emit("jarvis_wake_word_detected", {"raw": text, "clean": clean, "phrase": matched_phrase})
                         self._emit("jarvis_voice_detected", {"text": clean, "raw": text})
-                        self._wake_window_expires = now + 15.0
+                        self._wake_window_expires = now + 5.0
                     else:
                         print(f"[voice listener] Wake phrase only spoken ('{matched_phrase}'). Opening continued-conversation window...")
+                        self._emit("jarvis_wake_word_detected", {"raw": text, "clean": "", "phrase": matched_phrase})
                         self._start_follow_up_window()
                 else:
                     print(f"[voice listener] Ambient audio ignored (no wake phrase matched): '{text}'")

@@ -136,7 +136,7 @@ class WakeWordEngine:
         audio_chunk_callback: Optional[Callable[[bytes], None]] = None,
         model_path: Optional[str] = None,
         wake_phrases: Optional[list] = None,
-        threshold: float = 0.28,
+        threshold: float = 0.60,
         silence_timeout_sec: float = 0.8,
         max_window_sec: float = 12.0
     ):
@@ -167,6 +167,7 @@ class WakeWordEngine:
         self.silence_timeout_sec = loaded_silence
         self.max_window_sec = max_window_sec
 
+        self.is_muted = False
         self.hardware_mic_available = False
         self.fallback_to_web_speech = False
         self.running = False
@@ -194,6 +195,8 @@ class WakeWordEngine:
         Activate Continued-Conversation mode (open mic without requiring wake phrase).
         VAD actively listens and buffers speech until speech finishes or duration elapses in silence.
         """
+        if getattr(self, 'is_muted', False):
+            return
         now = time.time()
         self.is_follow_up_mode = True
         self.follow_up_expires = now + max(4.0, duration_sec)
@@ -212,7 +215,36 @@ class WakeWordEngine:
 
     def is_in_follow_up(self) -> bool:
         """Returns True if open-mic follow-up window is active and unexpired."""
-        return self.is_follow_up_mode and time.time() < self.follow_up_expires
+        return not getattr(self, 'is_muted', False) and self.is_follow_up_mode and time.time() < self.follow_up_expires
+
+    def set_muted(self, muted: bool):
+        """Enable or disable wake-word listening and hardware audio processing."""
+        self.is_muted = bool(muted)
+        if self.is_muted:
+            self.is_window_active = False
+            self.is_follow_up_mode = False
+            self.follow_up_expires = 0.0
+            self._wake_cooldown_until = 0.0
+            if self._model:
+                try:
+                    self._model.reset()
+                except Exception:
+                    pass
+            if self._audio_stream and hasattr(self._audio_stream, 'is_active'):
+                try:
+                    if self._audio_stream.is_active():
+                        self._audio_stream.stop_stream()
+                except Exception:
+                    pass
+            print("[wake_word] Wake engine MUTED: hardware stream stopped, zero CPU.")
+        else:
+            if self._audio_stream and hasattr(self._audio_stream, 'is_stopped'):
+                try:
+                    if self._audio_stream.is_stopped():
+                        self._audio_stream.start_stream()
+                except Exception:
+                    pass
+            print("[wake_word] Wake engine UNMUTED: hardware stream active.")
 
     def reset_cooldown(self, seconds: float = 2.0):
         """End active capture and suppress wake detection for the cooldown period."""
@@ -367,6 +399,8 @@ class WakeWordEngine:
 
     def trigger_wake_event(self, trigger_phrase: str = "Hey JARVIS"):
         """Programmatically trigger a wake detection event (e.g. from STT regex fallback)."""
+        if getattr(self, 'is_muted', False):
+            return
         now = time.time()
         self.is_window_active = True
         self.window_start_time = now
@@ -408,6 +442,9 @@ class WakeWordEngine:
         print("[wake_word] Continuous openWakeWord background listener active (JARVIS).")
 
         while self.running:
+            if getattr(self, 'is_muted', False):
+                time.sleep(0.08)
+                continue
             try:
                 data = self._audio_stream.read(CHUNK_SIZE, exception_on_overflow=False)
                 if not data:

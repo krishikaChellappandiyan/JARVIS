@@ -3566,39 +3566,76 @@ body {
   box-shadow: 0 0 24px rgba(255, 157, 46, 0.6);
 }
 
-/* Faded / Turned Off State: subtle dimming so operator knows it is off */
-#dock-voice-widget.mic-off,
-#dock-voice-widget.mic-muted {
+/* Idle / Standby State: waiting for "Hey Jarvis" */
+#dock-voice-widget.mic-off {
   opacity: 0.45;
-  filter: grayscale(40%);
-  border-color: rgba(255, 157, 46, 0.22);
+  filter: none;
+  border-color: rgba(255, 157, 46, 0.35);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
 }
-#dock-voice-widget.mic-off:hover,
-#dock-voice-widget.mic-muted:hover {
-  opacity: 0.85;
-  filter: grayscale(0%);
-  border-color: rgba(255, 157, 46, 0.6);
+#dock-voice-widget.mic-off:hover {
+  opacity: 1.0;
+  border-color: #FF9D2E;
+  box-shadow: 0 0 16px rgba(255, 157, 46, 0.5);
 }
-#dock-voice-widget.mic-off #dock-mic-btn,
-#dock-voice-widget.mic-muted #dock-mic-btn {
-  background: rgba(255, 157, 46, 0.05);
-  border-color: rgba(255, 157, 46, 0.25);
-  color: rgba(255, 157, 46, 0.45);
+#dock-voice-widget.mic-off #dock-mic-btn {
+  background: rgba(255, 157, 46, 0.08);
+  border-color: rgba(255, 157, 46, 0.35);
+  color: rgba(255, 157, 46, 0.65);
   box-shadow: none;
   animation: none;
 }
-#dock-voice-widget.mic-off #dock-voice-status,
-#dock-voice-widget.mic-muted #dock-voice-status {
-  color: rgba(255, 184, 77, 0.45);
+#dock-voice-widget.mic-off #dock-voice-status {
+  color: rgba(255, 184, 77, 0.65);
   text-shadow: none;
 }
-#dock-voice-widget.mic-off .voice-eq-bars span,
-#dock-voice-widget.mic-muted .voice-eq-bars span {
+#dock-voice-widget.mic-off .voice-eq-bars span {
   height: 2px !important;
-  background: rgba(255, 157, 46, 0.22) !important;
+  background: rgba(255, 157, 46, 0.3) !important;
   box-shadow: none !important;
   animation: none !important;
+}
+
+/* Third Distinct Visual State: MUTED (Crimson / Red HUD Theme) */
+#dock-voice-widget.muted,
+#dock-voice-widget.mic-muted {
+  opacity: 1.0 !important;
+  filter: none !important;
+  background: rgba(22, 6, 8, 0.96) !important;
+  border-color: rgba(239, 68, 68, 0.85) !important;
+  box-shadow: 0 0 18px rgba(239, 68, 68, 0.45), 0 8px 24px rgba(0, 0, 0, 0.9) !important;
+}
+#dock-voice-widget.muted:hover,
+#dock-voice-widget.mic-muted:hover {
+  border-color: #EF4444 !important;
+  box-shadow: 0 0 24px rgba(239, 68, 68, 0.7) !important;
+}
+#dock-voice-widget.muted #dock-mic-btn,
+#dock-voice-widget.mic-muted #dock-mic-btn {
+  background: rgba(239, 68, 68, 0.22) !important;
+  border-color: #EF4444 !important;
+  color: #EF4444 !important;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.6) !important;
+  animation: none !important;
+}
+#dock-voice-widget.muted #dock-voice-status,
+#dock-voice-widget.mic-muted #dock-voice-status {
+  color: #F87171 !important;
+  text-shadow: 0 0 8px rgba(239, 68, 68, 0.6) !important;
+}
+#dock-voice-widget.muted .voice-eq-bars span,
+#dock-voice-widget.mic-muted .voice-eq-bars span {
+  height: 2px !important;
+  background: rgba(239, 68, 68, 0.5) !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+
+/* Composer Mic button Muted State */
+#composer button#mic-btn.muted {
+  border-color: #EF4444 !important;
+  color: #EF4444 !important;
+  background: rgba(239, 68, 68, 0.15) !important;
 }
 
 #dock-mic-btn {
@@ -4665,7 +4702,7 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
 
 <!-- Real God's Eye Bottom Voice HUD Dock (Image 5 Parity) -->
 <div id="gods-eye-bottom-dock">
-  <div id="dock-voice-widget" class="mic-off" onclick="window.triggerVoiceMicCommand()" title="Click to Speak / Stop (or hold Space to speak)">
+  <div id="dock-voice-widget" class="mic-off" onclick="window.toggleVoiceMute()" title="Voice: Click to Mute / Unmute (or hold Space to speak)">
     <div id="dock-mic-btn">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
         <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
@@ -9037,9 +9074,10 @@ if (typeof window.updateGodsEyeVoiceWidget !== 'function') {
   window.updateGodsEyeVoiceWidget = function(state) {
     const w = document.getElementById('dock-voice-widget');
     if (!w) return;
-    w.classList.remove('listening', 'speaking', 'mic-off', 'mic-muted');
+    w.classList.remove('listening', 'speaking', 'mic-off', 'mic-muted', 'muted');
     if (state === 'listening') w.classList.add('listening');
     else if (state === 'speaking') w.classList.add('speaking');
+    else if (state === 'muted' || window.isVoiceMuted) w.classList.add('muted');
     else w.classList.add('mic-off');
   };
 }
@@ -11289,6 +11327,21 @@ window.jarvis = window.joe = {
         setHudState('idle');
         showSubtitles('STOP COMMAND DETECTED — Voice playback cancelled.', 'VOICE CONTROL');
         break;
+      case 'jarvis_voice_mute_changed':
+        if (data && typeof data.muted === 'boolean') {
+          window.isVoiceMuted = data.muted;
+          if (typeof window.safeStorageSet === 'function') {
+            window.safeStorageSet('jarvis_voice_muted', data.muted ? 'true' : 'false');
+          }
+          if (typeof window.updateGodsEyeVoiceWidget === 'function') {
+            window.updateGodsEyeVoiceWidget(data.muted ? 'muted' : 'mic_off');
+          }
+          const micBtn = document.getElementById('mic-btn');
+          if (micBtn) {
+            micBtn.classList.toggle('muted', data.muted);
+          }
+        }
+        break;
       case 'jarvis_followup_listening_active':
       case 'joe_followup_listening_active':
         // Note: Do not call resetJarvisAudioQueue() here — speech has naturally finished,
@@ -12311,6 +12364,24 @@ window.addEventListener('message', (event) => {
 
 // Automatic background voice listener trigger and initial config preload
 window.addEventListener('pywebviewready', () => {
+  // Restore persisted voice mute state
+  try {
+    const savedMute = window.safeStorageGet ? window.safeStorageGet('jarvis_voice_muted') : null;
+    if (savedMute === 'true' || savedMute === true) {
+      window.isVoiceMuted = true;
+      if (typeof window.updateGodsEyeVoiceWidget === 'function') {
+        window.updateGodsEyeVoiceWidget('muted');
+      }
+      const micBtn = document.getElementById('mic-btn');
+      if (micBtn) micBtn.classList.add('muted');
+      if (api() && api().set_voice_mute) {
+        api().set_voice_mute(true).catch(e => console.warn('[JarvisVoice] Failed applying initial mute:', e));
+      }
+    }
+  } catch (e) {
+    console.warn('[JarvisVoice] Error reading saved mute state:', e);
+  }
+
   if (api() && api().get_config) {
     api().get_config().then(cfg => {
       if (cfg) {
@@ -12319,7 +12390,7 @@ window.addEventListener('pywebviewready', () => {
       }
     }).catch(e => console.warn('[settings] Startup config fetch error:', e));
   }
-  if (api() && api().start_background_voice_listener) {
+  if (!window.isVoiceMuted && api() && api().start_background_voice_listener) {
     api().start_background_voice_listener().then(res => {
       console.log('[JarvisVoice] Automatic background voice listener initialized:', res);
     }).catch(err => {
@@ -18144,7 +18215,7 @@ function initGlobeIntelligence(viewer) {
     if (!dock) return;
 
     if (typeof state === 'string') {
-      dock.classList.remove('listening', 'speaking', 'thinking', 'mic-off', 'mic-muted');
+      dock.classList.remove('listening', 'speaking', 'thinking', 'mic-off', 'mic-muted', 'muted');
 
       if (state === 'listening' || state === 'followup_listening') {
         dock.classList.add('listening');
@@ -18155,7 +18226,10 @@ function initGlobeIntelligence(viewer) {
       } else if (state === 'thinking' || state === 'processing') {
         dock.classList.add('thinking');
         if (statusEl) statusEl.textContent = 'AI ACTIVE • PROCESSING';
-      } else if (state === 'mic_off' || state === 'muted') {
+      } else if (state === 'muted' || state === 'mic-muted' || window.isVoiceMuted) {
+        dock.classList.add('muted');
+        if (statusEl) statusEl.textContent = 'MUTED • SPACEBAR ONLY';
+      } else if (state === 'mic_off') {
         dock.classList.add('mic-off');
         if (statusEl) statusEl.textContent = 'MIC OFF • STANDBY';
       } else {
@@ -18176,6 +18250,57 @@ function initGlobeIntelligence(viewer) {
     }
   };
 
+  // God's Eye Voice Mute Toggle (Click on bottom voice widget)
+  window.toggleVoiceMute = function() {
+    window.isVoiceMuted = !window.isVoiceMuted;
+
+    if (typeof window.safeStorageSet === 'function') {
+      window.safeStorageSet('jarvis_voice_muted', window.isVoiceMuted ? 'true' : 'false');
+    }
+
+    const micBtn = document.getElementById('mic-btn');
+    if (micBtn) {
+      micBtn.classList.toggle('muted', window.isVoiceMuted);
+    }
+
+    if (window.isVoiceMuted) {
+      // 1. If currently listening, abort and discard recording
+      if (typeof isMicListening !== 'undefined' && isMicListening) {
+        if (typeof stopMicListening === 'function') stopMicListening(true);
+      }
+      // 2. Cancel any active speech playback
+      if (typeof resetJarvisAudioQueue === 'function') resetJarvisAudioQueue();
+      if (window.api && window.api().cancel_playback) {
+        try { window.api().cancel_playback(); } catch(e) {}
+      }
+      // 3. Audio confirmation cue
+      if (window.JarvisSFX && window.JarvisSFX.micCancel) {
+        window.JarvisSFX.micCancel();
+      }
+      // 4. Update HUD visual widget and subtitles
+      window.updateGodsEyeVoiceWidget('muted');
+      if (typeof showSubtitles === 'function') {
+        showSubtitles('VOICE MUTED — Wake word disabled. Hold Space to speak.', 'VOICE CONTROL');
+      }
+    } else {
+      // Unmuting: restore standby mode
+      if (window.JarvisSFX && window.JarvisSFX.micStart) {
+        window.JarvisSFX.micStart();
+      }
+      window.updateGodsEyeVoiceWidget('mic_off');
+      if (typeof showSubtitles === 'function') {
+        showSubtitles('VOICE ACTIVE — Wake word listening restored.', 'VOICE CONTROL');
+      }
+    }
+
+    // Inform backend Python to pause/resume hardware audio capture
+    if (window.api && window.api().set_voice_mute) {
+      window.api().set_voice_mute(window.isVoiceMuted).catch(err => {
+        console.warn('[JarvisVoice] Error communicating mute state to backend:', err);
+      });
+    }
+  };
+
   // God's Eye Voice Mic Click-to-Toggle System (Spacebar handles Push-to-Talk)
   window.triggerVoiceMicCommand = function() {
     if (isMicListening) {
@@ -18185,7 +18310,7 @@ function initGlobeIntelligence(viewer) {
       }
       // 2. Visually fade widget to clearly confirm mic is turned off
       if (typeof window.updateGodsEyeVoiceWidget === 'function') {
-        window.updateGodsEyeVoiceWidget('mic_off');
+        window.updateGodsEyeVoiceWidget(window.isVoiceMuted ? 'muted' : 'mic_off');
       }
       // 3. Play subtle descending audio confirmation
       if (window.JarvisSFX && window.JarvisSFX.micCancel) {
@@ -18210,8 +18335,16 @@ function initGlobeIntelligence(viewer) {
   };
   window.toggleVoiceMicCommand = window.triggerVoiceMicCommand;
 
-  // Initialize dock voice widget in faded/standby state on boot
-  window.updateGodsEyeVoiceWidget('mic_off');
+  // Initialize dock voice widget state on boot
+  try {
+    const saved = window.safeStorageGet ? window.safeStorageGet('jarvis_voice_muted') : null;
+    if (saved === 'true' || saved === true) {
+      window.isVoiceMuted = true;
+      const micBtn = document.getElementById('mic-btn');
+      if (micBtn) micBtn.classList.add('muted');
+    }
+  } catch(e) {}
+  window.updateGodsEyeVoiceWidget(window.isVoiceMuted ? 'muted' : 'mic_off');
 
   window.openLocationHopModal = function() {
     const cities = [
