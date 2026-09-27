@@ -775,6 +775,8 @@ class JarvisAPI:
         self._active_geo_label = "New York"
         self._shared_audio_queue = queue.Queue(maxsize=150)
         self._voice_muted = False
+        self._tts_speaking = False
+        self._tts_playback_until = 0.0
         self._cfg = self._load_config()
 
         # Rolling Short-Term Conversational Context Manager
@@ -2031,6 +2033,16 @@ class JarvisAPI:
             return self._voice.skills.hud_engine.cache.clear()
         return "Cache cleared."
 
+    def get_knowledge_graph_data(self, max_nodes: int = 1500) -> dict:
+        """Fetch unified 3D knowledge graph dataset with progressive LOD clustering."""
+        try:
+            from core.knowledge_graph import KnowledgeGraphAdapter
+            adapter = KnowledgeGraphAdapter()
+            return adapter.get_graph_data(max_nodes=max_nodes)
+        except Exception as e:
+            print(f"[desktop] Knowledge graph fetch error: {e}")
+            return {"nodes": [], "links": [], "total_raw_nodes": 0, "display_nodes": 0, "error": str(e)}
+
     def get_adsb_flights(self, feed: str = "mil") -> dict:
         """Fetch real-time ADS-B flight radar contacts via Python backend to eliminate browser CORS blocks.
         Supports:
@@ -2560,6 +2572,8 @@ class JarvisAPI:
         When wait=True, blocks until the current sentence finishes speaking so subsequent
         sentences never cut off the audio mid-sentence.
         """
+        if getattr(self, '_voice_muted', False):
+            return
         try:
             if hasattr(self, '_current_tts_proc') and self._current_tts_proc:
                 try:
@@ -2627,7 +2641,7 @@ class JarvisAPI:
 
     def _speak_and_suppress_echo(self, text: str):
         """Speak text via voice engine while registering it for self-echo suppression and setting TTS playback mute."""
-        if not text:
+        if not text or getattr(self, '_voice_muted', False):
             return
         cleaned = self._voice._sanitize_text_for_speech(text) if self._voice else text
         if cleaned:
@@ -2821,6 +2835,11 @@ class JarvisAPI:
             except:
                 pass
         self._emit("cases_loaded", {"cases": cases})
+        try:
+            kg_data = self.get_knowledge_graph_data(1500)
+            self._emit("knowledge_graph_data", kg_data)
+        except Exception as kg_err:
+            print(f"[desktop] Notice emitting knowledge graph data: {kg_err}")
 
     def add_note(self, note: str):
         if self._target:
@@ -2963,7 +2982,7 @@ class JarvisAPI:
             self._stalk_loop.call_soon_threadsafe(self._stalk_task.cancel)
 
     def _synthesize_and_emit_sentence(self, sentence: str):
-        if not self._voice:
+        if not self._voice or getattr(self, '_voice_muted', False):
             return
         try:
             if sentence and len(sentence.strip()) > 2:
@@ -3204,7 +3223,7 @@ class JarvisAPI:
 
         synth_thread = None
         playback_thread = None
-        if self._voice:
+        if self._voice and not getattr(self, '_voice_muted', False):
             synth_thread = threading.Thread(target=tts_synthesis_worker, daemon=True)
             playback_thread = threading.Thread(target=tts_playback_worker, daemon=True)
             synth_thread.start()
@@ -4126,6 +4145,7 @@ class JarvisAPI:
 
     def cancel_playback(self):
         """Immediately abort active TTS audio playback (instant barge-in)."""
+        was_speaking = getattr(self, '_tts_speaking', False) or (time.time() < getattr(self, '_tts_playback_until', 0.0))
         self._tts_speaking = False
         with self._tts_turn_lock:
             self._tts_turn_id += 1
@@ -4135,7 +4155,8 @@ class JarvisAPI:
                 ev.set()
             self._turn_playback_events.clear()
         self._emit("jarvis_stop_pcm", {})
-        self._emit("jarvis_interrupt_speech", {})
+        if was_speaking:
+            self._emit("jarvis_interrupt_speech", {})
         if hasattr(self, '_voice') and self._voice:
             try:
                 self._voice.interrupt()
@@ -4884,10 +4905,11 @@ def setup_jarvis_bottle_routes(app, server_root_path, api=None, server_uid=None,
         if not os.path.abspath(full_local).startswith(root_abs):
             return bottle.HTTPResponse("Forbidden", status=403)
         if os.path.exists(full_local) and not os.path.isdir(full_local):
-            bottle.response.set_header('Cache-Control', 'no-cache, no-store, must-revalidate')
-            bottle.response.set_header('Pragma', 'no-cache')
-            bottle.response.set_header('Expires', '0')
-            return bottle.static_file(safe_file, root=server_root_path)
+            res = bottle.static_file(safe_file, root=server_root_path)
+            res.set_header('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0')
+            res.set_header('Pragma', 'no-cache')
+            res.set_header('Expires', '0')
+            return res
         return bottle.HTTPResponse(
             json.dumps({"error": "Not Found", "path": file}),
             status=404,
@@ -4931,7 +4953,9 @@ class JarvisDesktop:
         api = JarvisAPI(initial_mode="hud" if is_hud else "full")
         persona_name = str(api._cfg.get("persona", "jarvis")).strip().lower()
         win_title = "J.A.R.V.I.S. — HUD" if is_hud else "J.A.R.V.I.S. — Tactical Intelligence Console"
-        url_target = f"{str(HTML_PATH)}?mode=hud" if is_hud else str(HTML_PATH)
+        import time
+        v_ts = int(time.time())
+        url_target = f"{str(HTML_PATH)}?mode=hud&v={v_ts}" if is_hud else f"{str(HTML_PATH)}?v={v_ts}"
 
         screen_w = 1920
         screen_h = 1080

@@ -109,6 +109,8 @@
     document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\\/script>');
   }
 </script>
+<script src="UnrealBloomPass.bundle.js"></script>
+<script src="3d-force-graph.min.js"></script>
 <style>
   :root {
     --bg-0: #000005;
@@ -169,9 +171,6 @@
     --accent-glow: rgba(239, 68, 68, 0.45);
     --accent-text: #FCA5A5;
     --border-active: rgba(239, 68, 68, 0.55);
-  }
-  body.mode-osint #jarvis-hud-canvas {
-    filter: drop-shadow(0 0 28px rgba(239, 68, 68, 0.35));
   }
   body.mode-osint #jarvis-top-bar {
     border-bottom: 1px solid rgba(239, 68, 68, 0.35) !important;
@@ -341,6 +340,41 @@
     border: none !important;
   }
 
+  /* 3D Knowledge Graph (Screen 2 Interactive Force-Directed Network) */
+  #jarvis-knowledge-graph-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 5;
+    pointer-events: auto;
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  #jarvis-knowledge-graph-container.ready {
+    opacity: 1;
+  }
+  #jarvis-3d-kg-mount {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+  .kg-tooltip {
+    background: rgba(15, 17, 21, 0.94);
+    border: 1px solid rgba(255, 157, 46, 0.45);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-family: var(--mono);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.7);
+    color: #E6E6E6;
+    pointer-events: none;
+    z-index: 200;
+  }
+
   /* Grid split inside workspace */
   #workspace-content-grid {
     flex: 1; display: flex; gap: 16px;
@@ -349,6 +383,10 @@
     position: relative; z-index: 10;
     outline: none !important;
     border: none !important;
+    pointer-events: none !important;
+  }
+  #workspace-content-grid > * {
+    pointer-events: none;
   }
 
   /* Chat Conversation Container (Floating Subordinate Instrument) */
@@ -361,6 +399,13 @@
     backdrop-filter: none; -webkit-backdrop-filter: none;
     box-shadow: 0 8px 32px rgba(0,0,0,0.4);
     overflow: hidden; position: relative;
+    pointer-events: none !important;
+  }
+  #chat-panel-header,
+  .workspace-card-header,
+  #thread > *,
+  #thinking-indicator {
+    pointer-events: auto !important;
   }
 
   .workspace-card-header {
@@ -372,27 +417,6 @@
   }
   .card-header-title { display: none !important; }
   .case-sub-inline { font-size: 11px; color: #8A8D91; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-  /* Right HUD Orb Pane (Seamless Spatial Layer - No Box Borders) */
-  #jarvis-hud-pane {
-    width: 420px; min-width: 420px;
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    display: flex; align-items: center; justify-content: center;
-    position: relative; overflow: visible;
-  }
-
-  /* Reposition jarvis-hud-wrapper to fit cleanly inside #jarvis-hud-pane */
-  #jarvis-hud-pane #jarvis-hud-wrapper {
-    position: relative !important;
-    top: auto !important; right: auto !important;
-    transform: none !important;
-    margin: 0 auto;
-    background: transparent;
-    border: none;
-    box-shadow: none;
-  }
 
   /* Full-Viewport Spatial Task Windows Overlay Canvas */
   #jarvis-task-surfaces-container {
@@ -598,37 +622,7 @@
     align-items: center;
   }
 
-  /* Interactive Floating Star Universe Canvas — Right Middle Engine */
-  #jarvis-hud-wrapper {
-    position: absolute;
-    top: 50%;
-    right: 20px;
-    transform: translateY(-50%);
-    z-index: 25 !important;
-    pointer-events: auto !important;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    cursor: grab;
-    background: transparent;
-    border: none;
-  }
-  #jarvis-hud-wrapper:active {
-    cursor: grabbing;
-  }
-  #jarvis-hud-canvas {
-    width: 480px;
-    height: 480px;
-    display: block;
-    pointer-events: auto !important;
-    cursor: grab;
-    filter: drop-shadow(0 0 30px rgba(255, 157, 46, 0.20));
-    transition: transform 0.1s ease, filter 0.25s ease;
-  }
-  #jarvis-hud-canvas.listening {
-    animation: jarvis-pulse 1.8s ease-in-out infinite alternate;
-  }
+
   #jarvis-hud-floating-status {
     position: absolute;
     bottom: 10px;
@@ -702,32 +696,6 @@
     color: #FF9D2E;
     border-color: rgba(255, 157, 46, 0.45);
     box-shadow: 0 0 16px rgba(255, 157, 46, 0.25);
-  }
-  #jarvis-hud-node-tooltip {
-    position: fixed !important;
-    top: 0;
-    left: 0;
-    transform: translate(-50%, -100%);
-    background: rgba(10, 11, 14, 0.95) !important;
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 157, 46, 0.45) !important;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.9), 0 0 16px rgba(255, 157, 46, 0.25) !important;
-    border-radius: 6px;
-    padding: 6px 14px;
-    font-family: var(--mono);
-    font-size: 11px;
-    color: #E6E6E6;
-    pointer-events: none;
-    z-index: 99999 !important;
-    white-space: nowrap;
-    opacity: 0;
-    transition: opacity 0.15s ease;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  #jarvis-hud-node-tooltip.hud-node-tooltip-visible {
-    opacity: 1;
   }
   @keyframes statusPulse {
     0% { transform: translateX(-50%) scale(1); }
@@ -1709,70 +1677,11 @@
     overflow: hidden !important;
     z-index: 1 !important;
   }
-  #jarvis-hud-pane {
-    position: absolute !important;
-    inset: 0 !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    height: 100% !important;
-    display: block !important;
-    z-index: 1 !important;
-    overflow: hidden !important;
-    pointer-events: none !important;
-  }
-  #jarvis-hud-pane #jarvis-hud-wrapper {
-    position: absolute !important;
-    inset: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    margin: 0 !important;
-    transform: none !important;
-    display: block !important;
-    pointer-events: none !important;
-  }
-  #jarvis-hud-canvas {
-    position: absolute !important;
-    inset: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    filter: drop-shadow(0 0 34px rgba(255,157,46,0.10)) !important;
-    pointer-events: auto !important;
-    cursor: grab !important;
-  }
-  #jarvis-hud-node-tooltip { z-index: 99999 !important; pointer-events: none !important; }
-  #jarvis-hud-floating-status, #ekg-container { display: none !important; }
-
-  /* Spatial interaction: the galaxy canvas must receive pointer input. The chat
-     layer only captures events on actual message content, leaving empty space
-     available for orbit/zoom. */
-  #jarvis-hud-pane, #jarvis-hud-wrapper { pointer-events: none !important; }
-  #jarvis-hud-canvas { pointer-events: auto !important; touch-action: none !important; }
-  #jarvis-chat-container { pointer-events: none !important; }
-  #thread { pointer-events: none !important; }
-  #thread > * { pointer-events: auto !important; }
-
   /* Deep-space field: transparent body allows Three.js #starfield canvas to show through */
   #bg-layer, #bg-overlay { display: none !important; }
   body { background: transparent !important; }
 
-  /* Remove the old transient HUD status pill entirely. State belongs to the
-     animation itself; there is no floating LISTENING/SPEAKING badge. */
-  #jarvis-hud-floating-status, #ekg-container { display: none !important; }
-
-  /* FINAL SPATIAL WORKSPACE OVERRIDES */
-  #bg-layer, #bg-overlay { display: none !important; }
-  body { background: transparent !important; }
-  #jarvis-hud-pane, #jarvis-hud-wrapper { pointer-events: none !important; }
-  #jarvis-hud-canvas {
-    pointer-events: auto !important;
-    touch-action: none !important;
-    cursor: grab !important;
-  }
-  #jarvis-hud-canvas:active { cursor: grabbing !important; }
   #jarvis-chat-container, #thread { pointer-events: none !important; }
-  #thread > * { pointer-events: auto !important; }
-  /* Empty conversation space must never steal galaxy gestures. Only actual chat items receive input. */
-  #thread { pointer-events: none !important; }
   #thread > * { pointer-events: auto !important; }
   #jarvis-hud-floating-status, #ekg-container { display: none !important; }
   #spatial-galaxy-meta, #spatial-system-telemetry { display: none !important; }
@@ -2006,8 +1915,13 @@
 }
 
 body {
+  opacity: 0;
+  transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1);
   perspective: 1500px;
   perspective-origin: 50% 50%;
+}
+body.app-ready {
+  opacity: 1;
 }
 
 /* 3D Spatial Holographic Navigation & HUD */
@@ -4994,6 +4908,11 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
 
 <div id="shell">
 
+  <!-- 3D KNOWLEDGE GRAPH INTERACTIVE FORCE-DIRECTED NETWORK (SCREEN 2) -->
+  <div id="jarvis-knowledge-graph-container" class="knowledge-graph-container" aria-label="J.A.R.V.I.S. 3D Knowledge Graph">
+    <div id="jarvis-3d-kg-mount"></div>
+  </div>
+
   <div id="spatial-galaxy-meta" aria-hidden="true">
     <span>NODES <span class="meta-value" id="galaxy-node-count">0</span></span>
     <span>·</span>
@@ -5082,26 +5001,6 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
           <div id="thinking-indicator">
             <div class="thinking-spinner"></div>
             <span>J.A.R.V.I.S. is analyzing telemetry & executing directives...</span>
-          </div>
-        </div>
-
-        <!-- RIGHT HUD ORB PANE -->
-        <div id="jarvis-hud-pane">
-          <!-- Borderless Floating J.A.R.V.I.S. Galaxy HUD Canvas -->
-          <div id="jarvis-hud-wrapper">
-            <canvas id="jarvis-hud-canvas" width="480" height="480"></canvas>
-            <div id="jarvis-hud-node-tooltip"></div>
-            <!-- Floating RE-CENTER HUD button (appears when HUD is panned away from center) -->
-            <button id="hud-recenter-btn" onclick="if(window.HudGalaxy) window.HudGalaxy.recenter();" title="Recenter J.A.R.V.I.S. HUD" style="position:fixed; bottom:74px; right:20px; z-index:90; display:flex; align-items:center; gap:6px; background:rgba(18, 20, 24, 0.85); backdrop-filter:blur(10px); border:1px solid rgba(255, 157, 46, 0.35); border-radius:18px; padding:5px 12px; color:#FF9D2E; font-size:11px; font-weight:700; font-family:var(--mono); letter-spacing:0.05em; cursor:pointer; opacity:0; pointer-events:none; transition:opacity 0.25s ease, background 0.15s ease, border-color 0.15s ease; box-shadow:0 4px 16px rgba(0,0,0,0.5);" onmouseenter="this.style.background='rgba(255,157,46,0.18)'; this.style.borderColor='rgba(255,157,46,0.7)'" onmouseleave="this.style.background='rgba(18, 20, 24, 0.85)'; this.style.borderColor='rgba(255,157,46,0.35)'">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="22" y1="12" x2="18" y2="12"></line>
-                <line x1="6" y1="12" x2="2" y2="12"></line>
-                <line x1="12" y1="6" x2="12" y2="2"></line>
-                <line x1="12" y1="22" x2="12" y2="18"></line>
-              </svg>
-              <span>RE-CENTER HUD</span>
-            </button>
           </div>
         </div>
       </div>
@@ -5661,6 +5560,7 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
 // after the first call, including HUD init and every button click handler.
 const $ = (selector) => document.querySelector(selector);
 const api = () => window.pywebview && window.pywebview.api;
+window.api = api;
 
 window.isRevokedOrDummyCesiumToken = function(tok) {
   if (!tok || typeof tok !== 'string') return true;
@@ -5735,13 +5635,7 @@ if (thread) {
   window.addEventListener('wheel', (e) => {
     const target = document.elementFromPoint(e.clientX, e.clientY);
     if (!target) return;
-    // Check if wheel occurred over chat thread or its messages
     if (target.closest('#thread, #jarvis-chat-container')) {
-      const hud = window.HudGalaxy;
-      // Do not scroll thread if the cursor is directly above the HUD constellation
-      if (hud && typeof hud.isPointerOverHud === 'function' && hud.isPointerOverHud(e.clientX, e.clientY)) {
-        return;
-      }
       thread.scrollTop += e.deltaY;
     }
   }, { passive: true });
@@ -7368,946 +7262,6 @@ try {
   Object.defineProperty(window, 'joeHudColorTheme', { get: () => jarvisHudColorTheme, set: (v) => { jarvisHudColorTheme = v; }, configurable: true });
 } catch(e){}
 
-const HudGalaxy = {
-  canvas: null,
-  ctx: null,
-  tooltipElem: null,
-  state: 'idle',
-  audioEnergy: 0,
-  colorTheme: 'orange',
-  nodes: new Map(),
-  links: [],
-  stars: [],
-  NUM_STARS: 900,
-
-  // 3D Camera / Orbit Dynamics & Screen Translation
-  rotX: 0,
-  rotY: 0,
-  targetRotX: 0,
-  targetRotY: 0,
-  panX: 0,
-  panY: 0,
-  targetPanX: 0,
-  targetPanY: 0,
-  basePanX: 0,
-  basePanY: 0,
-  dragMode: 'pan',
-  autoAngle: 0,
-  zoom: 1.40,
-  targetZoom: 1.40,
-  fov: 340,
-  isDragging: false,
-  dragStartX: 0,
-  dragStartY: 0,
-  baseRotX: 0,
-  baseRotY: 0,
-  hoveredNodeId: null,
-  selectedNodeId: null,
-  draggedNodeId: null,
-  dragNodeStartX: 0,
-  dragNodeStartY: 0,
-  dragNodeStartZ: 0,
-  lastTime: Date.now(),
-  shockwaveRadius: 0,
-  shockwaveActive: false,
-
-  // Palette: J.A.R.V.I.S. Identity (Amber/Orange dominant, secondary nodes deliberately muted)
-  palette: {
-    SYSTEM:       { fill: '#FF9D2E', glow: 'rgba(255, 157, 46, 0.85)', stroke: 'rgba(255, 215, 150, 0.95)', size: 9 },
-    TASK:         { fill: '#D98224', glow: 'rgba(217, 130, 36, 0.85)', stroke: 'rgba(255, 184, 77, 0.95)', size: 7.5 },
-    SEARCH:       { fill: '#8A8D91', glow: 'rgba(138, 141, 145, 0.55)', stroke: 'rgba(200, 204, 210, 0.85)', size: 6.5 },
-    RESULT:       { fill: '#FFB84D', glow: 'rgba(255, 184, 77, 0.65)', stroke: 'rgba(255, 220, 160, 0.85)', size: 5.5 },
-    FINDING:      { fill: '#E68A2E', glow: 'rgba(230, 138, 46, 0.75)', stroke: 'rgba(255, 200, 130, 0.9)', size: 5.5 },
-    MEMORY:       { fill: '#71757A', glow: 'rgba(113, 117, 122, 0.50)', stroke: 'rgba(170, 175, 182, 0.8)', size: 6 },
-    TARGET:       { fill: '#EF4444', glow: 'rgba(239, 68, 68, 0.65)', stroke: 'rgba(254, 202, 202, 0.85)', size: 7 },
-    CONVERSATION: { fill: '#55595E', glow: 'rgba(85, 89, 94, 0.50)', stroke: 'rgba(160, 165, 172, 0.8)', size: 5.5 },
-    APPLICATION:  { fill: '#8A8D91', glow: 'rgba(138, 141, 145, 0.50)', stroke: 'rgba(200, 204, 210, 0.8)', size: 6 }
-  },
-
-  init(canvas) {
-    this.canvas = canvas;
-    if (canvas) this.ctx = canvas.getContext('2d');
-    this.tooltipElem = document.getElementById('jarvis-hud-node-tooltip') || document.getElementById('joe-hud-node-tooltip');
-    this.initStars();
-    this.initAmbientNodes();
-    this.bindEvents();
-    this.resize();
-  },
-
-  setState(state) {
-    this.currentState = state;
-  },
-
-  initStars() {
-    this.stars = [];
-    let seed = 0x51A7B00B;
-    const rand = () => {
-      seed = (seed * 1664525 + 1013904223) >>> 0;
-      return seed / 4294967296;
-    };
-    for (let i = 0; i < this.NUM_STARS; i++) {
-      const bright = rand();
-      this.stars.push({
-        u: rand(),
-        v: rand(),
-        size: bright > 0.97 ? 1.35 + rand() * 1.2 : 0.45 + rand() * 0.75,
-        baseAlpha: bright > 0.97 ? 0.70 + rand() * 0.22 : 0.24 + rand() * 0.48,
-        twinkleSpeed: 0.00012 + rand() * 0.00045,
-        twinklePhase: rand() * Math.PI * 2
-      });
-    }
-  },
-
-  initAmbientNodes() {
-    this.nodes.clear();
-    this.links = [];
-
-    this.addNode({
-      id: 'node_core', type: 'SYSTEM', label: 'J.A.R.V.I.S. CORE', state: 'idle',
-      x: 0, y: 0, z: 0, size: 12, isCore: true
-    });
-
-    const ambCount = 46;
-    let seed = 0xC0FFEE;
-    const rand = () => {
-      seed = (seed * 1664525 + 1013904223) >>> 0;
-      return seed / 4294967296;
-    };
-    for (let i = 0; i < ambCount; i++) {
-      const theta = rand() * Math.PI * 2;
-      const phi = Math.acos(2 * rand() - 1);
-      const radius = 70 + Math.pow(rand(), 0.68) * 150;
-      const x = Math.sin(phi) * Math.cos(theta) * radius;
-      const y = Math.cos(phi) * radius * 0.70;
-      const z = Math.sin(phi) * Math.sin(theta) * radius;
-      const id = `node_amb_${i}`;
-      this.addNode({
-        id, type: 'SYSTEM', label: `SYN-${String(i + 1).padStart(2, '0')}`,
-        state: 'idle', x, y, z, size: 1.8 + rand() * 2.0, isAmbient: true
-      });
-      this.connectNodes('node_core', id, { ambient: true });
-    }
-  },
-
-  addNode(data) {
-    if (!data || !data.id) return null;
-    const existing = this.nodes.get(data.id);
-    if (existing) {
-      Object.assign(existing, data);
-      return existing;
-    }
-
-    const typeDef = this.palette[data.type] || this.palette.TASK;
-    let x = data.x !== undefined ? data.x : 0;
-    let y = data.y !== undefined ? data.y : 0;
-    let z = data.z !== undefined ? data.z : 0;
-
-    if (data.parentId && this.nodes.has(data.parentId) && (data.x === undefined || data.y === undefined)) {
-      const parent = this.nodes.get(data.parentId);
-      const angle = Math.random() * Math.PI * 2;
-      const dist = data.type === 'RESULT' ? 36 + Math.random() * 16 : 56 + Math.random() * 18;
-      x = parent.x + Math.cos(angle) * dist;
-      y = parent.y + (Math.random() - 0.5) * 26;
-      z = parent.z + Math.sin(angle) * dist;
-    } else if (!data.isCore && (data.x === undefined || data.y === undefined)) {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = 110 + Math.random() * 26;
-      x = Math.cos(angle) * dist;
-      y = (Math.random() - 0.5) * 36;
-      z = Math.sin(angle) * dist;
-    }
-
-    const node = {
-      id: data.id,
-      type: data.type || 'TASK',
-      label: data.label || data.id,
-      group: data.group || 'default',
-      state: data.state || 'active',
-      metadata: data.metadata || {},
-      parentId: data.parentId || null,
-      taskId: data.taskId || null,
-      isCore: !!data.isCore,
-      isAmbient: !!data.isAmbient,
-      x: x,
-      y: y,
-      z: z,
-      orbitRadius: data.orbitRadius || Math.sqrt(x * x + z * z),
-      orbitAngle: data.orbitAngle || Math.atan2(z, x),
-      orbitSpeed: data.orbitSpeed || 0.002,
-      orbitElevation: data.orbitElevation !== undefined ? data.orbitElevation : y,
-      size: data.size || typeDef.size,
-      fill: typeDef.fill,
-      glow: typeDef.glow,
-      stroke: typeDef.stroke,
-      pulsePhase: Math.random() * Math.PI * 2,
-      highlighted: false,
-      highlightUntil: 0,
-      screenX: 0,
-      screenY: 0,
-      screenRadius: 0,
-      screenScale: 1,
-      projZ: 0
-    };
-
-    this.nodes.set(data.id, node);
-    return node;
-  },
-
-  updateNode(data) {
-    if (!data || !data.id) return;
-    const node = this.nodes.get(data.id);
-    if (!node) return;
-    Object.assign(node, data);
-    if (data.type && this.palette[data.type]) {
-      const typeDef = this.palette[data.type];
-      node.fill = typeDef.fill;
-      node.glow = typeDef.glow;
-      node.stroke = typeDef.stroke;
-    }
-  },
-
-  removeNode(id) {
-    this.nodes.delete(id);
-    this.links = this.links.filter(l => l.sourceId !== id && l.targetId !== id);
-    if (this.hoveredNodeId === id) this.hoveredNodeId = null;
-    if (this.selectedNodeId === id) this.selectedNodeId = null;
-  },
-
-  connectNodes(sourceId, targetId, meta = {}) {
-    if (!sourceId || !targetId || sourceId === targetId) return;
-    const exists = this.links.some(l => (l.sourceId === sourceId && l.targetId === targetId) || (l.sourceId === targetId && l.targetId === sourceId));
-    if (!exists) {
-      this.links.push({
-        sourceId: sourceId,
-        targetId: targetId,
-        weight: meta.weight || 1,
-        ambient: !!meta.ambient,
-        active: true,
-        pulsePos: Math.random()
-      });
-    }
-  },
-
-  highlightNode(id) {
-    const node = this.nodes.get(id);
-    if (node) {
-      node.highlightUntil = Date.now() + 3500;
-      this.selectedNodeId = id;
-      this.showTooltipForNode(node);
-    }
-  },
-
-  focusNode(id) {
-    this.highlightNode(id);
-  },
-
-  settle() {
-    this.nodes.forEach(node => {
-      if (!node.isCore && !node.isAmbient && node.state === 'running') {
-        node.state = 'settled';
-      }
-    });
-  },
-
-  reset() {
-    this.initAmbientNodes();
-  },
-
-  setState(newState) {
-    this.state = newState;
-    if (this.canvas) {
-      this.canvas.classList.toggle('listening', newState === 'listening' || newState === 'speaking' || newState === 'interrupted');
-      this.canvas.classList.toggle('thinking', newState === 'thinking' || newState === 'task_active' || newState === 'processing');
-    }
-
-    if (newState === 'interrupted') {
-      this.shockwaveRadius = 20;
-      this.shockwaveActive = true;
-      setTimeout(() => {
-        if (this.state === 'interrupted') {
-          this.setState('listening');
-        }
-      }, 700);
-    }
-  },
-
-  setAudioEnergy(energy) {
-    this.audioEnergy = energy;
-  },
-
-  setColorTheme(theme) {
-    this.colorTheme = (theme === 'crimson' || theme === 'red' || theme === 'osint') ? 'crimson' : 'orange';
-    if (this.colorTheme === 'crimson') {
-      this.palette.SYSTEM = { fill: '#EF4444', glow: 'rgba(239, 68, 68, 0.95)', stroke: 'rgba(254, 202, 202, 0.95)', size: 9.5 };
-      this.palette.TASK = { fill: '#DC2626', glow: 'rgba(220, 38, 38, 0.85)', stroke: 'rgba(248, 113, 113, 0.95)', size: 8 };
-      this.palette.SEARCH = { fill: '#7F1D1D', glow: 'rgba(127, 29, 29, 0.65)', stroke: 'rgba(239, 68, 68, 0.85)', size: 6.5 };
-      this.palette.RESULT = { fill: '#F87171', glow: 'rgba(248, 113, 113, 0.75)', stroke: 'rgba(254, 202, 202, 0.85)', size: 6 };
-      this.palette.FINDING = { fill: '#EF4444', glow: 'rgba(239, 68, 68, 0.75)', stroke: 'rgba(252, 165, 165, 0.9)', size: 6 };
-      this.palette.TARGET = { fill: '#B91C1C', glow: 'rgba(185, 28, 28, 0.90)', stroke: 'rgba(254, 202, 202, 0.95)', size: 8.5 };
-      this.palette.APPLICATION = { fill: '#991B1B', glow: 'rgba(153, 27, 27, 0.55)', stroke: 'rgba(248, 113, 113, 0.8)', size: 6.5 };
-    } else {
-      this.palette.SYSTEM = { fill: '#FF9D2E', glow: 'rgba(255, 157, 46, 0.85)', stroke: 'rgba(255, 215, 150, 0.95)', size: 9 };
-      this.palette.TASK = { fill: '#D98224', glow: 'rgba(217, 130, 36, 0.85)', stroke: 'rgba(255, 184, 77, 0.95)', size: 7.5 };
-      this.palette.SEARCH = { fill: '#8A8D91', glow: 'rgba(138, 141, 145, 0.55)', stroke: 'rgba(200, 204, 210, 0.85)', size: 6.5 };
-      this.palette.RESULT = { fill: '#FFB84D', glow: 'rgba(255, 184, 77, 0.65)', stroke: 'rgba(255, 220, 160, 0.85)', size: 5.5 };
-      this.palette.FINDING = { fill: '#E68A2E', glow: 'rgba(230, 138, 46, 0.75)', stroke: 'rgba(255, 200, 130, 0.9)', size: 5.5 };
-      this.palette.TARGET = { fill: '#EF4444', glow: 'rgba(239, 68, 68, 0.65)', stroke: 'rgba(254, 202, 202, 0.85)', size: 7 };
-      this.palette.APPLICATION = { fill: '#8A8D91', glow: 'rgba(138, 141, 145, 0.50)', stroke: 'rgba(200, 204, 210, 0.8)', size: 6 };
-    }
-    this.nodes.forEach(node => {
-      if (node.isCore) return;
-      const p = this.palette[node.type] || this.palette.SYSTEM;
-      node.fill = p.fill;
-      node.glow = p.glow;
-      node.stroke = p.stroke;
-    });
-  },
-
-  // Future-proof extension points
-  addMemoryNode(memoryItem) {
-    if (!memoryItem || !memoryItem.id) return;
-    this.addNode({
-      id: memoryItem.id,
-      type: 'MEMORY',
-      label: memoryItem.label || 'MEMORY TRACE',
-      metadata: memoryItem,
-      parentId: 'node_core'
-    });
-    this.connectNodes('node_core', memoryItem.id);
-  },
-
-  addTargetNode(targetItem) {
-    if (!targetItem || !targetItem.id) return;
-    this.addNode({
-      id: targetItem.id,
-      type: 'TARGET',
-      label: targetItem.label || 'INTEL TARGET',
-      metadata: targetItem,
-      parentId: 'node_core'
-    });
-    this.connectNodes('node_core', targetItem.id);
-  },
-
-  recenter() {
-    this.targetPanX = 0;
-    this.targetPanY = 0;
-    this.targetRotX = 0;
-    this.targetRotY = 0;
-    this.targetZoom = 1.40;
-    this.updateRecenterButtonVisibility();
-  },
-
-  updateRecenterButtonVisibility() {
-    const btn = document.getElementById('hud-recenter-btn');
-    if (!btn) return;
-    const isMoved = Math.hypot(this.targetPanX, this.targetPanY) > 50 || Math.abs(this.targetZoom - 1.40) > 0.18;
-    btn.style.opacity = isMoved ? '1' : '0';
-    btn.style.pointerEvents = isMoved ? 'auto' : 'none';
-  },
-
-  bindEvents() {
-    if (!this.canvas) return;
-
-    const onPointerDown = (e) => {
-      const clientX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
-      const clientY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
-
-      // Only capture drag if pointer is directly over the HUD constellation or an interactive node
-      if (!this.isPointerOverHud(clientX, clientY)) {
-        // Outside HUD constellation: do not capture. Allow event to bubble to window for SpatialNav screen glide!
-        return;
-      }
-
-      this.isDragging = true;
-      if (typeof SpatialNav !== 'undefined') {
-        SpatialNav.isDragging = false;
-      }
-      this.dragStartX = clientX;
-      this.dragStartY = clientY;
-      this.basePanX = this.targetPanX;
-      this.basePanY = this.targetPanY;
-      this.baseRotX = this.rotX;
-      this.baseRotY = this.rotY;
-
-      // Check if mouse is on top of a draggable node
-      if (this.hoveredNodeId && !this.nodes.get(this.hoveredNodeId)?.isCore) {
-        this.dragMode = 'node';
-        this.draggedNodeId = this.hoveredNodeId;
-        const node = this.nodes.get(this.hoveredNodeId);
-        this.dragNodeStartX = node.x;
-        this.dragNodeStartY = node.y;
-        this.dragNodeStartZ = node.z;
-        node.isDragged = true;
-        this.canvas.style.cursor = 'grabbing';
-      } else {
-        this.draggedNodeId = null;
-        // Default left-drag is direct 3D ORBIT/rotation. Shift-drag or middle/right click is PAN.
-        this.dragMode = (e.shiftKey || e.button === 1 || e.button === 2) ? 'pan' : 'orbit';
-        this.canvas.style.cursor = 'grabbing';
-      }
-      if (e.stopPropagation) e.stopPropagation();
-      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-      if (e.preventDefault && e.type !== 'touchstart') e.preventDefault();
-    };
-
-    const onPointerMove = (e) => {
-      const clientX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
-      const clientY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
-
-      if (this.isDragging) {
-        if (e.stopPropagation) e.stopPropagation();
-        const deltaX = clientX - this.dragStartX;
-        const deltaY = clientY - this.dragStartY;
-        if (this.dragMode === 'node' && this.draggedNodeId) {
-          const node = this.nodes.get(this.draggedNodeId);
-          if (node) {
-            const viewScale = Math.max(0.90, Math.min(this.canvas.width, this.canvas.height) / 760) * this.zoom;
-            const invScale = (this.fov + (node.projZ || 0)) / (this.fov * viewScale);
-            // Project screen-space delta into node coordinates
-            node.x = this.dragNodeStartX + deltaX * invScale;
-            node.y = this.dragNodeStartY + deltaY * invScale;
-            node.vx = (deltaX * 0.1);
-            node.vy = (deltaY * 0.1);
-          }
-        } else if (this.dragMode === 'orbit') {
-          this.targetRotY = this.baseRotY - (deltaX * 0.007);
-          this.targetRotX = Math.max(-1.35, Math.min(1.35, this.baseRotX + (deltaY * 0.007)));
-        } else {
-          this.targetPanX = this.basePanX + deltaX;
-          this.targetPanY = this.basePanY + deltaY;
-        }
-        this.updateRecenterButtonVisibility();
-      } else {
-        if (typeof SpatialNav !== 'undefined' && SpatialNav.isDragging) {
-          return;
-        }
-        this.handlePointerMove(clientX, clientY);
-      }
-    };
-
-    const onPointerUp = (e) => {
-      if (this.isDragging) {
-        const clientX = e.clientX || (e.changedTouches && e.changedTouches[0].clientX) || 0;
-        const clientY = e.clientY || (e.changedTouches && e.changedTouches[0].clientY) || 0;
-        const dist = Math.hypot(clientX - this.dragStartX, clientY - this.dragStartY);
-        if (this.draggedNodeId) {
-          const node = this.nodes.get(this.draggedNodeId);
-          if (node) node.isDragged = false;
-          this.draggedNodeId = null;
-        }
-        this.isDragging = false;
-        this.canvas.style.cursor = this.hoveredNodeId ? 'pointer' : 'grab';
-
-        // Register as click if drag distance is negligible (< 6px)
-        if (dist < 6) {
-          this.handlePointerClick(clientX, clientY);
-        }
-        this.updateRecenterButtonVisibility();
-      }
-    };
-
-    this.canvas.addEventListener('pointerdown', onPointerDown);
-    this.canvas.addEventListener('mousedown', onPointerDown);
-    this.canvas.addEventListener('touchstart', onPointerDown, { passive: true });
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('mousemove', onPointerMove);
-    window.addEventListener('touchmove', onPointerMove, { passive: true });
-    window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('pointercancel', onPointerUp);
-    window.addEventListener('mouseup', onPointerUp);
-    window.addEventListener('touchend', onPointerUp);
-
-    // Wheel zoom controls the constellation only when cursor is directly above the HUD
-    this.canvas.addEventListener('wheel', (e) => {
-      if (!this.isPointerOverHud(e.clientX, e.clientY)) {
-        return;
-      }
-      e.preventDefault();
-      const factor = Math.exp(-e.deltaY * 0.0012);
-      this.targetZoom = Math.max(0.62, Math.min(2.35, this.targetZoom * factor));
-      this.updateRecenterButtonVisibility();
-    }, { passive: false });
-
-    this.canvas.addEventListener('dblclick', (e) => {
-      if (this.hoveredNodeId) {
-        const node = this.nodes.get(this.hoveredNodeId);
-        if (node && node.taskId && window.TaskSurfaceManager) {
-          window.TaskSurfaceManager.restoreWindow(node.taskId);
-          window.TaskSurfaceManager.focusAndCenter(node.taskId);
-          return;
-        }
-      }
-      this.recenter();
-    });
-
-    // Responsive Canvas Resize Observer
-    const pane = document.getElementById('jarvis-hud-pane');
-    if (window.ResizeObserver && pane) {
-      new ResizeObserver(() => this.resize()).observe(pane);
-    }
-  },
-
-  resize() {
-    if (!this.canvas) return;
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      // Render at the actual workspace resolution so the full-screen galaxy
-      // stays crisp instead of stretching a 480px bitmap across the desktop.
-      const width = Math.max(1, Math.floor(rect.width));
-      const height = Math.max(1, Math.floor(rect.height));
-      if (this.canvas.width !== width || this.canvas.height !== height) {
-        this.canvas.width = width;
-        this.canvas.height = height;
-        this.ctx = this.canvas.getContext('2d');
-      }
-      this.fov = 340;
-    }
-  },
-
-  isPointerOverHud(clientX, clientY) {
-    if (!this.canvas) return false;
-
-    // Direct check: if cursor is over message cards, input bar, or floating windows, it is NOT over HUD
-    if (typeof document !== 'undefined' && document.elementFromPoint) {
-      const target = document.elementFromPoint(clientX, clientY);
-      if (target) {
-        if (target.closest('#jarvis-input-bar, .jarvis-task-surface, #sidebar, #jarvis-action-panel, .msg-user, .msg-answer, .msg-bubble, #bottom-bar, #spatial-dock')) {
-          return false;
-        }
-      }
-    }
-
-    // Hovered directly over an interactive node
-    if (this.hoveredNodeId) return true;
-
-    // Transform viewport coordinates to canvas-local coordinates
-    const rect = this.canvas.getBoundingClientRect();
-    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
-      return false;
-    }
-    const mx = clientX - rect.left;
-    const my = clientY - rect.top;
-
-    // Check distance to any visible active node
-    for (const [id, node] of this.nodes) {
-      if (node.screenX != null && node.screenY != null) {
-        const r = (node.screenRadius || 8) + 20;
-        if (Math.hypot(mx - node.screenX, my - node.screenY) <= r) {
-          return true;
-        }
-      }
-    }
-
-    // Check distance to the central HUD core
-    const coreNode = this.nodes.get('node_core');
-    const coreX = (coreNode && coreNode.screenX != null) ? coreNode.screenX : ((this.canvas.width / 2) + this.panX);
-    const coreY = (coreNode && coreNode.screenY != null) ? coreNode.screenY : ((this.canvas.height / 2) + this.panY);
-    const distToCore = Math.hypot(mx - coreX, my - coreY);
-
-    // Compute dynamic constellation radius from active nodes
-    let maxDist = 200;
-    this.nodes.forEach(node => {
-      if (node.screenX != null && node.screenY != null) {
-        const d = Math.hypot(node.screenX - coreX, node.screenY - coreY);
-        if (d > maxDist && d < 650) {
-          maxDist = d;
-        }
-      }
-    });
-
-    const hudEffectiveRadius = Math.max(220, Math.min(320, maxDist + 35));
-    return distToCore <= hudEffectiveRadius;
-  },
-
-  handlePointerMove(clientX, clientY) {
-    if (!this.canvas) return;
-    const rect = this.canvas.getBoundingClientRect();
-    const mx = clientX - rect.left;
-    const my = clientY - rect.top;
-
-    let closestNode = null;
-    let minDist = 22;
-
-    this.nodes.forEach(node => {
-      if (node.isCore) return;
-      const dx = mx - node.screenX;
-      const dy = my - node.screenY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < node.screenRadius + 14 && dist < minDist) {
-        minDist = dist;
-        closestNode = node;
-      }
-    });
-
-    if (closestNode) {
-      this.hoveredNodeId = closestNode.id;
-      this.showTooltipForNode(closestNode);
-      this.canvas.style.cursor = 'pointer';
-    } else {
-      this.hoveredNodeId = null;
-      this.hideTooltip();
-      this.canvas.style.cursor = this.isDragging ? 'grabbing' : 'grab';
-    }
-  },
-
-  handlePointerClick(clientX, clientY) {
-    if (this.hoveredNodeId) {
-      const node = this.nodes.get(this.hoveredNodeId);
-      if (!node) return;
-      this.selectedNodeId = node.id;
-      node.highlightUntil = Date.now() + 4000;
-
-      // Bidirectional connection to TaskSurfaceManager
-      if (node.taskId && window.TaskSurfaceManager) {
-        window.TaskSurfaceManager.restoreWindow(node.taskId);
-        window.TaskSurfaceManager.bringToFront(node.taskId);
-      }
-      if (node.metadata && node.metadata.url) {
-        try {
-          window.open(node.metadata.url, '_blank');
-        } catch(e) {}
-      }
-    } else {
-      this.selectedNodeId = null;
-      this.hideTooltip();
-    }
-  },
-
-  showTooltipForNode(node) {
-    if (!this.tooltipElem) {
-      this.tooltipElem = document.getElementById('jarvis-hud-node-tooltip') || document.getElementById('joe-hud-node-tooltip');
-    }
-    if (!this.tooltipElem) return;
-
-    const typeColor = node.fill || '#FF9D2E';
-    const stateColor = (node.state === 'running' || node.state === 'active') ? '#FF9D2E' : (node.state === 'settled' ? '#22C55E' : '#8A8D91');
-    const label = node.label.length > 36 ? (node.label.substring(0, 34) + '…') : node.label;
-
-    this.tooltipElem.innerHTML = `
-      <span style="color:${typeColor}; font-weight:700;">[${node.type}]</span>
-      <span style="color:#E6E6E6; font-weight:600;">${this.escapeHtml(label)}</span>
-      <span style="font-size:9px; color:${stateColor}; font-weight:700;">● ${(node.state || 'ACTIVE').toUpperCase()}</span>
-    `;
-
-    // Position tooltip right above the hovered node with viewport clamping
-    const radius = node.screenRadius || 8;
-    let tx = node.screenX || (window.innerWidth / 2);
-    let ty = (node.screenY || 200) - radius - 14;
-
-    // If too close to the top header bar (top < 68px), flip tooltip below node
-    if (ty < 68) {
-      ty = (node.screenY || 200) + radius + 32;
-      this.tooltipElem.style.transform = 'translate(-50%, 0)';
-    } else {
-      this.tooltipElem.style.transform = 'translate(-50%, -100%)';
-    }
-
-    // Horizontal clamping: keep within viewport margins
-    const minX = 140;
-    const maxX = window.innerWidth - 140;
-    tx = Math.max(minX, Math.min(maxX, tx));
-    ty = Math.max(50, Math.min(window.innerHeight - 50, ty));
-
-    this.tooltipElem.style.left = `${Math.round(tx)}px`;
-    this.tooltipElem.style.top = `${Math.round(ty)}px`;
-    this.tooltipElem.classList.add('hud-node-tooltip-visible');
-  },
-
-  hideTooltip() {
-    if (!this.tooltipElem) {
-      this.tooltipElem = document.getElementById('jarvis-hud-node-tooltip') || document.getElementById('joe-hud-node-tooltip');
-    }
-    if (this.tooltipElem) {
-      this.tooltipElem.classList.remove('hud-node-tooltip-visible');
-    }
-  },
-
-  escapeHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  },
-
-  render(audioEnergy) {
-    if (!this.canvas) return;
-    updateGalaxyMeta();
-    if (!this.ctx) this.ctx = this.canvas.getContext('2d');
-    const ctx = this.ctx;
-    if (!ctx) return;
-
-    this.audioEnergy = audioEnergy !== undefined ? audioEnergy : this.audioEnergy;
-    const now = Date.now();
-    const dt = Math.min(0.05, (now - this.lastTime) / 1000);
-    this.lastTime = now;
-
-    const width = this.canvas.width;
-    const height = this.canvas.height;
-    ctx.clearRect(0, 0, width, height);
-
-    // Smooth translation interpolation
-    this.panX += (this.targetPanX - this.panX) * 0.14;
-    this.panY += (this.targetPanY - this.panY) * 0.14;
-
-    const cx = (width / 2) + this.panX;
-    const cy = (height / 2) + this.panY;
-
-    // Manual orbit + wheel zoom only. Smooth and responsive lerp.
-    this.rotX += (this.targetRotX - this.rotX) * 0.16;
-    this.rotY += (this.targetRotY - this.rotY) * 0.16;
-    this.zoom += (this.targetZoom - this.zoom) * 0.15;
-    const viewScale = Math.max(1.15, Math.min(width, height) / 620) * this.zoom;
-    const cosX = Math.cos(this.rotX), sinX = Math.sin(this.rotX);
-    const cosY = Math.cos(this.rotY), sinY = Math.sin(this.rotY);
-
-    // The constellation is spatially stable. There is no automatic orbit;
-    // user drag/wheel is the only camera motion. Speech affects only the core.
-    const cosAuto = 1;
-    const sinAuto = 0;
-
-    const isOrange = (this.colorTheme === 'orange');
-    const starRGB = isOrange ? '255, 180, 100' : '255, 100, 100';
-    const energy = Math.max(0, Math.min(255, this.audioEnergy)) / 255;
-    const speechMotion = this.state === 'speaking' ? energy : 0;
-    const coreX = cx + Math.sin(now * 0.008) * speechMotion * 2.2;
-    const coreY = cy + Math.cos(now * 0.006) * speechMotion * 1.6;
-    const coreNode = this.nodes.get('node_core');
-    if (coreNode) {
-      coreNode.screenX = coreX;
-      coreNode.screenY = coreY;
-      coreNode.screenScale = viewScale;
-    }
-
-    // Deep-space starfield is rendered by Three.js in #starfield, leaving this canvas transparent for constellation nodes only.
-
-    // 1b. STRING SPRING PHYSICS (connected nodes move elastically like a string/web)
-    for (let i = 0; i < this.links.length; i++) {
-      const link = this.links[i];
-      const source = this.nodes.get(link.sourceId);
-      const target = this.nodes.get(link.targetId);
-      if (!source || !target) continue;
-
-      const dx = target.x - source.x;
-      const dy = target.y - source.y;
-      const dz = target.z - source.z;
-      const dist = Math.hypot(dx, dy, dz) || 1;
-      const restLen = link.restLength || (link.ambient ? 75 : 95);
-      const diff = dist - restLen;
-      const force = diff * 0.035;
-      const fx = (dx / dist) * force;
-      const fy = (dy / dist) * force;
-      const fz = (dz / dist) * force;
-
-      if (!source.isCore && !source.isDragged) {
-        source.vx = (source.vx || 0) + fx;
-        source.vy = (source.vy || 0) + fy;
-        source.vz = (source.vz || 0) + fz;
-      }
-      if (!target.isCore && !target.isDragged) {
-        target.vx = (target.vx || 0) - fx;
-        target.vy = (target.vy || 0) - fy;
-        target.vz = (target.vz || 0) - fz;
-      }
-    }
-
-    this.nodes.forEach(node => {
-      if (node.isCore || node.isDragged) return;
-      if (node.vx || node.vy || node.vz) {
-        node.x += (node.vx || 0) * dt * 25;
-        node.y += (node.vy || 0) * dt * 25;
-        node.z += (node.vz || 0) * dt * 25;
-        node.vx *= 0.82; // elastic damping
-        node.vy *= 0.82;
-        node.vz *= 0.82;
-      }
-    });
-
-    // 2. UPDATE & PROJECT NODES
-    const projectedNodes = [];
-    this.nodes.forEach(node => {
-      // Constellation positions are stable. Only the central core reacts to voice.
-      const nx = node.x;
-      const ny = node.y;
-      const nz = node.z;
-
-      // 3D rotation
-      const rx1 = nx * cosAuto - nz * sinAuto;
-      const ry1 = ny;
-      const rz1 = nx * sinAuto + nz * cosAuto;
-
-      const rx2 = rx1 * cosY + rz1 * sinY;
-      const rz2 = -rx1 * sinY + rz1 * cosY;
-      const ry2 = ry1 * cosX - rz2 * sinX;
-      const rz3 = ry1 * sinX + rz2 * cosX;
-
-      const scale = Math.max(0.15, this.fov / (this.fov + rz3));
-      const px = cx + rx2 * scale * viewScale;
-      const py = cy + ry2 * scale * viewScale;
-
-      node.screenX = px;
-      node.screenY = py;
-      node.screenScale = scale * viewScale;
-      node.screenRadius = Math.max(2, node.size * scale * viewScale);
-      node.projZ = rz3;
-
-      projectedNodes.push(node);
-    });
-
-    // 3. DRAW CONNECTION LINKS & TRAVELING PULSES
-    const activeFocusNodeId = (this.selectedNodeId && this.selectedNodeId !== 'node_core') ? this.selectedNodeId : null;
-
-    for (let i = 0; i < this.links.length; i++) {
-      const link = this.links[i];
-      const source = this.nodes.get(link.sourceId);
-      const target = this.nodes.get(link.targetId);
-      if (!source || !target) continue;
-
-      const avgScale = (source.screenScale + target.screenScale) * 0.5;
-      if (avgScale < 0.20) continue;
-
-      const isConnectedToSelected = activeFocusNodeId && (source.id === activeFocusNodeId || target.id === activeFocusNodeId);
-      const isHighlighted = (source.id === this.selectedNodeId || target.id === this.selectedNodeId || (source.highlightUntil > now) || (target.highlightUntil > now));
-      const isHovered = (source.id === this.hoveredNodeId || target.id === this.hoveredNodeId);
-
-      let linkAlpha = link.ambient ? 0.20 : 0.35;
-      if (this.state === 'thinking' || this.state === 'task_active') linkAlpha += 0.25;
-      if (this.state === 'speaking') linkAlpha += (this.audioEnergy / 255) * 0.30;
-      if (isHighlighted || isHovered) linkAlpha = 0.85;
-
-      // Focus mode: dim unrelated links when a specific node is selected
-      if (activeFocusNodeId && !isConnectedToSelected && !isHighlighted && !isHovered) {
-        linkAlpha *= 0.35;
-      }
-
-      let strokeColor;
-      if (isOrange) {
-        strokeColor = isHighlighted ? 'rgba(255, 210, 110, ' : (isHovered ? 'rgba(255, 180, 80, ' : 'rgba(255, 140, 40, ');
-      } else {
-        strokeColor = isHighlighted ? 'rgba(254, 202, 202, ' : (isHovered ? 'rgba(248, 113, 113, ' : 'rgba(220, 38, 38, ');
-      }
-
-      ctx.beginPath();
-      ctx.moveTo(source.screenX, source.screenY);
-      ctx.lineTo(target.screenX, target.screenY);
-      ctx.strokeStyle = `${strokeColor}${Math.min(0.95, linkAlpha)})`;
-      ctx.lineWidth = Math.max(0.7, (isHighlighted ? 1.8 : (link.ambient ? 0.9 : 1.2)) * avgScale);
-      ctx.stroke();
-
-      // Speech does not move the constellation. Only active work may show a
-      // restrained traveling pulse on links.
-      if (this.state === 'thinking' || this.state === 'task_active' || this.state === 'processing') {
-        const pulseSpeed = this.state === 'thinking' ? 0.45 : 0.28;
-        link.pulsePos = (link.pulsePos + dt * pulseSpeed) % 1.0;
-        const pulseX = source.screenX + (target.screenX - source.screenX) * link.pulsePos;
-        const pulseY = source.screenY + (target.screenY - source.screenY) * link.pulsePos;
-        const pulseRadius = Math.max(1.1, 2.0 * avgScale);
-        ctx.beginPath();
-        ctx.arc(pulseX, pulseY, pulseRadius, 0, Math.PI * 2);
-        const pulseFill = isOrange ? `rgba(255, 230, 160, ${Math.min(0.72, linkAlpha * 1.15)})` : `rgba(254, 202, 202, ${Math.min(0.85, linkAlpha * 1.2)})`;
-        ctx.fillStyle = pulseFill;
-        ctx.fill();
-      }
-    }
-
-    // 4. DRAW SHOCKWAVE (ON INTERRUPTED)
-    if (this.shockwaveActive) {
-      this.shockwaveRadius += dt * 320 * viewScale;
-      const swAlpha = Math.max(0, 1 - this.shockwaveRadius / (160 * viewScale));
-      ctx.beginPath();
-      ctx.arc(cx, cy, this.shockwaveRadius, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255, 90, 50, ${swAlpha * 0.8})`;
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      if (swAlpha <= 0.02) this.shockwaveActive = false;
-    }
-
-    // 5. DRAW CENTRAL SYSTEM CORE
-    // The core is the only spatial element that moves with speech.
-    const calmBreathing = Math.sin(now / 2200) * 1.8;
-    let coreRadius = (32 + energy * 20 + calmBreathing) * viewScale;
-    if (this.state === 'interrupted') coreRadius = 28 * viewScale;
-
-    const coreGrad = ctx.createRadialGradient(coreX, coreY, 3, coreX, coreY, coreRadius);
-    if (isOrange) {
-      coreGrad.addColorStop(0, 'rgba(255, 255, 255, 0.98)');
-      coreGrad.addColorStop(0.28, 'rgba(255, 165, 55, 0.92)');
-      coreGrad.addColorStop(0.65, 'rgba(210, 95, 20, 0.48)');
-      coreGrad.addColorStop(1, 'rgba(18, 10, 6, 0)');
-    } else {
-      coreGrad.addColorStop(0, 'rgba(255, 255, 255, 0.98)');
-      coreGrad.addColorStop(0.28, 'rgba(255, 75, 75, 0.92)');
-      coreGrad.addColorStop(0.65, 'rgba(180, 25, 25, 0.48)');
-      coreGrad.addColorStop(1, 'rgba(18, 6, 6, 0)');
-    }
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(coreX, coreY, coreRadius, 0, Math.PI * 2);
-    ctx.fillStyle = coreGrad;
-    ctx.shadowBlur = (35 + Math.sin(now / 2000) * 6 + (this.audioEnergy / 255) * 20) * Math.min(2, viewScale);
-    ctx.shadowColor = isOrange ? 'rgba(255, 140, 40, 0.9)' : 'rgba(255, 60, 60, 0.9)';
-    ctx.fill();
-    ctx.restore();
-
-    // 6. DRAW NODES (SORTED BY Z-DEPTH)
-    projectedNodes.sort((a, b) => a.projZ - b.projZ);
-
-    for (let i = 0; i < projectedNodes.length; i++) {
-      const node = projectedNodes[i];
-      if (node.isCore) continue; // Drawn by central sun
-
-      const isHovered = (node.id === this.hoveredNodeId);
-      const isSelected = (node.id === this.selectedNodeId || node.highlightUntil > now);
-      const isConnectedToFocus = activeFocusNodeId && (
-        node.id === activeFocusNodeId ||
-        this.links.some(l => (l.sourceId === activeFocusNodeId && l.targetId === node.id) || (l.targetId === activeFocusNodeId && l.sourceId === node.id))
-      );
-      const isDimmed = activeFocusNodeId && !isSelected && !isHovered && !isConnectedToFocus;
-
-      ctx.save();
-      if (isDimmed) {
-        ctx.globalAlpha = 0.28;
-      }
-
-      const radius = node.screenRadius * (isHovered ? 1.4 : (isSelected ? 1.25 : 1));
-
-      // Radial outer glow
-      const glowGrad = ctx.createRadialGradient(node.screenX, node.screenY, radius * 0.3, node.screenX, node.screenY, radius * 2.4);
-      glowGrad.addColorStop(0, node.glow);
-      glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-
-      ctx.beginPath();
-      ctx.arc(node.screenX, node.screenY, radius * 2.4, 0, Math.PI * 2);
-      ctx.fillStyle = glowGrad;
-      ctx.fill();
-
-      // Node core circle
-      ctx.beginPath();
-      ctx.arc(node.screenX, node.screenY, radius, 0, Math.PI * 2);
-      ctx.fillStyle = isHovered || isSelected ? '#ffffff' : node.fill;
-      ctx.strokeStyle = node.stroke;
-      ctx.lineWidth = Math.max(1, 1.4 * node.screenScale);
-      ctx.fill();
-      ctx.stroke();
-
-      // Inline label for operational or hovered nodes
-      if ((!node.isAmbient && node.screenScale > 0.4) || isHovered || isSelected) {
-        ctx.save();
-        ctx.font = `600 ${Math.max(11, Math.round(11 * Math.min(1.4, node.screenScale)))}px 'Inter', sans-serif`;
-        ctx.fillStyle = isHovered || isSelected ? '#FFFFFF' : '#E2E8F0';
-        ctx.textAlign = 'center';
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
-        ctx.shadowBlur = 4;
-        const displayLabel = node.label.length > 24 ? (node.label.substring(0, 22) + '..') : node.label;
-        ctx.fillText(displayLabel, node.screenX, node.screenY + radius + 13 * node.screenScale);
-        ctx.restore();
-      }
-
-      ctx.restore();
-    }
-  }
-};
-
-window.HudGalaxy = HudGalaxy;
-
 let currentAppMode = 'partner'; // 'partner' or 'osint'
 
 function setAppMode(mode) {
@@ -8326,11 +7280,6 @@ function setAppMode(mode) {
     }
     body.classList.add('mode-osint');
     body.classList.remove('mode-partner');
-    if (window.HudGalaxy) {
-      window.HudGalaxy.setColorTheme('crimson');
-      window.HudGalaxy.shockwaveActive = true;
-      window.HudGalaxy.shockwaveRadius = 15;
-    }
     showSubtitles('ENGAGED OSINT WAR ROOM MODE — Serious tactical tracking active.', 'WAR ROOM ACTIVE');
   } else {
     if (label) label.textContent = 'PARTNER MODE';
@@ -8342,9 +7291,6 @@ function setAppMode(mode) {
     }
     body.classList.add('mode-partner');
     body.classList.remove('mode-osint');
-    if (window.HudGalaxy) {
-      window.HudGalaxy.setColorTheme('orange');
-    }
     showSubtitles('PARTNER ASSISTANT MODE — Clean companion & personal workflow active.', 'PARTNER ACTIVE');
   }
 }
@@ -8359,20 +7305,702 @@ function setHudColorTheme(colorTheme) {
   jarvisHudColorTheme = 'orange';
   safeSetStorage('jarvis_hud_color', 'orange');
   safeSetStorage('joe_hud_color', 'orange');
-
-  if (!jarvisCanvas) jarvisCanvas = document.getElementById('jarvis-hud-canvas') || document.getElementById('joe-hud-canvas');
-  if (jarvisCanvas) {
-    jarvisCanvas.style.filter = 'none';
-  }
-  if (window.HudGalaxy) {
-    window.HudGalaxy.setColorTheme('orange');
-  }
 }
 
+/* ─── 3D INTERACTIVE KNOWLEDGE GRAPH (SCREEN 2 HUD OVERLAY) ────────── */
+const JarvisKnowledgeGraph = {
+  graph: null,
+  container: null,
+  mountElem: null,
+  data: { nodes: [], links: [] },
+  isPaused: false,
+  _initialized: false,
+  graphGroup: null,
+  ambientLight: null,
+  animFrameId: null,
+
+  init() {
+    if (this._initialized) return;
+    this.container = document.getElementById('jarvis-knowledge-graph-container');
+    this.mountElem = document.getElementById('jarvis-3d-kg-mount');
+    if (!this.container || !this.mountElem) return;
+
+    if (typeof ForceGraph3D === 'undefined') {
+      console.warn('[KnowledgeGraph] ForceGraph3D library not loaded.');
+      return;
+    }
+
+    try {
+      function forceRadial3D(maxRadius = 210, centeringStrength = 0.004) {
+        let nodes = [];
+        function force(alpha) {
+          const kBound = 0.85;
+          const kCenter = centeringStrength * alpha;
+          for (let i = 0; i < nodes.length; i++) {
+            const d = nodes[i];
+            if (d.fx !== undefined && d.fy !== undefined) continue;
+            const r = Math.sqrt(d.x * d.x + d.y * d.y + d.z * d.z) || 1;
+            if (r > maxRadius) {
+              const delta = (maxRadius - r) * kBound;
+              d.vx += (d.x / r) * delta;
+              d.vy += (d.y / r) * delta;
+              d.vz += (d.z / r) * delta;
+            }
+            d.vx -= d.x * kCenter;
+            d.vy -= d.y * kCenter;
+            d.vz -= d.z * kCenter;
+          }
+        }
+        force.initialize = n => { nodes = n; };
+        return force;
+      }
+
+      this.graph = ForceGraph3D({ controlType: 'orbit' })(this.mountElem)
+        .backgroundColor('rgba(0,0,0,0)')
+        .showNavInfo(false)
+        .onNodeClick(node => this.focusNode(node))
+        .onBackgroundClick(() => this.resetCamera())
+        .nodeLabel(node => {
+          if (node.id === 'core:jarvis') {
+            return `<div class="kg-tooltip">
+              <div style="font-size:12px; font-weight:800; color:#FFB84D; letter-spacing:0.5px;">J.A.R.V.I.S.</div>
+              <div style="font-size:9px; color:#FFA726; opacity:0.9; text-transform:uppercase; letter-spacing:0.6px; margin-top:2px;">Central Neural Matrix</div>
+              <div style="font-size:10px; color:#D4D4D8; margin-top:4px; max-width:240px; line-height:1.3;">Autonomous Cognitive Presence &amp; Tactical Intelligence Embodiment</div>
+            </div>`;
+          }
+          const typeNames = {
+            'MEMORY_RULE': 'Executive Directive',
+            'MEMORY_SKILL': 'Operational Capability',
+            'LESSON': 'Synthesized Insight',
+            'MEMORY_FACT': 'Established Knowledge',
+            'OSINT_TARGET': 'Target of Interest',
+            'OSINT_ENTITY': 'Identified Entity',
+            'SESSION_TOPIC': 'Discursive Thread',
+            'CLUSTER': 'Knowledge Cluster'
+          };
+          const typeLabel = typeNames[node.type] || (node.type || 'Cognitive Node').replace(/_/g, ' ');
+          const meta = node.metadata || {};
+          const detail = meta.details || meta.trigger || meta.target || meta.full_text || meta.lesson || meta.description || meta.presence || '';
+          const detailHtml = detail ? `<div style="font-size:10px; color:#A1A1AA; margin-top:3px; max-width:240px; white-space:normal; line-height:1.3;">${escapeHtml(String(detail).substring(0, 100))}</div>` : '';
+          return `<div class="kg-tooltip">
+            <div style="font-size:11px; font-weight:700; color:${node.color || '#FFB84D'};">${escapeHtml(node.label || 'Node')}</div>
+            <div style="font-size:9px; color:#FFA726; opacity:0.85; text-transform:uppercase; letter-spacing:0.5px; margin-top:1px;">${typeLabel}</div>
+            ${detailHtml}
+          </div>`;
+        })
+        .nodeThreeObject(node => this.createNodeMesh(node))
+        .nodeColor(node => node.color || '#FFB84D')
+        .nodeVal(node => node.type === 'CLUSTER' ? 14 : (node.id === 'core:jarvis' ? 12 : (node.val || 7)))
+        .nodeRelSize(3.2)
+        .linkOpacity(0.36)
+        .linkWidth(link => {
+          const s = typeof link.source === 'object' ? link.source.id : link.source;
+          const t = typeof link.target === 'object' ? link.target.id : link.target;
+          if (s === 'core:jarvis' || t === 'core:jarvis') return 1.8;
+          if (link.type === 'investigates' || link.type === 'analyzed_by') return 1.5;
+          if (link.type === 'applies_skill' || link.type === 'invokes') return 1.3;
+          return 1.0;
+        })
+        .linkColor(link => {
+          const s = typeof link.source === 'object' ? link.source.id : link.source;
+          const t = typeof link.target === 'object' ? link.target.id : link.target;
+          if (s === 'core:jarvis' || t === 'core:jarvis') return 'rgba(255, 184, 77, 0.90)';
+          if (link.type === 'investigates' || link.type === 'analyzed_by') return 'rgba(239, 68, 68, 0.85)';
+          if (link.type === 'applies_skill' || link.type === 'invokes') return 'rgba(16, 185, 129, 0.80)';
+          if (link.type === 'references' || link.type === 'synthesizes' || link.type === 'learned_from') return 'rgba(192, 132, 252, 0.75)';
+          if (link.type === 'governs' || link.type === 'governed_by') return 'rgba(250, 204, 21, 0.80)';
+          if (link.type === 'discovered_during') return 'rgba(6, 182, 212, 0.80)';
+          return 'rgba(56, 189, 248, 0.65)';
+        })
+        .linkDirectionalParticles(link => {
+          if (link.type === 'investigates' || (link.particles && link.particles > 1)) return 2;
+          const s = typeof link.source === 'object' ? link.source.id : link.source;
+          const t = typeof link.target === 'object' ? link.target.id : link.target;
+          if (s === 'core:jarvis' || t === 'core:jarvis') return 2;
+          if (link.type === 'governs' || link.type === 'applies_skill' || link.type === 'references' || link.type === 'invokes') return 1;
+          const key = String(link.id || s + '-' + t);
+          let hash = 0;
+          for (let i = 0; i < key.length; i++) hash = ((hash << 5) - hash) + key.charCodeAt(i);
+          return (Math.abs(hash) % 4 === 0) ? 1 : 0;
+        })
+        .linkDirectionalParticleSpeed(link => {
+          const s = typeof link.source === 'object' ? link.source.id : link.source;
+          const t = typeof link.target === 'object' ? link.target.id : link.target;
+          return (s === 'core:jarvis' || t === 'core:jarvis') ? 0.008 : 0.005;
+        })
+        .linkDirectionalParticleWidth(link => {
+          const s = typeof link.source === 'object' ? link.source.id : link.source;
+          const t = typeof link.target === 'object' ? link.target.id : link.target;
+          return (s === 'core:jarvis' || t === 'core:jarvis') ? 1.8 : 1.2;
+        })
+        .linkDirectionalParticleColor(link => {
+          const s = typeof link.source === 'object' ? link.source.id : link.source;
+          const t = typeof link.target === 'object' ? link.target.id : link.target;
+          if (s === 'core:jarvis' || t === 'core:jarvis') return '#FFB84D';
+          if (link.type === 'applies_skill' || link.type === 'invokes') return '#10B981';
+          if (link.type === 'references' || link.type === 'synthesizes' || link.type === 'learned_from') return '#C084FC';
+          if (link.type === 'governs' || link.type === 'governed_by') return '#FACC15';
+          if (link.type === 'investigates' || link.type === 'analyzed_by') return '#EF4444';
+          return '#38BDF8';
+        })
+        .linkDirectionalParticleResolution(4)
+        .warmupTicks(60)
+        .cooldownTicks(25)
+        .cooldownTime(1800)
+        .d3AlphaDecay(0.06)
+        .d3VelocityDecay(0.35);
+
+      // Organic 3D Spherical Volume: bounded volume envelope with uniform repulsion
+      this.graph.d3Force('radial', forceRadial3D(210, 0.004));
+      if (this.graph.d3Force('charge')) {
+        this.graph.d3Force('charge').strength(-160);
+      }
+      if (this.graph.d3Force('link')) {
+        this.graph.d3Force('link').distance(75).strength(0.08);
+      }
+      this.graph.d3Force('center', null);
+
+      const controls = this.graph.controls();
+      if (controls) {
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.rotateSpeed = 0.7;
+        controls.zoomSpeed = 1.0;
+        controls.minDistance = 0.5; // Enable fly-through zoom all the way inside the sphere
+        controls.maxDistance = 2000;
+        controls.autoRotate = false; // Reversed: stationary by default, reacts to interaction/voice
+      }
+
+      const camera = this.graph.camera();
+      if (camera) {
+        camera.near = 0.5; // Pristine close-up rendering with zero clipping inside the node cloud
+        camera.far = 6000;
+        camera.updateProjectionMatrix();
+      }
+
+      // Post-Processing: UnrealBloomPass for luminous jewel halos with dark interstellar spacing
+      const composer = this.graph.postProcessingComposer();
+      if (composer && typeof THREE !== 'undefined' && typeof THREE.UnrealBloomPass === 'function') {
+        const w = this.mountElem.clientWidth || window.innerWidth || 1280;
+        const h = this.mountElem.clientHeight || window.innerHeight || 800;
+        const bloomPass = new THREE.UnrealBloomPass(
+          new THREE.Vector2(Math.round(w / 2), Math.round(h / 2)),
+          0.42, // strength (balanced neon points without blinding center glare)
+          0.24, // radius
+          0.46  // threshold (isolates bright nodes, keeping links and space crisp)
+        );
+        if (bloomPass.materialCopy) {
+          bloomPass.materialCopy.blending = THREE.CustomBlending;
+          bloomPass.materialCopy.blendSrc = THREE.OneFactor;
+          bloomPass.materialCopy.blendDst = THREE.OneFactor;
+          bloomPass.materialCopy.blendEquation = THREE.AddEquation;
+          bloomPass.materialCopy.blendSrcAlpha = THREE.ZeroFactor;
+          bloomPass.materialCopy.blendDstAlpha = THREE.OneFactor;
+          bloomPass.materialCopy.blendEquationAlpha = THREE.AddEquation;
+        }
+        composer.addPass(bloomPass);
+        this.bloomPass = bloomPass;
+      }
+
+      this._bindResizeListeners();
+      this.resize();
+
+      this._initialized = true;
+      this.fetchData();
+      window.addEventListener('pywebviewready', () => this.fetchData());
+      console.log('[KnowledgeGraph] 3D Knowledge Graph initialized on Screen 2 (Uniform Sphere).');
+    } catch (e) {
+      console.error('[KnowledgeGraph] Initialization error:', e);
+    }
+  },
+
+  _assemblyTimers: [],
+  _fullData: null,
+  _nodeMaterialCache: {},
+  _baseNodeGeometry: null,
+
+  fastForwardAssembly() {
+    if (this._assemblyTimers && this._assemblyTimers.length > 0) {
+      this._assemblyTimers.forEach(t => clearTimeout(t));
+      this._assemblyTimers = [];
+    }
+    if (this._fullData && this.graph) {
+      this.graph.graphData({
+        nodes: this._fullData.nodes,
+        links: this._fullData.links
+      });
+      const nodeCountEl = document.getElementById('galaxy-node-count');
+      const linkCountEl = document.getElementById('galaxy-link-count');
+      if (nodeCountEl) nodeCountEl.textContent = this._fullData.nodes.length;
+      if (linkCountEl) linkCountEl.textContent = this._fullData.links.length;
+      if (this.container) this.container.classList.add('ready');
+      this._fullData = null;
+    }
+  },
+
+  focusNode(node) {
+    if (!this.graph || !node) return;
+    this.fastForwardAssembly();
+    this.focusedNode = node;
+    const nx = node.x || 0;
+    const ny = node.y || 0;
+    const nz = node.z || 0;
+    const dN = Math.hypot(nx, ny, nz);
+
+    let cx, cy, cz;
+    if (dN > 1e-3) {
+      const ux = nx / dN;
+      const uy = ny / dN;
+      const uz = nz / dN;
+
+      // Compute lateral tangent vector perpendicular to radial vector and world up (0, 1, 0)
+      let tx = -uz;
+      let ty = 0;
+      let tz = ux;
+      let tLen = Math.hypot(tx, tz);
+      if (tLen < 1e-3) {
+        // Fallback for near-polar nodes
+        tx = 0; ty = -uz; tz = uy;
+        tLen = Math.hypot(ty, tz);
+      }
+      tx /= tLen;
+      ty /= tLen;
+      tz /= tLen;
+
+      // Arcing docking position: outward radial + lateral parallax offset + vertical clearance
+      cx = nx + ux * 72 + tx * 18;
+      cy = ny + uy * 72 + ty * 18 + 12;
+      cz = nz + uz * 72 + tz * 18;
+    } else {
+      cx = 0;
+      cy = 20;
+      cz = 95;
+    }
+
+    // 3d-force-graph built-in smooth transition (1100ms) with seamless cubic glide & parallax
+    this.graph.cameraPosition({ x: cx, y: cy, z: cz }, { x: nx, y: ny, z: nz }, 1100);
+  },
+
+  resetCamera() {
+    if (!this.graph) return;
+    this.fastForwardAssembly();
+    this.focusedNode = null;
+    this.graph.cameraPosition({ x: 0, y: 0, z: 580 }, { x: 0, y: 0, z: 0 }, 800);
+  },
+
+  _resizeBound: false,
+  _resizeObserver: null,
+  bloomPass: null,
+
+  resize() {
+    if (!this.graph || !this.mountElem) return;
+    const w = this.mountElem.clientWidth || window.innerWidth || 1280;
+    const h = this.mountElem.clientHeight || window.innerHeight || 800;
+    if (w > 0 && h > 0) {
+      this.graph.width(w);
+      this.graph.height(h);
+
+      const camera = this.graph.camera();
+      if (camera) {
+        camera.aspect = w / h;
+        camera.near = 0.5;
+        camera.updateProjectionMatrix();
+      }
+
+      const renderer = this.graph.renderer();
+      if (renderer) {
+        renderer.setSize(w, h);
+      }
+
+      if (this.bloomPass) {
+        this.bloomPass.setSize(Math.round(w / 2), Math.round(h / 2));
+      }
+
+      const composer = this.graph.postProcessingComposer();
+      if (composer) {
+        composer.setSize(w, h);
+      }
+
+      const controls = this.graph.controls();
+      if (controls && typeof controls.update === 'function') {
+        controls.update();
+      }
+    }
+  },
+
+  _bindResizeListeners() {
+    if (this._resizeBound) return;
+    this._resizeBound = true;
+
+    const handleResize = () => {
+      this.resize();
+      requestAnimationFrame(() => this.resize());
+    };
+
+    window.addEventListener('resize', handleResize);
+    document.addEventListener('fullscreenchange', handleResize);
+    document.addEventListener('webkitfullscreenchange', handleResize);
+    document.addEventListener('mozfullscreenchange', handleResize);
+    document.addEventListener('MSFullscreenChange', handleResize);
+
+    if (window.ResizeObserver && this.mountElem) {
+      this._resizeObserver = new ResizeObserver(() => handleResize());
+      this._resizeObserver.observe(this.mountElem);
+    }
+  },
+
+  _getNodeMaterial(colorHex) {
+    const key = String(colorHex).toLowerCase();
+    if (!this._nodeMaterialCache[key]) {
+      const color = new THREE.Color(colorHex);
+      this._nodeMaterialCache[key] = new THREE.ShaderMaterial({
+        uniforms: {
+          uColor: { value: color },
+          uLightPos: { value: new THREE.Vector3(0.55, 0.75, 1.0).normalize() }
+        },
+        vertexShader: `
+          varying vec3 vNormal;
+          varying vec3 vViewPosition;
+          void main() {
+            vNormal = normalize(normalMatrix * normal);
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+            vViewPosition = -mvPosition.xyz;
+            gl_Position = projectionMatrix * mvPosition;
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 uColor;
+          uniform vec3 uLightPos;
+          varying vec3 vNormal;
+          varying vec3 vViewPosition;
+          void main() {
+            vec3 normal = normalize(vNormal);
+            vec3 viewDir = normalize(vViewPosition);
+
+            // Diffuse hemisphere lighting matching scene ambiance
+            float diffuse = max(dot(normal, uLightPos), 0.0);
+            vec3 diffuseLight = uColor * (0.35 + 0.65 * diffuse);
+
+            // Specular glint simulating polished celestial plasma
+            vec3 halfVector = normalize(uLightPos + viewDir);
+            float NdotH = max(dot(normal, halfVector), 0.0);
+            float specular = pow(NdotH, 28.0) * 0.40;
+
+            // Celestial Fresnel Rim Glow: luminous limb halo
+            float NdotV = max(dot(normal, viewDir), 0.0);
+            float rim = pow(1.0 - NdotV, 3.0);
+            vec3 rimGlow = mix(uColor, vec3(1.0), 0.40) * rim * 1.35;
+
+            vec3 finalColor = diffuseLight + vec3(specular) + rimGlow;
+            gl_FragColor = vec4(finalColor, 1.0);
+          }
+        `
+      });
+    }
+    return this._nodeMaterialCache[key];
+  },
+
+  createNodeMesh(node) {
+    if (typeof THREE === 'undefined') return null;
+
+    if (node.id === 'core:jarvis') {
+      const group = new THREE.Group();
+      // Glowing Core Plasma Sun
+      const sunGeom = new THREE.SphereGeometry(10, 24, 24);
+      const sunMat = new THREE.MeshBasicMaterial({
+        color: 0xFFB84D
+      });
+      const sun = new THREE.Mesh(sunGeom, sunMat);
+      group.add(sun);
+
+      // Additive Coronal Halo
+      const coronaGeom = new THREE.SphereGeometry(14, 24, 24);
+      const coronaMat = new THREE.MeshBasicMaterial({
+        color: 0xFFA726,
+        transparent: true,
+        opacity: 0.35,
+        blending: THREE.AdditiveBlending
+      });
+      const corona = new THREE.Mesh(coronaGeom, coronaMat);
+      group.add(corona);
+
+      this.sunMesh = sun;
+      this.coronaMesh = corona;
+      return group;
+    }
+
+    if (node.type === 'CLUSTER') {
+      // High-Density Aggregation Cluster Badge
+      const group = new THREE.Group();
+      const radius = node.val || 12;
+
+      const geom = new THREE.DodecahedronGeometry(radius, 0);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xFF9D2E,
+        wireframe: true
+      });
+      group.add(new THREE.Mesh(geom, mat));
+
+      const innerGeom = new THREE.SphereGeometry(radius * 0.65, 16, 16);
+      const innerMat = new THREE.MeshBasicMaterial({
+        color: 0xFFA726,
+        transparent: true,
+        opacity: 0.75
+      });
+      group.add(new THREE.Mesh(innerGeom, innerMat));
+
+      // Label sprite with badge count
+      const canvas = document.createElement('canvas');
+      canvas.width = 140;
+      canvas.height = 36;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'rgba(15, 17, 21, 0.90)';
+      ctx.fillRect(0, 0, 140, 36);
+      ctx.strokeStyle = '#FF9D2E';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, 138, 34);
+      ctx.font = 'bold 13px "JetBrains Mono", monospace';
+      ctx.fillStyle = '#FFB84D';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(node.label || 'CLUSTER', 70, 18);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.scale.set(38, 10, 1);
+      sprite.position.y = radius + 11;
+      group.add(sprite);
+
+      return group;
+    }
+
+    // High-performance Celestial Orb with Shared BufferGeometry and Cached Fresnel ShaderMaterial
+    if (!this._baseNodeGeometry) {
+      this._baseNodeGeometry = new THREE.SphereGeometry(1, 16, 16);
+    }
+    const colorHex = node.color || '#FFB84D';
+    const mat = this._getNodeMaterial(colorHex);
+    const mesh = new THREE.Mesh(this._baseNodeGeometry, mat);
+    const r = (node.type === 'MEMORY_RULE' ? 5.2 : (node.type === 'OSINT_TARGET' ? 4.8 : (node.val ? Math.max(3.2, node.val * 0.65) : 3.8)));
+    mesh.scale.set(r, r, r);
+    return mesh;
+  },
+
+  setData(data) {
+    if (!this.graph || !data) return;
+    this.fastForwardAssembly();
+    this.data = data;
+    const rawNodes = data.nodes || [];
+    const N = rawNodes.length;
+    const R = 210;
+    const phi = Math.PI * (3 - Math.sqrt(5)); // Golden angle ~2.39996323
+
+    // Deterministically interleave categories so categories & colors are uniformly distributed across the 3D volume
+    const catMap = {};
+    for (let i = 0; i < N; i++) {
+      const t = rawNodes[i].type || 'OTHER';
+      if (!catMap[t]) catMap[t] = [];
+      catMap[t].push(rawNodes[i]);
+    }
+    const catKeys = Object.keys(catMap);
+    const maxCatLen = Math.max(...catKeys.map(k => catMap[k].length), 0);
+    const nodes = [];
+    for (let step = 0; step < maxCatLen; step++) {
+      for (let k = 0; k < catKeys.length; k++) {
+        if (step < catMap[catKeys[k]].length) {
+          nodes.push(catMap[catKeys[k]][step]);
+        }
+      }
+    }
+
+    // 3D Fibonacci Spherical Volume Seeding (Obsidian-Style continuous filled volume, strictly isotropic)
+    for (let i = 0; i < N; i++) {
+      const node = nodes[i];
+      if (node.x === undefined || (node.x === 0 && node.y === 0 && node.z === 0)) {
+        if (node.id === 'core:jarvis') {
+          node.x = 0;
+          node.y = 0;
+          node.z = 0;
+          node.fx = 0;
+          node.fy = 0;
+          node.fz = 0;
+          continue;
+        }
+        // Exact symmetric polar spacing from +1 to -1 (zero at equator, isotropic)
+        const y = 1 - (2 * i + 1) / N;
+        const rFactor = 0.88 + 0.12 * ((i * 1.6180339887) % 1);
+        const nodeR = R * rFactor;
+        const radiusAtY = Math.sqrt(Math.max(0, 1 - y * y)) * nodeR;
+        const theta = phi * i;
+        node.x = Math.cos(theta) * radiusAtY;
+        node.y = y * nodeR;
+        node.z = Math.sin(theta) * radiusAtY;
+      }
+    }
+
+    const allLinks = data.links || [];
+    const fullData = { nodes: nodes, links: allLinks };
+    this._fullData = fullData;
+
+    this.graphGroup = null;
+    this.ambientLight = null;
+
+    // Helper to extract links where both endpoints are in the given node ID set
+    const filterLinks = (activeIds) => {
+      return allLinks.filter(l => {
+        const s = typeof l.source === 'object' ? l.source.id : l.source;
+        const t = typeof l.target === 'object' ? l.target.id : l.target;
+        return activeIds.has(s) && activeIds.has(t);
+      });
+    };
+
+    // Staged batch classification
+    const stage0Nodes = nodes.filter(n => n.id === 'core:jarvis');
+    if (stage0Nodes.length === 0 && nodes.length > 0) stage0Nodes.push(nodes[0]);
+
+    const stage1Nodes = nodes.filter(n => n.type === 'MEMORY_RULE' || n.type === 'CLUSTER');
+    const stage2Nodes = nodes.filter(n => n.type === 'MEMORY_SKILL' || n.type === 'OSINT_TARGET');
+    const stage3Nodes = nodes.filter(n => n.type === 'LESSON' || n.type === 'MEMORY_FACT' || n.type === 'SESSION_TOPIC' || n.type === 'OBSIDIAN_NOTE');
+    const stage4Nodes = nodes.filter(n => !stage0Nodes.includes(n) && !stage1Nodes.includes(n) && !stage2Nodes.includes(n) && !stage3Nodes.includes(n));
+
+    const stages = [
+      { delay: 0,    getNodes: () => [...stage0Nodes], name: 'Core Matrix' },
+      { delay: 200,  getNodes: () => [...stage0Nodes, ...stage1Nodes], name: 'Directives & Clusters' },
+      { delay: 700,  getNodes: () => [...stage0Nodes, ...stage1Nodes, ...stage2Nodes], name: 'Skills & Targets' },
+      { delay: 1300, getNodes: () => [...stage0Nodes, ...stage1Nodes, ...stage2Nodes, ...stage3Nodes], name: 'Insights & Facts' },
+      { delay: 1900, getNodes: () => [...nodes], name: 'Outer Constellation' },
+      { delay: 2500, getNodes: () => [...nodes], name: 'Settled Network' }
+    ];
+
+    const nodeCountEl = document.getElementById('galaxy-node-count');
+    const linkCountEl = document.getElementById('galaxy-link-count');
+
+    // Immediately reveal container with Stage 0
+    if (this.container) {
+      this.container.classList.add('ready');
+    }
+
+    this._assemblyTimers = stages.map((st, idx) => {
+      return setTimeout(() => {
+        const curNodes = st.getNodes();
+        const activeIds = new Set(curNodes.map(n => n.id));
+        const curLinks = idx === 5 ? allLinks : filterLinks(activeIds);
+
+        this.graph.graphData({
+          nodes: curNodes,
+          links: curLinks
+        });
+
+        if (nodeCountEl) nodeCountEl.textContent = curNodes.length;
+        if (linkCountEl) linkCountEl.textContent = curLinks.length;
+
+        console.log(`[KnowledgeGraph] Assembly Stage ${idx} (${st.name}): ${curNodes.length} nodes, ${curLinks.length} links`);
+
+        if (idx === stages.length - 1) {
+          this._fullData = null;
+          this._assemblyTimers = [];
+        }
+      }, st.delay);
+    });
+  },
+
+  async fetchData() {
+    try {
+      if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_knowledge_graph_data === 'function') {
+        const res = await window.pywebview.api.get_knowledge_graph_data(1500);
+        if (res && res.nodes) {
+          this.setData(res);
+        }
+      }
+    } catch (e) {
+      console.warn('[KnowledgeGraph] Pywebview fetch error:', e);
+    }
+  },
+
+  pause() {
+    if (this.graph && !this.isPaused) {
+      const controls = this.graph.controls();
+      if (controls) controls.autoRotate = false;
+      this.graph.pauseAnimation();
+      this.isPaused = true;
+      if (this.container) {
+        this.container.classList.remove('ready');
+        this.container.style.display = 'none';
+      }
+    }
+  },
+
+  resume() {
+    if (this.graph && this.isPaused) {
+      if (this.container) {
+        this.container.style.display = 'block';
+        requestAnimationFrame(() => {
+          this.container.classList.add('ready');
+        });
+      }
+      this.graph.resumeAnimation();
+      this.isPaused = false;
+      const controls = this.graph.controls();
+      if (controls) controls.autoRotate = false;
+      this.resize();
+    }
+  },
+
+  _ensureSceneRefs() {
+    if (this.graphGroup && this.ambientLight) return;
+    if (!this.graph || typeof this.graph.scene !== 'function') return;
+    const scene = this.graph.scene();
+    if (!scene) return;
+    if (!this.graphGroup) {
+      this.graphGroup = scene.children.find(c => c.type === 'Group') || null;
+    }
+    if (!this.ambientLight) {
+      this.ambientLight = scene.children.find(c => c.type === 'AmbientLight') || null;
+    }
+  },
+
+  updateAudioEnergy(energy) {
+    if (this.isPaused) return;
+    this._ensureSceneRefs();
+    if (!this.graphGroup) return;
+
+    const targetNorm = Math.min(1.0, Math.max(0, (energy || 0) / 255));
+    if (this._smoothedNorm === undefined) {
+      this._smoothedNorm = targetNorm;
+    }
+    // Asymmetric exponential smoothing: fast attack (0.18) for punchy voice response,
+    // graceful release (0.08) for smooth harmonic decay without discrete jumps
+    const lerpFactor = targetNorm > this._smoothedNorm ? 0.18 : 0.08;
+    this._smoothedNorm += (targetNorm - this._smoothedNorm) * lerpFactor;
+    const norm = this._smoothedNorm;
+
+    const scale = 1.0 + (norm * 0.08); // Whole-sphere breathing pulse (O(1) GPU transform, uniform isotropic)
+    this.graphGroup.scale.set(scale, scale, scale);
+
+    if (this.coronaMesh) {
+      const cScale = 1.0 + (norm * 0.35);
+      this.coronaMesh.scale.set(cScale, cScale, cScale);
+      if (this.coronaMesh.material) {
+        this.coronaMesh.material.opacity = 0.45 + (norm * 0.40);
+      }
+    }
+
+    if (this.ambientLight) {
+      this.ambientLight.intensity = 1.3 + (norm * 0.9);
+    }
+  },
+
+  startAudioTick() {
+    // Consolidated: updates are driven synchronously by updateJarvisAudioLoop to eliminate duplicate RAF loops
+  }
+};
+window.JarvisKnowledgeGraph = JarvisKnowledgeGraph;
+
 function initJarvisHud() {
-  jarvisCanvas = document.getElementById('jarvis-hud-canvas') || document.getElementById('joe-hud-canvas');
-  if (jarvisCanvas) jarvisCtx = jarvisCanvas.getContext('2d');
-  HudGalaxy.init(jarvisCanvas);
+  if (window.JarvisKnowledgeGraph) {
+    window.JarvisKnowledgeGraph.init();
+  }
   setHudState('idle');
 
   const toggleBtn = document.getElementById('hud-color-toggle');
@@ -8384,11 +8012,11 @@ function initJarvisHud() {
   }
   setHudColorTheme(jarvisHudColorTheme);
 
-  requestAnimationFrame(drawJarvisHud);
+  requestAnimationFrame(updateJarvisAudioLoop);
 }
 function initJoeHud() { return initJarvisHud(); }
 window.initJarvisHud = initJarvisHud;
-window.initJoeHud = initJarvisHud;
+window.initJoeHud = initJoeHud;
 
 let _thinkingWatchdogTimer = null;
 
@@ -8408,9 +8036,6 @@ function setHudState(state) {
         }
       }
     }, 35000);
-  }
-  if (window.HudGalaxy) {
-    HudGalaxy.setState(state);
   }
   if (typeof window.updateGodsEyeVoiceWidget === 'function') {
     window.updateGodsEyeVoiceWidget(state);
@@ -8472,19 +8097,7 @@ function setHudState(state) {
   }
 }
 
-function drawJarvisHud() {
-  // Pause Screen 1 HUD galaxy canvas when focused on Screen 2 (Cesium Globe)
-  if (typeof SpatialNav !== 'undefined' && SpatialNav.currentX > 800) {
-    requestAnimationFrame(drawJarvisHud);
-    return;
-  }
-
-  if (!jarvisCanvas) jarvisCanvas = document.getElementById('jarvis-hud-canvas') || document.getElementById('joe-hud-canvas');
-  if (!jarvisCanvas) {
-    requestAnimationFrame(drawJarvisHud);
-    return;
-  }
-
+function updateJarvisAudioLoop() {
   // Real audio frequency reactive energy for TTS speech & microphone input
   if (jarvisHudState === 'speaking' && window.ttsAnalyser && window.ttsDataArray) {
     window.ttsAnalyser.getByteFrequencyData(window.ttsDataArray);
@@ -8513,12 +8126,11 @@ function drawJarvisHud() {
     jarvisAudioEnergy = 8 + Math.sin(Date.now() / 800) * 4;
   }
 
-  HudGalaxy.render(jarvisAudioEnergy);
-  requestAnimationFrame(drawJarvisHud);
+  if (window.JarvisKnowledgeGraph && typeof window.JarvisKnowledgeGraph.updateAudioEnergy === 'function') {
+    window.JarvisKnowledgeGraph.updateAudioEnergy(jarvisAudioEnergy);
+  }
+  requestAnimationFrame(updateJarvisAudioLoop);
 }
-function drawJoeHud() { return drawJarvisHud(); }
-window.drawJarvisHud = drawJarvisHud;
-window.drawJoeHud = drawJarvisHud;
 
 /* ---------- Real-Time EKG Heartbeat Waveform Line Canvas Renderer ---------- */
 let ekgCanvas = null;
@@ -8769,6 +8381,10 @@ function startVadMonitor(stream) {
 }
 
 async function startMicListening() {
+  if (window.isVoiceMuted && !isSpacebarPushToTalk) {
+    console.log('[JarvisSTT] Mic start prevented: Voice is muted (hold Spacebar for Push-to-Talk).');
+    return;
+  }
   if (isMicListening) {
     if (isSpacebarPushToTalk) return; // Do not toggle off while user is holding push-to-talk
     stopMicListening();
@@ -9119,15 +8735,11 @@ if (micBtn) {
   micBtn.addEventListener('click', (e) => {
     e.preventDefault();
     const now = Date.now();
-    if (now - lastMicToggleTime < 400) return; // Debounce rapid clicks
+    if (now - lastMicToggleTime < 350) return; // Debounce rapid clicks
     lastMicToggleTime = now;
 
-    if (typeof window.triggerVoiceMicCommand === 'function') {
-      window.triggerVoiceMicCommand();
-    } else if (isMicListening) {
-      stopMicListening(true);
-    } else {
-      startMicListening();
+    if (typeof window.toggleVoiceMute === 'function') {
+      window.toggleVoiceMute();
     }
   });
 }
@@ -9720,10 +9332,6 @@ const TaskSurfaceManager = {
       document.querySelectorAll('.jarvis-task-surface').forEach(el => el.classList.remove('active-window'));
       elem.classList.add('active-window');
     }
-    if (window.HudGalaxy) {
-      window.HudGalaxy.highlightNode('task_' + taskId);
-      window.HudGalaxy.highlightNode('search_' + taskId);
-    }
   },
 
   startDrag(e, taskId) {
@@ -9958,7 +9566,6 @@ const TaskSurfaceManager = {
         if (newCmd && (task.type === 'terminal_command' || task.type === 'terminal')) {
           Object.values(this.tasks).forEach(oldTask => {
             if (oldTask.task_id !== task.task_id && ((oldTask.data && oldTask.data.command === newCmd) || oldTask.title === task.title)) {
-              if (window.HudGalaxy) window.HudGalaxy.removeNode('task_' + oldTask.task_id);
               this.closeTaskSurface(oldTask.task_id);
             }
           });
@@ -9969,81 +9576,27 @@ const TaskSurfaceManager = {
         if (openSurfaces.length > 2) {
           const oldestDone = openSurfaces.find(t => t.task_id !== task.task_id && (t.state === 'COMPLETED' || t.state === 'FAILED'));
           if (oldestDone) {
-            if (window.HudGalaxy) window.HudGalaxy.removeNode('task_' + oldestDone.task_id);
             this.closeTaskSurface(oldestDone.task_id);
           }
         }
 
-        if (window.HudGalaxy) {
-          const qText = (task.query || task.title || '').replace(/^Google Search:\s*/i, '').replace(/^Search Google for\s*/i, '');
-          window.HudGalaxy.addNode({
-            id: 'task_' + task.task_id,
-            type: 'TASK',
-            label: (task.title || 'ACTIVE TASK').toUpperCase(),
-            taskId: task.task_id,
-            state: 'running'
-          });
-          window.HudGalaxy.connectNodes('node_core', 'task_' + task.task_id);
-
-          const isSearch = task.type === 'search' || (task.query && task.query.length > 0) || qText.toLowerCase().includes('google');
-          if (isSearch) {
-            window.HudGalaxy.addNode({
-              id: 'search_' + task.task_id,
-              type: 'SEARCH',
-              label: qText || 'GOOGLE SEARCH',
-              taskId: task.task_id,
-              parentId: 'task_' + task.task_id,
-              state: 'running'
-            });
-            window.HudGalaxy.connectNodes('task_' + task.task_id, 'search_' + task.task_id);
-          }
-        }
         this.renderTaskSurface(task);
         break;
       case 'task.started':
-        // Lifecycle update only. The task surface and galaxy nodes are created by task.created.
-        // Never create another window/node for a started event.
+        // Lifecycle update only. The task surface is created by task.created.
+        // Never create another window for a started event.
         if (this.tasks[task.task_id]) {
           this.tasks[task.task_id] = task;
           this.renderTaskSurface(task);
         }
         break;
       case 'task.finding':
-        if (window.HudGalaxy && task.findings && task.findings.length > 0) {
-          task.findings.forEach((finding, idx) => {
-            const findingNodeId = 'res_' + task.task_id + '_' + idx;
-            const parentNodeId = (task.type === 'search' || task.query) ? ('search_' + task.task_id) : ('task_' + task.task_id);
-            window.HudGalaxy.addNode({
-              id: findingNodeId,
-              type: 'RESULT',
-              label: finding.title || 'RESULT',
-              taskId: task.task_id,
-              parentId: parentNodeId,
-              state: 'active',
-              metadata: finding
-            });
-            window.HudGalaxy.connectNodes(parentNodeId, findingNodeId);
-          });
-        }
         this.renderTaskSurface(task);
         break;
       case 'task.completed':
-        if (window.HudGalaxy) {
-          window.HudGalaxy.updateNode({ id: 'task_' + task.task_id, state: 'settled' });
-          window.HudGalaxy.updateNode({ id: 'search_' + task.task_id, state: 'settled' });
-          if (task.findings) {
-            task.findings.forEach((_, idx) => {
-              window.HudGalaxy.updateNode({ id: 'res_' + task.task_id + '_' + idx, state: 'settled' });
-            });
-          }
-          window.HudGalaxy.settle();
-        }
         this.renderTaskSurface(task);
         break;
       case 'task.failed':
-        if (window.HudGalaxy) {
-          window.HudGalaxy.updateNode({ id: 'task_' + task.task_id, state: 'failed' });
-        }
         this.renderTaskSurface(task);
         break;
       case 'task.progress':
@@ -10058,15 +9611,6 @@ const TaskSurfaceManager = {
         this.expandTaskSurface(task.task_id);
         break;
       case 'task.closed':
-        if (window.HudGalaxy) {
-          window.HudGalaxy.removeNode('task_' + task.task_id);
-          window.HudGalaxy.removeNode('search_' + task.task_id);
-          if (task.findings) {
-            task.findings.forEach((_, idx) => {
-              window.HudGalaxy.removeNode('res_' + task.task_id + '_' + idx);
-            });
-          }
-        }
         this.closeTaskSurface(task.task_id);
         break;
     }
@@ -10780,9 +10324,6 @@ const TaskSurfaceManager = {
   },
 
   selectItem(taskId, idx) {
-    if (window.HudGalaxy) {
-      window.HudGalaxy.highlightNode('res_' + taskId + '_' + idx);
-    }
     const task = this.tasks[taskId];
     if (task && task.findings && task.findings[idx]) {
       const f = task.findings[idx];
@@ -10852,8 +10393,10 @@ async function updateSpatialSystemTelemetry() {
 function updateGalaxyMeta() {
   const nodes = document.getElementById('galaxy-node-count');
   const links = document.getElementById('galaxy-link-count');
-  if (nodes && window.HudGalaxy && HudGalaxy.nodes) nodes.textContent = String(HudGalaxy.nodes.size);
-  if (links && window.HudGalaxy && HudGalaxy.links) links.textContent = String(HudGalaxy.links.length);
+  if (window.JarvisKnowledgeGraph && window.JarvisKnowledgeGraph.data) {
+    if (nodes) nodes.textContent = String((window.JarvisKnowledgeGraph.data.nodes || []).length);
+    if (links) links.textContent = String((window.JarvisKnowledgeGraph.data.links || []).length);
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -10869,7 +10412,6 @@ document.addEventListener('DOMContentLoaded', () => {
       applyConfigToForm(parsed);
     }
   } catch(e) {}
-  if (window.HudGalaxy && typeof HudGalaxy.resize === 'function') HudGalaxy.resize();
   updateSpatialSystemTelemetry();
   spatialTelemetryTimer = setInterval(updateSpatialSystemTelemetry, 2000);
   setInterval(updateGalaxyMeta, 500);
@@ -11759,6 +11301,12 @@ window.jarvis = window.joe = {
         }
         break;
 
+      case 'knowledge_graph_data':
+        if (window.JarvisKnowledgeGraph && data) {
+          window.JarvisKnowledgeGraph.setData(data);
+        }
+        break;
+
       default:
         break;
     }
@@ -11767,6 +11315,7 @@ window.jarvis = window.joe = {
 window.receive = (event, data) => (window.jarvis || window.joe).receive(event, data);
 
 setTimeout(() => { if (api() && api().list_cases) api().list_cases(); }, 300);
+setTimeout(() => { if (window.JarvisKnowledgeGraph) window.JarvisKnowledgeGraph.fetchData(); }, 450);
 
 /* =====================================================================
    PORTED 3D GRAPH & GEO ENGINE
@@ -13643,21 +13192,15 @@ const SpatialNav = {
     }
   },
 
+  isPointerDown: false,
+
   onPointerDown(e) {
-    if (e.target.closest('input, textarea, button, a, select, option, .jarvis-task-surface, .overlay, .overlay-panel, #sidebar, .spatial-dock-item, #spatial-dock, .globe-hud-btn, .nav-btn, .top-bar-menu-btn, #spatial-globe-hud, .globe-layer-toggle, .radio-tuner-box, #globe-inspect-card, #globe-hud-launcher, #jarvis-top-bar, #jarvis-input-bar, .spatial-edge-strip, .cr-finding-card, .cr-action-btn, .cr-mini-btn, .cr-feed-scroll, #cr-graph-container, #hud-recenter-btn, #jarvis-hud-node-tooltip')) {
+    if (e.target.closest('input, textarea, button, a, select, option, .jarvis-task-surface, .overlay, .overlay-panel, #sidebar, .spatial-dock-item, #spatial-dock, .globe-hud-btn, .nav-btn, .top-bar-menu-btn, #spatial-globe-hud, .globe-layer-toggle, .radio-tuner-box, #globe-inspect-card, #globe-hud-launcher, #jarvis-top-bar, #jarvis-input-bar, .spatial-edge-strip, .cr-finding-card, .cr-action-btn, .cr-mini-btn, .cr-feed-scroll')) {
       return;
     }
 
-    // Do not initiate screen glide if mouse is over HUD galaxy or if HUD is being held/rotated
-    if (window.HudGalaxy && (window.HudGalaxy.isDragging || (typeof window.HudGalaxy.isPointerOverHud === 'function' && window.HudGalaxy.isPointerOverHud(e.clientX, e.clientY)))) {
-      return;
-    }
-
-    if (this.currentX > 550 && e.target.closest('#cesium-spatial-wrapper')) {
-      return;
-    }
-
-    this.isDragging = true;
+    this.isPointerDown = true;
+    this.isDragging = false;
     this.dragStartX = e.clientX;
     this.dragStartY = e.clientY;
     this.dragStartSpatialX = this.targetX;
@@ -13667,15 +13210,29 @@ const SpatialNav = {
   },
 
   onPointerMove(e) {
-    if (!this.isDragging) return;
-
-    // Immediately release spatial drag if HUD galaxy interaction is active
-    if (window.HudGalaxy && window.HudGalaxy.isDragging) {
-      this.isDragging = false;
-      return;
-    }
+    if (!this.isPointerDown) return;
 
     const dx = e.clientX - this.dragStartX;
+    const dy = e.clientY - this.dragStartY;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+
+    if (!this.isDragging) {
+      // Disambiguate screen glide from 3D sphere rotation:
+      // Engage SpatialNav only if horizontal movement is dominant (dx >= 12px and dx > 1.4 * dy)
+      if (absDx >= 12 && absDx > 1.4 * absDy) {
+        this.isDragging = true;
+        // Temporarily disable OrbitControls so screen dragging doesn't spin the 3D sphere simultaneously
+        if (window.JarvisKnowledgeGraph && window.JarvisKnowledgeGraph.graph) {
+          const controls = window.JarvisKnowledgeGraph.graph.controls();
+          if (controls) controls.enabled = false;
+        }
+      } else {
+        // Vertical or circular drag: let underlying 3D controls (OrbitControls / Cesium) handle it
+        return;
+      }
+    }
+
     const now = performance.now();
     const dt = Math.max(1, now - this.lastPointerTime);
     this.pointerVelocity = (e.clientX - this.lastPointerX) / dt;
@@ -13688,8 +13245,15 @@ const SpatialNav = {
 
   onPointerUp() {
     const wasDragging = this.isDragging;
+    this.isPointerDown = false;
     this.isDragging = false;
     this.isGlobeInteracting = false;
+
+    // Restore OrbitControls if previously locked during drag
+    if (window.JarvisKnowledgeGraph && window.JarvisKnowledgeGraph.graph) {
+      const controls = window.JarvisKnowledgeGraph.graph.controls();
+      if (controls) controls.enabled = true;
+    }
 
     if (wasDragging) {
       // Natural flick gesture with 3 screen detents
@@ -13711,11 +13275,7 @@ const SpatialNav = {
   },
 
   onWheel(e) {
-    // If pointer is over HUD Galaxy canvas, let galaxy zoom handle it without spatial gliding
-    if (window.HudGalaxy && typeof window.HudGalaxy.isPointerOverHud === 'function' && window.HudGalaxy.isPointerOverHud(e.clientX, e.clientY)) {
-      return;
-    }
-
+    // 1. Universal two-finger horizontal touchpad swipe across all screens
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 2) {
       e.preventDefault();
       this.targetX = Math.max(-950, Math.min(950, this.targetX + e.deltaX * 1.5));
@@ -13728,6 +13288,12 @@ const SpatialNav = {
       return;
     }
 
+    // 2. If pointer is over 3D Knowledge Graph, let vertical graph zoom handle it without spatial gliding
+    if (e.target.closest('#jarvis-knowledge-graph-container, #jarvis-3d-kg-mount, .knowledge-graph-container')) {
+      return;
+    }
+
+    // 3. Screen 3 Globe zoom
     if (this.currentX > 500 && !e.target.closest('#thread, .jarvis-window-body, #spatial-globe-hud')) {
       e.preventDefault();
       this.targetZoom = Math.max(340, Math.min(850, this.targetZoom + e.deltaY * 0.5));
@@ -13847,6 +13413,15 @@ const SpatialNav = {
         leftEdge.style.pointerEvents = this.currentX > -400 ? 'auto' : 'none';
         leftEdge.style.visibility = this.currentX > -400 ? 'visible' : 'hidden';
         if (leftLabel) leftLabel.textContent = 'COLD ROOM';
+      }
+    }
+
+    // 3D Knowledge Graph WebGL Lifecycle Governor: Active ONLY on Screen 2 (absRatio < 0.45)
+    if (window.JarvisKnowledgeGraph) {
+      if (absRatio < 0.45) {
+        window.JarvisKnowledgeGraph.resume();
+      } else {
+        window.JarvisKnowledgeGraph.pause();
       }
     }
 
@@ -15378,9 +14953,9 @@ function createSharpStarTexture() {
   const half = size / 2;
   const grad = ctx.createRadialGradient(half, half, 0, half, half, half);
   grad.addColorStop(0, 'rgba(255,255,255,1.0)');
-  grad.addColorStop(0.15, 'rgba(255,255,255,0.95)');
-  grad.addColorStop(0.40, 'rgba(255,255,255,0.40)');
-  grad.addColorStop(0.75, 'rgba(255,255,255,0.08)');
+  grad.addColorStop(0.18, 'rgba(255,255,255,0.85)');
+  grad.addColorStop(0.45, 'rgba(255,255,255,0.25)');
+  grad.addColorStop(0.75, 'rgba(255,255,255,0.04)');
   grad.addColorStop(1.0, 'rgba(255,255,255,0.0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
@@ -15454,26 +15029,26 @@ function sfInit() {
   }
 
   // 1. Universal Cosmic Celestial Shell (centered at cx=0, spanning Cold Room, HUD, and Globe symmetrically)
-  // Fine micro-stars (7,000 sharp points)
-  sfGroup.add(buildLayer(7000, 450, 7500, 0xffffff, 1.5, 0.95, 0, 0, 0));
-  // Diamond blue-white stars for depth and parallax (2,200 stars)
-  sfGroup.add(buildLayer(2200, 350, 6000, 0xbfe3ff, 2.2, 0.85, 0, 0, 0));
-  // High-magnitude navigational guide stars (600 accent stars)
-  sfGroup.add(buildLayer(600, 320, 5000, 0xffeedd, 3.4, 0.90, 0, 0, 0));
-  // Microscopic cosmic stardust belt (3,500 stellar dust grains)
-  sfGroup.add(buildLayer(3500, 600, 7000, 0xe0f2fe, 1.0, 0.70, 0, 0, 0));
-  // Interstellar distant nebulae (deep galactic midnight navy & violet)
-  sfGroup.add(buildLayer(18, 1400, 4200, 0x06152d, 160.0, 0.10, 0, 0, 0));
-  sfGroup.add(buildLayer(14, 1600, 4600, 0x180d32, 180.0, 0.08, 0, 0, 0));
+  // Fine micro-stars (7,000 sharp pure-white points)
+  sfGroup.add(buildLayer(7000, 450, 7500, 0xffffff, 3.8, 0.95, 0, 0, 0));
+  // Diamond silver & subtle pale blue-white stars for realistic depth and parallax (2,200 stars)
+  sfGroup.add(buildLayer(2200, 350, 6000, 0xf0f7ff, 6.5, 0.85, 0, 0, 0));
+  // High-magnitude brilliant white guide stars (600 diamond accent stars)
+  sfGroup.add(buildLayer(600, 320, 5000, 0xffffff, 10.0, 0.95, 0, 0, 0));
+  // Microscopic cosmic stardust belt (3,500 subtle silver dust grains)
+  sfGroup.add(buildLayer(3500, 600, 7000, 0xf1f5f9, 3.0, 0.65, 0, 0, 0));
+  // Neutral monochrome deep-space dust (zero color hue)
+  sfGroup.add(buildLayer(18, 1400, 4200, 0x030814, 150.0, 0.05, 0, 0, 0));
+  sfGroup.add(buildLayer(14, 1600, 4600, 0x050a18, 170.0, 0.04, 0, 0, 0));
 
   // 2. Dedicated Deep-Space Orbit Cosmos directly framing the 3D Earth Globe (Screen 3 at x=950)
   const globeCosmos = new THREE.Group();
   globeCosmos.position.set(950, 0, 0);
-  globeCosmos.add(buildLayer(4500, 380, 4200, 0xffffff, 1.4, 0.98));
-  globeCosmos.add(buildLayer(1400, 340, 2800, 0xa5f3fc, 2.2, 0.88));
-  globeCosmos.add(buildLayer(250, 360, 2200, 0xfef08a, 3.2, 0.85));
-  globeCosmos.add(buildLayer(16, 950, 2400, 0x071e3d, 140.0, 0.15));
-  globeCosmos.add(buildLayer(10, 1200, 2800, 0x190e38, 160.0, 0.12));
+  globeCosmos.add(buildLayer(4500, 380, 4200, 0xffffff, 3.8, 0.95));
+  globeCosmos.add(buildLayer(1400, 340, 2800, 0xf0f7ff, 6.5, 0.85));
+  globeCosmos.add(buildLayer(250, 360, 2200, 0xffffff, 9.5, 0.90));
+  globeCosmos.add(buildLayer(16, 950, 2400, 0x030814, 130.0, 0.06));
+  globeCosmos.add(buildLayer(10, 1200, 2800, 0x050a18, 150.0, 0.05));
   sfScene.add(globeCosmos);
   window._globeCosmosGroup = globeCosmos;
 
@@ -15481,12 +15056,12 @@ function sfInit() {
   const coldRoomCosmos = new THREE.Group();
   coldRoomCosmos.position.set(-950, 0, 0);
   // Dense, brilliant field of sharp pinprick stars, diamond highlights, and deep space cosmos behind The Cold Room
-  coldRoomCosmos.add(buildLayer(5000, 320, 4200, 0xffffff, 1.5, 0.98));
-  coldRoomCosmos.add(buildLayer(1600, 280, 3000, 0xa5f3fc, 2.2, 0.92));
-  coldRoomCosmos.add(buildLayer(450, 300, 2500, 0x38bdf8, 3.0, 0.88));
-  coldRoomCosmos.add(buildLayer(250, 340, 2200, 0xffeedd, 3.2, 0.85));
-  coldRoomCosmos.add(buildLayer(20, 800, 2600, 0x071e3d, 140.0, 0.14));
-  coldRoomCosmos.add(buildLayer(12, 1000, 3000, 0x190e38, 160.0, 0.10));
+  coldRoomCosmos.add(buildLayer(5000, 320, 4200, 0xffffff, 3.8, 0.95));
+  coldRoomCosmos.add(buildLayer(1600, 280, 3000, 0xf0f7ff, 6.5, 0.88));
+  coldRoomCosmos.add(buildLayer(450, 300, 2500, 0xf8fafc, 7.5, 0.85));
+  coldRoomCosmos.add(buildLayer(250, 340, 2200, 0xffffff, 9.5, 0.90));
+  coldRoomCosmos.add(buildLayer(20, 800, 2600, 0x030814, 130.0, 0.06));
+  coldRoomCosmos.add(buildLayer(12, 1000, 3000, 0x050a18, 150.0, 0.05));
   sfScene.add(coldRoomCosmos);
   window._coldRoomCosmosGroup = coldRoomCosmos;
 
@@ -15577,15 +15152,19 @@ function sfAnimate() {
   if (document.hidden) { sfClock.getDelta(); return; }
 
   const delta = sfClock.getDelta();
-  // Visible cosmic rotation: ~0.14 rad/s (alive and moving!)
-  const speed = 0.14;
+  // Calm ambient celestial drift (~0.016 rad/s: ~8.75x slower than previous 0.14 rad/s)
+  const speed = 0.016;
   if (sfGroup) {
     sfGroup.rotation.y += speed * delta;
-    sfGroup.rotation.x += (speed * 0.18) * delta;
+    sfGroup.rotation.x += (speed * 0.15) * delta;
   }
   if (window._globeCosmosGroup) {
     window._globeCosmosGroup.rotation.y += (speed * 0.35) * delta;
     window._globeCosmosGroup.rotation.x += (speed * 0.08) * delta;
+  }
+  if (window._coldRoomCosmosGroup) {
+    window._coldRoomCosmosGroup.rotation.y += (speed * 0.25) * delta;
+    window._coldRoomCosmosGroup.rotation.x += (speed * 0.06) * delta;
   }
 
   // Earth stays still like a map, moves with user drag; subtle realistic diurnal drift only when in Screen 2
@@ -18250,7 +17829,7 @@ function initGlobeIntelligence(viewer) {
     }
   };
 
-  // God's Eye Voice Mute Toggle (Click on bottom voice widget)
+  // God's Eye Voice Mute Toggle (Click on bottom voice widget or composer mic button)
   window.toggleVoiceMute = function() {
     window.isVoiceMuted = !window.isVoiceMuted;
 
@@ -18261,32 +17840,30 @@ function initGlobeIntelligence(viewer) {
     const micBtn = document.getElementById('mic-btn');
     if (micBtn) {
       micBtn.classList.toggle('muted', window.isVoiceMuted);
+      micBtn.title = window.isVoiceMuted 
+        ? "Microphone MUTED — Wake word disabled (Hold Space for Push-to-Talk)" 
+        : "Voice Active — Click to mute (or hold Space to speak)";
     }
 
     if (window.isVoiceMuted) {
-      // 1. If currently listening, abort and discard recording
+      // 1. If currently listening, abort and discard recording immediately
       if (typeof isMicListening !== 'undefined' && isMicListening) {
         if (typeof stopMicListening === 'function') stopMicListening(true);
       }
       // 2. Cancel any active speech playback
       if (typeof resetJarvisAudioQueue === 'function') resetJarvisAudioQueue();
-      if (window.api && window.api().cancel_playback) {
-        try { window.api().cancel_playback(); } catch(e) {}
+      const pyApi = (typeof api === 'function' ? api() : null) || (window.pywebview && window.pywebview.api);
+      if (pyApi && pyApi.cancel_playback) {
+        try { pyApi.cancel_playback(); } catch(e) {}
       }
-      // 3. Audio confirmation cue
-      if (window.JarvisSFX && window.JarvisSFX.micCancel) {
-        window.JarvisSFX.micCancel();
-      }
+      // 3. ZERO audio output: No sound effects or chimes on mute
       // 4. Update HUD visual widget and subtitles
       window.updateGodsEyeVoiceWidget('muted');
       if (typeof showSubtitles === 'function') {
         showSubtitles('VOICE MUTED — Wake word disabled. Hold Space to speak.', 'VOICE CONTROL');
       }
     } else {
-      // Unmuting: restore standby mode
-      if (window.JarvisSFX && window.JarvisSFX.micStart) {
-        window.JarvisSFX.micStart();
-      }
+      // Unmuting: ZERO audio output: No sound effects or chimes on unmute
       window.updateGodsEyeVoiceWidget('mic_off');
       if (typeof showSubtitles === 'function') {
         showSubtitles('VOICE ACTIVE — Wake word listening restored.', 'VOICE CONTROL');
@@ -18294,8 +17871,9 @@ function initGlobeIntelligence(viewer) {
     }
 
     // Inform backend Python to pause/resume hardware audio capture
-    if (window.api && window.api().set_voice_mute) {
-      window.api().set_voice_mute(window.isVoiceMuted).catch(err => {
+    const pyApi = (typeof api === 'function' ? api() : null) || (window.pywebview && window.pywebview.api);
+    if (pyApi && pyApi.set_voice_mute) {
+      pyApi.set_voice_mute(window.isVoiceMuted).catch(err => {
         console.warn('[JarvisVoice] Error communicating mute state to backend:', err);
       });
     }
@@ -20376,6 +19954,11 @@ function bootVisuals() {
   }
   if (typeof THREE !== 'undefined') sfInit();
   initCesiumGlobe();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      document.body.classList.add('app-ready');
+    });
+  });
 }
 
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
@@ -20385,6 +19968,7 @@ if (document.readyState === 'complete' || document.readyState === 'interactive')
   window.addEventListener('load', bootVisuals);
 }
 window.addEventListener('pywebviewready', bootVisuals);
+setTimeout(() => document.body.classList.add('app-ready'), 600);
 
 /* =====================================================================
    J.A.R.V.I.S. TOP-CENTER HUD NOTCH CONTROLLER
