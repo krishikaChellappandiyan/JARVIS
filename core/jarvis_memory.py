@@ -186,22 +186,34 @@ class JarvisMemory:
         return combined[:limit]
 
     def store_custom_rule(self, rule_text: str) -> bool:
-        """Stores a persistent operator semantic rule or custom phrase definition."""
+        """Stores a persistent operator semantic rule or custom phrase definition with update-in-place deduplication."""
         if not rule_text or not str(rule_text).strip():
             return False
         clean = str(rule_text).strip()
+        clean_lower = clean.lower()
         mem = self.load_memory()
         rules = mem.setdefault("custom_rules", [])
-        if clean not in rules:
+
+        # Check case-insensitively for existing rule to update in place
+        match_idx = next((i for i, r in enumerate(rules) if str(r).strip().lower() == clean_lower), None)
+        if match_idx is not None:
+            rules[match_idx] = clean
+        else:
             rules.append(clean)
+
         # Also record in speech patterns for immediate prompt awareness
         patterns = mem.setdefault("user_speech_patterns", [])
         rule_desc = f"Operator rule / phrase definition: {clean}"
-        if rule_desc not in patterns:
+        desc_lower = f"operator rule / phrase definition: {clean_lower}"
+        pat_idx = next((i for i, p in enumerate(patterns) if str(p).strip().lower() == desc_lower or clean_lower in str(p).lower()), None)
+        if pat_idx is not None:
+            patterns[pat_idx] = rule_desc
+        else:
             patterns.append(rule_desc)
+
         self._save(mem)
 
-        # Also sync to LessonsStore so semantic RAG / false-positive memory has it
+        # Also sync to LessonsStore so semantic RAG / false-positive memory has it (updates in place)
         try:
             from memory.lessons_store import LessonsStore
             LessonsStore().add_lesson(

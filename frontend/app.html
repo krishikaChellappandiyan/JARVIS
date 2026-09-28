@@ -399,10 +399,11 @@
     backdrop-filter: none; -webkit-backdrop-filter: none;
     box-shadow: 0 8px 32px rgba(0,0,0,0.4);
     overflow: hidden; position: relative;
-    pointer-events: none !important;
+    pointer-events: auto !important;
   }
   #chat-panel-header,
   .workspace-card-header,
+  #thread,
   #thread > *,
   #thinking-indicator {
     pointer-events: auto !important;
@@ -1681,7 +1682,7 @@
   #bg-layer, #bg-overlay { display: none !important; }
   body { background: transparent !important; }
 
-  #jarvis-chat-container, #thread { pointer-events: none !important; }
+  #jarvis-chat-container, #thread { pointer-events: auto !important; }
   #thread > * { pointer-events: auto !important; }
   #jarvis-hud-floating-status, #ekg-container { display: none !important; }
   #spatial-galaxy-meta, #spatial-system-telemetry { display: none !important; }
@@ -1705,7 +1706,7 @@
     box-shadow: none !important;
     overflow: hidden !important;
     z-index: 250 !important;
-    pointer-events: none !important;
+    pointer-events: auto !important;
     display: flex !important;
     flex-direction: column !important;
     justify-content: flex-end !important;
@@ -3721,15 +3722,11 @@ body.app-ready {
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 4px;
   color: #94A3B8;
-  font-family: var(--mono);
-  font-size: 8.5px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  padding: 3px 8px;
+  padding: 4px 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
   transition: all 0.15s ease;
   pointer-events: auto !important;
 }
@@ -4985,9 +4982,8 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
               <span class="chat-panel-pulse"></span>
               <span>J.A.R.V.I.S. INTELLIGENCE FEED</span>
             </div>
-            <button type="button" class="chat-panel-collapse-btn" onclick="window.toggleChatPanel()" title="Collapse Chat Panel (Hide Text Box)">
+            <button type="button" class="chat-panel-collapse-btn" onclick="event.stopPropagation(); window.toggleChatPanel()" title="Collapse Chat Panel (Hide Text Box)">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              <span>COLLAPSE</span>
             </button>
           </div>
 
@@ -5034,9 +5030,6 @@ body.voiceos-mode #jarvis-hud-notch-wrapper {
           </button>
           <button class="send" id="send-btn" title="Send">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          </button>
-          <button type="button" id="composer-collapse-btn" onclick="window.toggleChatPanel()" title="Collapse Chat Panel (Hide Text Box)" style="background:transparent; border:none; color:rgba(255,255,255,0.4); cursor:pointer; padding:6px 6px; display:flex; align-items:center; justify-content:center; border-radius:4px; transition:all 0.15s ease;" onmouseenter="this.style.color='#00F0FF'; this.style.background='rgba(0,240,255,0.1)'" onmouseleave="this.style.color='rgba(255,255,255,0.4)'; this.style.background='transparent'">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </button>
         </div>
       </footer>
@@ -5739,7 +5732,7 @@ function appendCopyButton(el) {
   const actions = document.createElement('div');
   actions.className = 'msg-actions';
   actions.innerHTML = `
-    <button class="action-copy-btn" onclick="copyMessageText(this)" title="Copy narrative response">
+    <button class="action-copy-btn" onclick="event.stopPropagation(); copyMessageText(this, event)" title="Copy narrative response">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -5750,7 +5743,9 @@ function appendCopyButton(el) {
   el.appendChild(actions);
 }
 
-function copyMessageText(btn) {
+function copyMessageText(btn, e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  else if (window.event && window.event.stopPropagation) window.event.stopPropagation();
   const msgAnswer = btn.closest('.msg-answer');
   if (!msgAnswer) return;
   const clone = msgAnswer.cloneNode(true);
@@ -5897,6 +5892,7 @@ function updateStreamingChunk(chunkText, turnId) {
     startStreamingAnswer(tId);
   }
   if (!currentStreamingElem) return;
+  if (typeof window.refreshThinkingWatchdog === 'function') window.refreshThinkingWatchdog();
   streamingBuffer += chunkText;
   jarvisAudioEnergy = Math.min(255, jarvisAudioEnergy + 55 + Math.random() * 35);
   const display = cleanSpeakerPrefix(streamingBuffer);
@@ -7359,7 +7355,12 @@ const JarvisKnowledgeGraph = {
         .backgroundColor('rgba(0,0,0,0)')
         .showNavInfo(false)
         .onNodeClick(node => this.focusNode(node))
-        .onBackgroundClick(() => this.resetCamera())
+        .onBackgroundClick(event => {
+          if (event && event.target && event.target.tagName !== 'CANVAS') return;
+          if (this.focusedNode !== null) {
+            this.resetCamera();
+          }
+        })
         .nodeLabel(node => {
           if (node.id === 'core:jarvis') {
             return `<div class="kg-tooltip">
@@ -7376,7 +7377,8 @@ const JarvisKnowledgeGraph = {
             'OSINT_TARGET': 'Target of Interest',
             'OSINT_ENTITY': 'Identified Entity',
             'SESSION_TOPIC': 'Discursive Thread',
-            'CLUSTER': 'Knowledge Cluster'
+            'CLUSTER': 'Knowledge Cluster',
+            'HEURISTIC': 'Cognitive Protocol'
           };
           const typeLabel = typeNames[node.type] || (node.type || 'Cognitive Node').replace(/_/g, ' ');
           const meta = node.metadata || {};
@@ -7413,6 +7415,7 @@ const JarvisKnowledgeGraph = {
           return 'rgba(56, 189, 248, 0.65)';
         })
         .linkDirectionalParticles(link => {
+          if (link.__pulseActive) return 3;
           if (link.type === 'investigates' || (link.particles && link.particles > 1)) return 2;
           const s = typeof link.source === 'object' ? link.source.id : link.source;
           const t = typeof link.target === 'object' ? link.target.id : link.target;
@@ -7424,16 +7427,19 @@ const JarvisKnowledgeGraph = {
           return (Math.abs(hash) % 4 === 0) ? 1 : 0;
         })
         .linkDirectionalParticleSpeed(link => {
+          if (link.__pulseActive) return 0.04;
           const s = typeof link.source === 'object' ? link.source.id : link.source;
           const t = typeof link.target === 'object' ? link.target.id : link.target;
           return (s === 'core:jarvis' || t === 'core:jarvis') ? 0.008 : 0.005;
         })
         .linkDirectionalParticleWidth(link => {
+          if (link.__pulseActive) return 2.8;
           const s = typeof link.source === 'object' ? link.source.id : link.source;
           const t = typeof link.target === 'object' ? link.target.id : link.target;
           return (s === 'core:jarvis' || t === 'core:jarvis') ? 1.8 : 1.2;
         })
         .linkDirectionalParticleColor(link => {
+          if (link.__pulseActive) return '#FFFFFF';
           const s = typeof link.source === 'object' ? link.source.id : link.source;
           const t = typeof link.target === 'object' ? link.target.id : link.target;
           if (s === 'core:jarvis' || t === 'core:jarvis') return '#FFB84D';
@@ -7514,6 +7520,7 @@ const JarvisKnowledgeGraph = {
     }
   },
 
+  _hasBootAssembled: false,
   _assemblyTimers: [],
   _fullData: null,
   _nodeMaterialCache: {},
@@ -7523,6 +7530,20 @@ const JarvisKnowledgeGraph = {
     if (this._assemblyTimers && this._assemblyTimers.length > 0) {
       this._assemblyTimers.forEach(t => clearTimeout(t));
       this._assemblyTimers = [];
+    }
+    if (this.graph) {
+      const gData = this.graph.graphData();
+      if (gData && gData.nodes) {
+        gData.nodes.forEach(n => {
+          n.__energy = 1.0;
+          if (n.__material && n.__material.uniforms && n.__material.uniforms.uEnergy) {
+            n.__material.uniforms.uEnergy.value = 1.0;
+          }
+        });
+      }
+      if (gData && gData.links) {
+        gData.links.forEach(l => { l.__pulseActive = false; });
+      }
     }
     if (this._fullData && this.graph) {
       this.graph.graphData({
@@ -7536,6 +7557,7 @@ const JarvisKnowledgeGraph = {
       if (this.container) this.container.classList.add('ready');
       this._fullData = null;
     }
+    this._hasBootAssembled = true;
   },
 
   focusNode(node) {
@@ -7585,7 +7607,7 @@ const JarvisKnowledgeGraph = {
     if (!this.graph) return;
     this.fastForwardAssembly();
     this.focusedNode = null;
-    this.graph.cameraPosition({ x: 0, y: 0, z: 580 }, { x: 0, y: 0, z: 0 }, 800);
+    this.graph.cameraPosition({ x: 0, y: 0, z: 750 }, { x: 0, y: 0, z: 0 }, 800);
   },
 
   _resizeBound: false,
@@ -7649,14 +7671,15 @@ const JarvisKnowledgeGraph = {
     }
   },
 
-  _getNodeMaterial(colorHex) {
+  _getNodeMaterial(colorHex, energy = 1.0) {
     const key = String(colorHex).toLowerCase();
     if (!this._nodeMaterialCache[key]) {
       const color = new THREE.Color(colorHex);
       this._nodeMaterialCache[key] = new THREE.ShaderMaterial({
         uniforms: {
           uColor: { value: color },
-          uLightPos: { value: new THREE.Vector3(0.55, 0.75, 1.0).normalize() }
+          uLightPos: { value: new THREE.Vector3(0.55, 0.75, 1.0).normalize() },
+          uEnergy: { value: 1.0 }
         },
         vertexShader: `
           varying vec3 vNormal;
@@ -7671,6 +7694,7 @@ const JarvisKnowledgeGraph = {
         fragmentShader: `
           uniform vec3 uColor;
           uniform vec3 uLightPos;
+          uniform float uEnergy;
           varying vec3 vNormal;
           varying vec3 vViewPosition;
           void main() {
@@ -7691,13 +7715,21 @@ const JarvisKnowledgeGraph = {
             float rim = pow(1.0 - NdotV, 3.0);
             vec3 rimGlow = mix(uColor, vec3(1.0), 0.40) * rim * 1.35;
 
-            vec3 finalColor = diffuseLight + vec3(specular) + rimGlow;
+            // Modulate total output by uEnergy: 0.15 (bare dim skeleton) to 1.0 (radiant glow)
+            vec3 finalColor = (diffuseLight + vec3(specular) + rimGlow) * uEnergy;
             gl_FragColor = vec4(finalColor, 1.0);
           }
         `
       });
     }
-    return this._nodeMaterialCache[key];
+    const baseMat = this._nodeMaterialCache[key];
+    const mat = baseMat.clone();
+    mat.uniforms = {
+      uColor: { value: baseMat.uniforms.uColor.value.clone() },
+      uLightPos: { value: baseMat.uniforms.uLightPos.value },
+      uEnergy: { value: (typeof energy === 'number') ? energy : 1.0 }
+    };
+    return mat;
   },
 
   createNodeMesh(node) {
@@ -7775,23 +7807,166 @@ const JarvisKnowledgeGraph = {
       return group;
     }
 
-    // High-performance Celestial Orb with Shared BufferGeometry and Cached Fresnel ShaderMaterial
+    // High-performance Celestial Orb with Shared BufferGeometry and Fresnel ShaderMaterial
     if (!this._baseNodeGeometry) {
       this._baseNodeGeometry = new THREE.SphereGeometry(1, 16, 16);
     }
     const colorHex = node.color || '#FFB84D';
-    const mat = this._getNodeMaterial(colorHex);
+    const initialEnergy = (typeof node.__energy === 'number') ? node.__energy : (this._hasBootAssembled ? 1.0 : 0.15);
+    const mat = this._getNodeMaterial(colorHex, initialEnergy);
+    node.__material = mat;
     const mesh = new THREE.Mesh(this._baseNodeGeometry, mat);
     const r = (node.type === 'MEMORY_RULE' ? 5.2 : (node.type === 'OSINT_TARGET' ? 4.8 : (node.val ? Math.max(3.2, node.val * 0.65) : 3.8)));
     mesh.scale.set(r, r, r);
     return mesh;
   },
 
+  energizeNodeWithPulse(targetNode, sourceId = 'core:jarvis', delay = 0) {
+    if (!targetNode) return;
+    const tId = targetNode.id;
+    const graphData = this.graph ? this.graph.graphData() : null;
+    const links = graphData ? graphData.links : [];
+
+    // Find link connected to targetNode
+    let pulseLink = links.find(l => {
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      return (s === sourceId && t === tId) || (s === tId && t === sourceId);
+    });
+    if (!pulseLink) {
+      pulseLink = links.find(l => {
+        const s = typeof l.source === 'object' ? l.source.id : l.source;
+        const t = typeof l.target === 'object' ? l.target.id : l.target;
+        return s === tId || t === tId;
+      });
+    }
+
+    setTimeout(() => {
+      if (pulseLink) {
+        pulseLink.__pulseActive = true;
+        if (this.graph && typeof this.graph.linkDirectionalParticles === 'function') {
+          this.graph.linkDirectionalParticles(this.graph.linkDirectionalParticles());
+        }
+      }
+
+      // Energy propagation arrival: link pulse travels across link to the node
+      const arrivalDelay = pulseLink ? 450 : 50;
+      setTimeout(() => {
+        if (pulseLink) {
+          setTimeout(() => {
+            pulseLink.__pulseActive = false;
+            if (this.graph && typeof this.graph.linkDirectionalParticles === 'function') {
+              this.graph.linkDirectionalParticles(this.graph.linkDirectionalParticles());
+            }
+          }, 850);
+        }
+
+        const mat = targetNode.__material;
+        if (!mat || !mat.uniforms || !mat.uniforms.uEnergy) {
+          targetNode.__energy = 1.0;
+          return;
+        }
+
+        const startVal = mat.uniforms.uEnergy.value;
+        const endVal = 1.0;
+        const duration = 650;
+        const startTime = performance.now();
+
+        function stepEnergy(now) {
+          const elapsed = now - startTime;
+          const progress = Math.min(1.0, elapsed / duration);
+          const ease = 1 - Math.pow(1 - progress, 3); // Ease-out cubic
+          mat.uniforms.uEnergy.value = startVal + (endVal - startVal) * ease;
+          if (progress < 1.0) {
+            requestAnimationFrame(stepEnergy);
+          } else {
+            mat.uniforms.uEnergy.value = 1.0;
+            targetNode.__energy = 1.0;
+          }
+        }
+        requestAnimationFrame(stepEnergy);
+      }, arrivalDelay);
+    }, delay);
+  },
+
   setData(data) {
     if (!this.graph || !data) return;
-    this.fastForwardAssembly();
     this.data = data;
     const rawNodes = data.nodes || [];
+    const allLinks = data.links || [];
+
+    // Check if this is a live runtime update (boot already completed)
+    if (this._hasBootAssembled) {
+      const currentGraphData = this.graph.graphData();
+      const existingNodes = currentGraphData ? (currentGraphData.nodes || []) : [];
+      const nodePosMap = new Map();
+      existingNodes.forEach(n => {
+        nodePosMap.set(n.id, {
+          x: n.x, y: n.y, z: n.z,
+          fx: n.fx, fy: n.fy, fz: n.fz,
+          vx: n.vx, vy: n.vy, vz: n.vz,
+          energy: n.__energy !== undefined ? n.__energy : 1.0
+        });
+      });
+
+      // Find any newly added or replaced nodes
+      const newOrReplacedNodes = [];
+      rawNodes.forEach((node, idx) => {
+        if (nodePosMap.has(node.id)) {
+          const old = nodePosMap.get(node.id);
+          node.x = old.x; node.y = old.y; node.z = old.z;
+          node.fx = old.fx; node.fy = old.fy; node.fz = old.fz;
+          node.vx = old.vx; node.vy = old.vy; node.vz = old.vz;
+          node.__energy = old.energy;
+        } else {
+          // New node replacing a placeholder or added live: inherit placeholder coordinate if available
+          let inheritedPos = null;
+          for (let pIdx = 0; pIdx < 120; pIdx++) {
+            const pId = `placeholder_node_${pIdx}`;
+            if (nodePosMap.has(pId) && !rawNodes.some(rn => rn.id === pId)) {
+              inheritedPos = nodePosMap.get(pId);
+              nodePosMap.delete(pId);
+              break;
+            }
+          }
+          if (inheritedPos) {
+            node.x = inheritedPos.x; node.y = inheritedPos.y; node.z = inheritedPos.z;
+          } else {
+            const phi = Math.PI * (3 - Math.sqrt(5));
+            const y = 1 - (2 * (idx % 120) + 1) / 120;
+            const rFactor = 0.88 + 0.12 * (((idx % 120) * 1.6180339887) % 1);
+            const nodeR = 210 * rFactor;
+            const radiusAtY = Math.sqrt(Math.max(0, 1 - y * y)) * nodeR;
+            const theta = phi * idx;
+            node.x = Math.cos(theta) * radiusAtY;
+            node.y = y * nodeR;
+            node.z = Math.sin(theta) * radiusAtY;
+          }
+          node.__energy = 0.15; // Start dim
+          newOrReplacedNodes.push(node);
+        }
+      });
+
+      this.graph.graphData({
+        nodes: rawNodes,
+        links: allLinks
+      });
+
+      const nodeCountEl = document.getElementById('galaxy-node-count');
+      const linkCountEl = document.getElementById('galaxy-link-count');
+      if (nodeCountEl) nodeCountEl.textContent = rawNodes.length;
+      if (linkCountEl) linkCountEl.textContent = allLinks.length;
+
+      // Animate light propagation for newly added or replaced nodes
+      newOrReplacedNodes.forEach((node, i) => {
+        this.energizeNodeWithPulse(node, 'core:jarvis', 150 + i * 120);
+      });
+      return;
+    }
+
+    // Initial boot assembly
+    this.fastForwardAssembly();
+    this._hasBootAssembled = false;
     const N = rawNodes.length;
     const R = 210;
     const phi = Math.PI * (3 - Math.sqrt(5)); // Golden angle ~2.39996323
@@ -7817,17 +7992,14 @@ const JarvisKnowledgeGraph = {
     // 3D Fibonacci Spherical Volume Seeding (Obsidian-Style continuous filled volume, strictly isotropic)
     for (let i = 0; i < N; i++) {
       const node = nodes[i];
+      if (node.id === 'core:jarvis') {
+        node.x = 0; node.y = 0; node.z = 0;
+        node.fx = 0; node.fy = 0; node.fz = 0;
+        node.__energy = 1.0;
+        continue;
+      }
+      node.__energy = 0.15; // Non-core nodes start dim/unlit
       if (node.x === undefined || (node.x === 0 && node.y === 0 && node.z === 0)) {
-        if (node.id === 'core:jarvis') {
-          node.x = 0;
-          node.y = 0;
-          node.z = 0;
-          node.fx = 0;
-          node.fy = 0;
-          node.fz = 0;
-          continue;
-        }
-        // Exact symmetric polar spacing from +1 to -1 (zero at equator, isotropic)
         const y = 1 - (2 * i + 1) / N;
         const rFactor = 0.88 + 0.12 * ((i * 1.6180339887) % 1);
         const nodeR = R * rFactor;
@@ -7839,7 +8011,6 @@ const JarvisKnowledgeGraph = {
       }
     }
 
-    const allLinks = data.links || [];
     const fullData = { nodes: nodes, links: allLinks };
     this._fullData = fullData;
 
@@ -7865,12 +8036,12 @@ const JarvisKnowledgeGraph = {
     const stage4Nodes = nodes.filter(n => !stage0Nodes.includes(n) && !stage1Nodes.includes(n) && !stage2Nodes.includes(n) && !stage3Nodes.includes(n));
 
     const stages = [
-      { delay: 0,    getNodes: () => [...stage0Nodes], name: 'Core Matrix' },
-      { delay: 200,  getNodes: () => [...stage0Nodes, ...stage1Nodes], name: 'Directives & Clusters' },
-      { delay: 700,  getNodes: () => [...stage0Nodes, ...stage1Nodes, ...stage2Nodes], name: 'Skills & Targets' },
-      { delay: 1300, getNodes: () => [...stage0Nodes, ...stage1Nodes, ...stage2Nodes, ...stage3Nodes], name: 'Insights & Facts' },
-      { delay: 1900, getNodes: () => [...nodes], name: 'Outer Constellation' },
-      { delay: 2500, getNodes: () => [...nodes], name: 'Settled Network' }
+      { delay: 0,    getNodes: () => [...stage0Nodes], newlyAdded: stage0Nodes, name: 'Core Matrix' },
+      { delay: 250,  getNodes: () => [...stage0Nodes, ...stage1Nodes], newlyAdded: stage1Nodes, name: 'Directives & Clusters' },
+      { delay: 800,  getNodes: () => [...stage0Nodes, ...stage1Nodes, ...stage2Nodes], newlyAdded: stage2Nodes, name: 'Skills & Targets' },
+      { delay: 1450, getNodes: () => [...stage0Nodes, ...stage1Nodes, ...stage2Nodes, ...stage3Nodes], newlyAdded: stage3Nodes, name: 'Insights & Facts' },
+      { delay: 2100, getNodes: () => [...nodes], newlyAdded: stage4Nodes, name: 'Outer Constellation' },
+      { delay: 2800, getNodes: () => [...nodes], newlyAdded: [], name: 'Settled Network' }
     ];
 
     const nodeCountEl = document.getElementById('galaxy-node-count');
@@ -7895,11 +8066,20 @@ const JarvisKnowledgeGraph = {
         if (nodeCountEl) nodeCountEl.textContent = curNodes.length;
         if (linkCountEl) linkCountEl.textContent = curLinks.length;
 
+        // Light propagation: trigger pulses along incoming links for newly introduced nodes
+        if (st.newlyAdded && st.newlyAdded.length > 0) {
+          st.newlyAdded.forEach((node, nIdx) => {
+            if (node.id === 'core:jarvis') return;
+            this.energizeNodeWithPulse(node, 'core:jarvis', nIdx * 15);
+          });
+        }
+
         console.log(`[KnowledgeGraph] Assembly Stage ${idx} (${st.name}): ${curNodes.length} nodes, ${curLinks.length} links`);
 
         if (idx === stages.length - 1) {
           this._fullData = null;
           this._assemblyTimers = [];
+          this._hasBootAssembled = true;
         }
       }, st.delay);
     });
@@ -8019,6 +8199,23 @@ window.initJarvisHud = initJarvisHud;
 window.initJoeHud = initJoeHud;
 
 let _thinkingWatchdogTimer = null;
+window.refreshThinkingWatchdog = function() {
+  if (_thinkingWatchdogTimer) {
+    clearTimeout(_thinkingWatchdogTimer);
+    _thinkingWatchdogTimer = null;
+  }
+  if (jarvisHudState === 'thinking') {
+    _thinkingWatchdogTimer = setTimeout(() => {
+      if (jarvisHudState === 'thinking') {
+        console.warn('[HUD] Thinking state watchdog triggered after 60s idle timeout. Returning to idle.');
+        setHudState('idle');
+        if (typeof finalizeStreamingAnswer === 'function') {
+          finalizeStreamingAnswer(`Standby. Operation completed or timed out, ${window.getOperatorSalutation()}.`);
+        }
+      }
+    }, 60000);
+  }
+};
 
 function setHudState(state) {
   jarvisHudState = state;
@@ -8027,15 +8224,7 @@ function setHudState(state) {
     _thinkingWatchdogTimer = null;
   }
   if (state === 'thinking') {
-    _thinkingWatchdogTimer = setTimeout(() => {
-      if (jarvisHudState === 'thinking') {
-        console.warn('[HUD] Thinking state watchdog triggered after 35s timeout. Returning to idle.');
-        setHudState('idle');
-        if (typeof finalizeStreamingAnswer === 'function') {
-          finalizeStreamingAnswer(`Standby. Operation completed or timed out, ${window.getOperatorSalutation()}.`);
-        }
-      }
-    }, 35000);
+    window.refreshThinkingWatchdog();
   }
   if (typeof window.updateGodsEyeVoiceWidget === 'function') {
     window.updateGodsEyeVoiceWidget(state);
@@ -11028,6 +11217,7 @@ window.jarvis = window.joe = {
 
       case 'jarvis_pcm_audio_chunk':
         if (data && data.audio) {
+          if (typeof window.refreshThinkingWatchdog === 'function') window.refreshThinkingWatchdog();
           console.log(`[JarvisAudio] Received PCM chunk (turn=${data.turn_id}, sample_rate=${data.sample_rate}, len=${data.audio ? data.audio.length : 0})`);
           hasReceivedAudioChunk = true;
           enqueueJarvisPcmChunk(data.audio, data.sample_rate || 44100, data.text || '', data.turn_id);
@@ -13195,7 +13385,7 @@ const SpatialNav = {
   isPointerDown: false,
 
   onPointerDown(e) {
-    if (e.target.closest('input, textarea, button, a, select, option, .jarvis-task-surface, .overlay, .overlay-panel, #sidebar, .spatial-dock-item, #spatial-dock, .globe-hud-btn, .nav-btn, .top-bar-menu-btn, #spatial-globe-hud, .globe-layer-toggle, .radio-tuner-box, #globe-inspect-card, #globe-hud-launcher, #jarvis-top-bar, #jarvis-input-bar, .spatial-edge-strip, .cr-finding-card, .cr-action-btn, .cr-mini-btn, .cr-feed-scroll')) {
+    if (e.target.closest('input, textarea, button, a, select, option, #jarvis-chat-container, #jarvis-main-workspace, #thread, .msg, .msg-answer, .msg-user, .msg-actions, .action-copy-btn, #thinking-indicator, #composer, #jarvis-input-bar, #chat-panel-header, .chat-panel-collapse-btn, #workspace-content-grid, .findings-summary-card, #jarvis-hud-notch-wrapper, #jarvis-hud-notch, .chat-panel-pulse, #chat-expand-launcher, .jarvis-task-surface, .overlay, .overlay-panel, #sidebar, .spatial-dock-item, #spatial-dock, .globe-hud-btn, .nav-btn, .top-bar-menu-btn, #spatial-globe-hud, .globe-layer-toggle, .radio-tuner-box, #globe-inspect-card, #globe-hud-launcher, #jarvis-top-bar, .spatial-edge-strip, .cr-finding-card, .cr-action-btn, .cr-mini-btn, .cr-feed-scroll')) {
       return;
     }
 

@@ -27,7 +27,41 @@ PALETTE = {
     "SESSION_TOPIC": {"color": "#FB923C", "glow": "rgba(251, 146, 60, 0.75)", "val": 7},
     "CLUSTER": {"color": "#FFB84D", "glow": "rgba(255, 184, 77, 0.90)", "val": 14},
     "OBSIDIAN_NOTE": {"color": "#818CF8", "glow": "rgba(129, 140, 248, 0.75)", "val": 8},
+    "HEURISTIC": {"color": "#2DD4BF", "glow": "rgba(45, 212, 191, 0.75)", "val": 6},
 }
+
+HEURISTIC_TEMPLATES = [
+    "Sub-Millimeter Audio Filtering",
+    "Orbital Keplerian Propagation",
+    "Airspace Corridor Surveillance",
+    "Vessel AIS Transponder Lattice",
+    "Multimodal Visual Tokenization",
+    "Autonomous ReAct Decoupling",
+    "Tactical HUD Telemetry Sync",
+    "Geospatial Vector Projection",
+    "Acoustic Room Impulse Isolation",
+    "Barge-In Speech Suppressor",
+    "Cross-Session Discourse Vector",
+    "Zero-Shot Voice Model Kernel",
+    "Episodic Memory Consolidation",
+    "Spatial Stage Screen Glide Matrix",
+    "Thermal Sensor Hotspot Ingestion",
+    "Cesium 3D Terrain LOD Engine",
+    "Three.js Celestial Shader Buffer",
+    "Sentinel Ambient Vital Guard",
+    "Low-Latency WebSocket Audio Pipe",
+    "Signal Entropy Disambiguation",
+    "Kinetic Vector Correlation",
+    "Sub-Carrier Telemetry Stream",
+    "Neural Matrix Self-Diagnostic",
+    "Direct Memory Bus Optimization",
+    "High-Altitude Orbital Tracking",
+    "Synthesized Insight Cache",
+    "Tactical Lock Triangulation",
+    "Cold Room Forensic Linker",
+    "Distributed Case Telemetry",
+    "Heuristic Intent Classifier",
+]
 
 LESSON_PALETTES = [
     {"color": "#C084FC", "glow": "rgba(192, 132, 252, 0.85)"}, # Luminous Violet
@@ -176,6 +210,46 @@ class KnowledgeGraphAdapter:
                         "target": rules[(idx * 3) % len(rules)],
                         "type": "monitored_by",
                         "strength": 0.3,
+                        "particles": 0,
+                    })
+
+        # 5.5 Maintain Constant Constellation Density with Replaceable Baseline Placeholders
+        target_density = min(max_nodes, 120)
+        if len(raw_nodes) < target_density:
+            needed = target_density - len(raw_nodes)
+            for i in range(needed):
+                tpl_idx = i % len(HEURISTIC_TEMPLATES)
+                cycle = i // len(HEURISTIC_TEMPLATES)
+                suffix = f" {cycle + 1}" if cycle > 0 else ""
+                label = f"{HEURISTIC_TEMPLATES[tpl_idx]}{suffix}"
+                nid = f"placeholder_node_{i}"
+                raw_nodes.append({
+                    "id": nid,
+                    "label": label,
+                    "type": "HEURISTIC",
+                    "val": PALETTE["HEURISTIC"]["val"],
+                    "color": PALETTE["HEURISTIC"]["color"],
+                    "glowColor": PALETTE["HEURISTIC"]["glow"],
+                    "metadata": {
+                        "is_placeholder": True,
+                        "placeholder_slot": i,
+                        "description": "Baseline Autonomous Cognitive Protocol",
+                    },
+                })
+                if i % 6 == 0:
+                    raw_links.append({
+                        "source": "core:jarvis",
+                        "target": nid,
+                        "type": "governs",
+                        "strength": 0.35,
+                        "particles": 1,
+                    })
+                if i > 0:
+                    raw_links.append({
+                        "source": f"placeholder_node_{i - 1}",
+                        "target": nid,
+                        "type": "references",
+                        "strength": 0.25,
                         "particles": 0,
                     })
 

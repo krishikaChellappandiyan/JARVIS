@@ -251,7 +251,7 @@ class SystemSkillEngine:
         try:
             from core.jarvis_memory import JarvisMemory
             mem = JarvisMemory()
-            mem.log_speech_pattern(f"Active skill requested: '{text}'")
+            mem.store_memory("skill_execution", f"Active skill requested: '{text}'")
         except Exception:
             pass
 

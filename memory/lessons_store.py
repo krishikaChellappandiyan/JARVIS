@@ -70,14 +70,36 @@ class LessonsStore:
         context: str = "general",
     ) -> bool:
         """
-        Store a lesson. Returns True on success.
+        Store a lesson. Updates existing lesson in place if trigger and platform match,
+        or appends a new lesson. Returns True on success.
         """
+        clean_trigger = (trigger or "").strip()
+        clean_platform = (platform or "general").strip().lower()
+        now_iso = datetime.utcnow().isoformat()
+
+        # Update in place if matching record exists
+        existing_idx = -1
+        for idx, existing in enumerate(self._lessons):
+            if (
+                existing.get("trigger", "").strip().lower() == clean_trigger.lower()
+                and existing.get("platform", "").strip().lower() == clean_platform
+            ):
+                existing_idx = idx
+                break
+
+        if existing_idx >= 0:
+            self._lessons[existing_idx]["lesson"] = lesson
+            self._lessons[existing_idx]["context"] = context
+            self._lessons[existing_idx]["timestamp"] = now_iso
+            self._save_json()
+            return True
+
         entry = {
-            "trigger": trigger,
+            "trigger": clean_trigger,
             "lesson": lesson,
-            "platform": platform.lower(),
+            "platform": clean_platform,
             "context": context,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": now_iso,
         }
 
         # Always persist to JSON regardless of Chroma availability

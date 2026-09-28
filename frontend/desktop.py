@@ -1637,6 +1637,12 @@ class JarvisAPI:
                             if payload.get("action_type") == "set_operator_salutation":
                                 sal = payload.get("salutation") or JarvisMemory().get_salutation()
                                 self._emit("set_operator_salutation", {"salutation": sal})
+                            if payload.get("action_type") == "MEMORY_STORE":
+                                try:
+                                    kg_data = self.get_knowledge_graph_data(1500)
+                                    self._emit("knowledge_graph_data", kg_data)
+                                except Exception as kg_err:
+                                    print(f"[desktop] Error emitting updated knowledge graph: {kg_err}")
                             self._emit("jarvis_stream_chunk", {"chunk": msg})
                             self._emit("jarvis_answer", {"text": msg, "mode": "advisor"})
                             self._speak_and_suppress_echo(msg)
@@ -3359,12 +3365,32 @@ class JarvisAPI:
         def on_token(chunk: str):
             prefix_filter.feed(chunk)
 
-        try:
-            result = self._voice.chat(question, self._target, on_token=on_token, image_path=image_path)
-        except Exception as e:
-            print(f"[desktop] Voice chat execution error: {e}")
+        result = None
+        for attempt in (1, 2):
+            try:
+                result = self._voice.chat(question, self._target, on_token=on_token, image_path=image_path)
+                if result and not result.get("error") and (result.get("text") or sent_count > 0):
+                    break
+            except Exception as e:
+                print(f"[desktop] Voice chat execution attempt {attempt} error: {e}")
+                result = {"text": "", "error": True, "error_msg": str(e), "mode": "advisor"}
+
+            if attempt == 1:
+                # Emit graceful retry-with-notice safety net
+                sal = self._voice.memory.get_salutation() if (self._voice and hasattr(self._voice, 'memory')) else "Sir"
+                notice_msg = f"Having some trouble on my end, retrying, {sal}..."
+                print(f"[desktop] {notice_msg}")
+                self._emit("jarvis_stt_interim", {"text": f"⚡ {notice_msg}"})
+                if self._voice:
+                    self._voice.groq_rate_limited = False
+                    self._voice.nvidia_rate_limited = False
+                time.sleep(0.4)
+
+        if not result or result.get("error") or not result.get("text"):
+            sal = self._voice.memory.get_salutation() if (self._voice and hasattr(self._voice, 'memory')) else "Sir"
+            err_msg = result.get("error_msg", "") if result else ""
             result = {
-                "text": f"Sir, encountered an unexpected exception while processing that: {str(e)}",
+                "text": f"Apologies, {sal}. I encountered network difficulty processing your query. Please stand by or retry.",
                 "error": True,
                 "mode": "advisor"
             }

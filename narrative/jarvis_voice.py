@@ -640,8 +640,19 @@ class JarvisVoice:
 
         return "\n".join(lines)
 
-    def _ask_slm(self, prompt: str, system: str, max_tokens: int = 4096, timeout: int = 120, num_ctx: int = 8192, temperature: float = 0.55, on_token: callable = None) -> dict:
+    def _ask_slm(self, prompt: str, system: str, max_tokens: int = 4096, timeout: int = 45, num_ctx: int = 8192, temperature: float = 0.55, on_token: callable = None) -> dict:
         """Ask the local SLM. Returns a dict: {'text': response, 'error': bool}"""
+        # Fast socket connectivity pre-check to prevent blocking when Ollama is offline
+        import socket
+        try:
+            with socket.create_connection(("127.0.0.1", 11434), timeout=0.08):
+                pass
+        except Exception:
+            return {
+                "text": "System Notice: Local SLM server is offline, Sir.",
+                "error": True
+            }
+
         try:
             url = f"{OLLAMA_URL}/api/generate"
             payload = {
@@ -757,7 +768,7 @@ class JarvisVoice:
                 }
 
                 full_response = []
-                with self.client.stream("POST", NVIDIA_URL, headers=headers, json=payload, timeout=18.0) as r:
+                with self.client.stream("POST", NVIDIA_URL, headers=headers, json=payload, timeout=15.0) as r:
                     if r.status_code == 429:
                         self.nvidia_rate_limited = True
                         print(f"[jarvis_voice] NVIDIA NIM API rate-limited (429). Switching to fallback.")
@@ -897,7 +908,7 @@ class JarvisVoice:
 
             try:
                 full_response = []
-                with self.client.stream("POST", "https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=14.0) as r:
+                with self.client.stream("POST", "https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=10.0) as r:
                     if r.status_code == 429:
                         self.groq_rate_limited = True
                         print(f"[jarvis_voice] Groq API rate-limited (429). Switching to fallback.")
